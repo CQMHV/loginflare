@@ -1,0 +1,47 @@
+{
+    "$schema": "./node_modules/wrangler/config-schema.json",
+    "name": "loginflare-local",
+    "main": "src/server/index.ts",
+    "compatibility_date": "2026-10-26",
+    "compatibility_flags": ["nodejs_compat"],
+    "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": false },
+        "traces": { "enabled": false }
+    },
+    "assets": {
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true
+    },
+    "vars": {
+        "APP_ENV": "development",
+        "AUTH_URL": "http://localhost:5173",
+        "EMAIL_FROM": "no-reply@loginflare.test",
+        "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+    },
+    "d1_databases": [{
+        "binding": "DB",
+        "database_name": "loginflare-development",
+        "database_id": "00000000-0000-4000-8000-000000000001",
+        "migrations_dir": "migrations",
+        "remote": false
+    }],
+    "send_email": [{ "name": "EMAIL", "remote": false }],
+    "env": {
+        "staging": {
+            "name": "loginflare-staging",
+            "vars": { "APP_ENV": "staging", "AUTH_URL": "", "EMAIL_FROM": "", "TURNSTILE_SITE_KEY": "" },
+            "d1_databases": [{ "binding": "DB", "database_name": "loginflare-staging", "database_id": "REPLACE_WITH_STAGING_D1_ID", "migrations_dir": "migrations", "remote": false }],
+            "send_email": [{ "name": "EMAIL", "remote": false }]
+        },
+        "production": {
+            "name": "loginflare-production",
+            "vars": { "APP_ENV": "production", "AUTH_URL": "", "EMAIL_FROM": "", "TURNSTILE_SITE_KEY": "" },
+            "d1_databases": [{ "binding": "DB", "database_name": "loginflare-production", "database_id": "REPLACE_WITH_PRODUCTION_D1_ID", "migrations_dir": "migrations", "remote": false }],
+            "send_email": [{ "name": "EMAIL", "remote": false }]
+        }
+    }
+}

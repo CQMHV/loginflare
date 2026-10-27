@@ -1,0 +1,51 @@
+{
+    "name": "loginflare",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "license": "(MIT OR Apache-2.0)",
+    "engines": {
+        "node": ">=24.0.0"
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "node scripts/licenses.mjs && vite build",
+        "licenses:generate": "node scripts/licenses.mjs",
+        "typecheck": "wrangler types && tsc --noEmit",
+        "test": "vitest run",
+        "test:e2e": "playwright test",
+        "test:ops": "node --test scripts/database.test.mjs",
+        "db:migrate": "node scripts/database.mjs migrate --local",
+        "admin:promote": "node scripts/database.mjs promote",
+        "types": "wrangler types",
+        "setup:local": "node scripts/setup-local.mjs",
+        "check": "pnpm typecheck && pnpm test && pnpm test:ops && pnpm build"
+    },
+    "dependencies": {
+        "@material/web": "2.5.0",
+        "better-auth": "1.7.13",
+        "hono": "4.13.14",
+        "i18next": "26.5.11",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+        "react-i18next": "17.1.9",
+        "react-router-dom": "7.18.4",
+        "zod": "4.6.7"
+    },
+    "devDependencies": {
+        "@cloudflare/vite-plugin": "1.65.0",
+        "@cloudflare/vitest-plugin": "1.4.8",
+        "@cloudflare/workers-types": "5.20261026.1",
+        "@playwright/test": "1.64.1",
+        "@types/node": "26.6.5",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+        "@vitejs/plugin-react": "6.1.2",
+        "cf": "1.0.0-beta.22",
+        "miniflare": "4.20260730.0",
+        "typescript": "7.0.2",
+        "vite": "8.3.5",
+        "vitest": "5.0.5",
+        "wrangler": "4.152.0"
+    }
+}

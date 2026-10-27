@@ -1,0 +1,4 @@
+# Local development only. Run `pnpm setup:local` to generate a random secret.
+BETTER_AUTH_SECRET=replace-with-a-random-secret-at-least-32-characters
+# Official Cloudflare always-pass test key. Production rejects test keys.
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA

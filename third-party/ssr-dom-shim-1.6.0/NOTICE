@@ -1,0 +1,26 @@
+@lit-labs/ssr-dom-shim@1.6.0
+SPDX-License-Identifier: BSD-3-Clause
+
+Copyright notices from the published JavaScript files:
+Copyright 2019 Google LLC
+Copyright 2023 Google LLC
+Copyright 2024 Google LLC
+
+License provenance (reviewed 2026-10-28):
+The npm package declares BSD-3-Clause and carries SPDX source headers, but
+does not include the full license text. LICENSE is copied without changes
+from the official lit/lit repository at the release's commit:
+20afabd3c5bfd49fdcdf1b8518e05c7f99a46db6
+Release tag: @lit-labs/ssr-dom-shim@1.6.0
+
+License source:
+https://github.com/lit/lit/blob/20afabd3c5bfd49fdcdf1b8518e05c7f99a46db6/LICENSE
+Package metadata:
+https://github.com/lit/lit/blob/20afabd3c5bfd49fdcdf1b8518e05c7f99a46db6/packages/labs/ssr-dom-shim/package.json
+Source header:
+https://github.com/lit/lit/blob/20afabd3c5bfd49fdcdf1b8518e05c7f99a46db6/packages/labs/ssr-dom-shim/src/index.ts
+
+This supplement applies only to version 1.6.0. The notice generator verifies
+the published index.js SHA-256 before using it:
+339ea611ea0872ab4237c2cf9d7360d4aa80eea8f6f4f5f1f2084f4a29d91791
+Builds read these checked-in files and do not fetch license text online.
