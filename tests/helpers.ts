@@ -115,6 +115,6 @@ export function mailUrl(mail: RecordedMail | undefined) {
 export async function session(client: ReturnType<typeof harness>, cookie: string) {
     const response = await client.request('/api/auth/get-session', { cookie });
     if (response.status === 401 || response.status === 403) return null;
-    return response.json<{ user: { id: string; name: string; email: string; locale: string; role: string };
+    return response.json<{ user: { id: string; name: string; email: string; username?: string | null; locale: string; role: string };
         session: { id: string; token: string } } | null>();
 }

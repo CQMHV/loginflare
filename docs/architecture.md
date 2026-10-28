@@ -12,7 +12,7 @@ Browser: React 19 + Material Web + React Router + react-i18next
 Cloudflare Worker
     +-- Workers Static Assets: browser application
     +-- Hono: routing, request boundaries, authorization, safe errors
-         +-- Better Auth: email/password, sessions, admin, CAPTCHA, OAuth provider and JWT
+         +-- Better Auth: email/password, username, sessions, admin, CAPTCHA, OAuth provider and JWT
               +-- D1: accounts, sessions, verification, rate limits, OAuth clients/tokens/consents, signing keys
               +-- Email Service binding: transactional delivery
               +-- Turnstile: server-side verification
@@ -49,6 +49,8 @@ User lookup uses an exact email equality filter through Better Auth's native lis
 ## Identity and authorization
 
 `user` and `admin` share one account system. Public signup produces ordinary users. Email verification is required before sign-in. Administrator provisioning is an operator action against a specified existing verified account; it is not triggered by signup order or a public setup route.
+
+The official Username plugin adds a unique, lowercase `username` to the existing user model, without a separate `displayUsername` field. Display names remain independent and need not be unique. The browser's sign-in field accepts an email address or username and selects the corresponding native password endpoint; both endpoints use Turnstile, persistent rate limiting, email-verification checks, and account-suspension rules. Username sign-in also preserves the provider-signed OAuth query. Usernames contain 3–30 ASCII letters, digits, underscores, or dots and match case-insensitively. The nullable field preserves existing accounts without inventing login names; those users can choose or change a username in their profile. Configuring username support does not change the account's stable user ID or OIDC subject.
 
 The console can inspect ordinary users, suspend/restore them, and revoke their sessions. Administrator accounts cannot be suspended through this console. Browser navigation checks improve the experience; server checks enforce permissions.
 

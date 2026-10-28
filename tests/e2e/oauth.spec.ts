@@ -73,6 +73,7 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     const before = await snapshotEmails();
     await page.goto('/en-us/signup');
     await page.getByLabel('Display name', { exact: true }).fill('OIDC Browser Person');
+    await page.getByLabel('Username', { exact: true }).fill(`ui_${randomUUID().replaceAll('-', '').slice(0, 20)}`);
     await page.getByLabel('Email address', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill('OIDC-browser-password-739!');
     await page.getByLabel('Confirm password', { exact: true }).fill('OIDC-browser-password-739!');
@@ -85,7 +86,7 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
         cwd: process.cwd(), stdio: 'pipe', timeout: 30_000,
     });
     await page.getByRole('link', { name: 'Sign in', exact: true }).click();
-    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Email or username', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill('OIDC-browser-password-739!');
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();

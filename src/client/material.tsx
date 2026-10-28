@@ -52,6 +52,7 @@ interface TextFieldProps {
     placeholder?: string;
     minLength?: number;
     maxLength?: number;
+    pattern?: string;
     required?: boolean;
     readOnly?: boolean;
     supportingText?: string;

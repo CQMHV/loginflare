@@ -90,6 +90,8 @@ Apply the committed migrations to the correct environment before starting the ne
 
 OAuth/OIDC adds versioned provider tables and `oauthGrantPolicy` security state in migrations `0002_oauth.sql` and `0003_oauth_policy.sql`. Apply both before enabling the new build. Preserve existing account data, signing keys, grant policy, and the stable `BETTER_AUTH_SECRET`; deleting policy rows is not a supported way to revoke or restore credentials. Keep `${AUTH_URL}/api/auth` stable as the issuer after applications begin using it.
 
+Username sign-in adds a nullable, case-insensitively unique `user.username` in `0004_username.sql`. Apply it before deploying the username-enabled build. Existing accounts keep their email sign-in and choose a username through their account profile; the migration does not invent or reserve usernames for them.
+
 Create production applications in the administrator console with exact HTTPS callback and post-logout URLs. Store server-client secrets in each application's protected server configuration, and never ship them to browser applications. Registered SPA Origins gain protocol-only CORS access, not access to account or administration APIs. See [application integration](oauth.md) for refresh and security-revocation behavior.
 
 Create the intended administrator through ordinary registration and complete email verification. The administrator promotion command must target that exact existing verified account. An unverified or missing account is an error. Repeating a successful promotion is harmless.

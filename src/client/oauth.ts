@@ -1,10 +1,11 @@
 import { createAuthClient } from 'better-auth/client';
+import { usernameClient } from 'better-auth/client/plugins';
 import { oauthProviderClient } from '@better-auth/oauth-provider/client';
 import { ApiError } from './api';
 
 const authClient = createAuthClient({
     basePath: '/api/auth',
-    plugins: [oauthProviderClient()],
+    plugins: [usernameClient({ displayUsername: false }), oauthProviderClient()],
 });
 
 // Preserve the provider's declared query segments verbatim when moving between

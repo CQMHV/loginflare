@@ -231,6 +231,8 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const [captchaToken, setCaptchaToken] = useState('');
     const [captchaReset, setCaptchaReset] = useState(0);
     const [email, setEmail] = useState(() => new URLSearchParams(location.search).get('email') ?? '');
+    const [loginIdentifier, setLoginIdentifier] = useState(() => new URLSearchParams(location.search).get('email') ?? '');
+    const [username, setUsername] = useState('');
     const [name, setName] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -276,20 +278,24 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         setBusy(true);
         try {
             switch (mode) {
-                case 'login':
+                case 'login': {
+                    const identifier = loginIdentifier.trim();
+                    const path = identifier.includes('@') ? '/sign-in/email' : '/sign-in/username';
+                    const credentials = { ...(identifier.includes('@') ? { email: identifier } : { username: identifier }), password, rememberMe };
                     if (oauthQuery) {
-                        const result = await providerRequest('/sign-in/email', { email, password, rememberMe }, captchaToken);
+                        const result = await providerRequest(path, credentials, captchaToken);
                         savePreference(locale);
                         if (result?.redirect) return;
                         throw new ApiError('INVALID_OAUTH_QUERY', 400);
                     }
-                    await captchaRequest('/sign-in/email', { email, password, rememberMe }, captchaToken);
+                    await captchaRequest(path, credentials, captchaToken);
                     await refresh();
                     savePreference(locale);
                     navigate(localizedPath(locale, 'account'), { replace: true });
                     break;
+                }
                 case 'signup':
-                    await captchaRequest('/sign-up/email', { email, password, name, locale, callbackURL }, captchaToken);
+                    await captchaRequest('/sign-up/email', { email: email.trim(), username: username.trim(), password, name, locale, callbackURL }, captchaToken);
                     savePreference(locale);
                     navigate(authPath('verify-email', { email }));
                     break;
@@ -330,14 +336,15 @@ function AuthPage({ mode }: { mode: AuthMode }) {
             mode === 'reset-password' && success ? <ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
             mode !== 'verified' && <form onSubmit={(event) => { void submit(event); }} className="stack-form">
                 {mode === 'signup' && <TextField label={t('name')} autoComplete="nickname" name="name" value={name} onValueChange={setName} placeholder={t('namePlaceholder')} maxLength={100} required />}
-                {mode !== 'reset-password' && <TextField label={t('email')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} required />}
+                {mode === 'signup' && <TextField label={t('username')} autoComplete="username" name="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={t('usernameHint')} required />}
+                {mode === 'login' ? <TextField label={t('loginIdentifier')} autoComplete="username" type="text" name="identifier" value={loginIdentifier} onValueChange={setLoginIdentifier} placeholder={t('loginIdentifierPlaceholder')} maxLength={254} required /> : mode !== 'reset-password' && <TextField label={t('email')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} required />}
                 {['login', 'signup', 'reset-password'].includes(mode) && <TextField label={t(mode === 'reset-password' ? 'newPassword' : 'password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" name="password" value={password} onValueChange={setPassword} minLength={mode === 'login' ? undefined : 8} maxLength={128} supportingText={mode === 'login' ? undefined : t('passwordHint')} required />}
                 {(mode === 'signup' || mode === 'reset-password') && <TextField label={t('confirmPassword')} autoComplete="new-password" type="password" name="confirmPassword" value={confirmPassword} onValueChange={setConfirmPassword} minLength={8} maxLength={128} required />}
                 {mode === 'login' && <div className="form-options"><Checkbox label={t('rememberMe')} checked={rememberMe} onCheckedChange={setRememberMe} /><Link to={authPath('forgot-password')}>{t('forgotPassword')}</Link></div>}
                 {needsCaptcha && <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />}
                 <Button type="submit" className="primary full" busy={busy} disabled={needsCaptcha && !captchaToken}>{busy ? t('working') : t(mode === 'login' ? 'login' : mode === 'signup' ? 'signup' : mode === 'verify-email' ? 'resend' : mode === 'forgot-password' ? 'sendReset' : 'resetPassword')}<Icon name="arrow" size={18} /></Button>
             </form>}
-        {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p><Link className="resend-link" to={authPath('verify-email', email ? { email } : undefined)}>{t('resend')}</Link></>}
+        {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p><Link className="resend-link" to={authPath('verify-email', loginIdentifier.includes('@') ? { email: loginIdentifier.trim() } : undefined)}>{t('resend')}</Link></>}
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
         {mode === 'signup' && error && <Link className="resend-link" to={authPath('verify-email', { email })}>{t('resend')}</Link>}
         {['verify-email', 'forgot-password', 'reset-password'].includes(mode) && <Link className="back-link" to={authPath('login')}><Icon name="back" size={15} />{t('backToLogin')}</Link>}
@@ -445,14 +452,16 @@ function ProfilePage() {
     const { identity, locale, refresh } = useApp();
     const { t } = useTranslation();
     const [name, setName] = useState(identity?.user.name ?? '');
+    const [username, setUsername] = useState(identity?.user.username ?? '');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
     const [saved, setSaved] = useState(false);
+    useEffect(() => { setUsername(identity?.user.username ?? ''); }, [identity?.user.username]);
     async function save(event: FormEvent) {
         event.preventDefault();
         setBusy(true); setError(undefined); setSaved(false);
         try {
-            await request('/update-user', { name });
+            await request('/update-user', { name, ...(username.trim() ? { username: username.trim() } : {}) });
             await refresh(); setSaved(true);
         } catch (cause) { setError(errorCode(cause)); }
         finally { setBusy(false); }
@@ -463,6 +472,7 @@ function ProfilePage() {
         <section className="card"><div className="card-heading"><h2>{t('accountDetails')}</h2><p>{t('accountDetailsDescription')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
             <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
             <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={setName} maxLength={100} required />
+            <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
             <TextField label={t('email')} type="email" value={identity?.user.email ?? ''} readOnly supportingText={t('emailReadOnly')} />
             <div className="form-footer"><Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
         </form></section>

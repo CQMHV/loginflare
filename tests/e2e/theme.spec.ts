@@ -147,7 +147,7 @@ test('keeps dark-mode text and primary button states readable', async ({ page })
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/en-us/login');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    const email = page.getByLabel('Email address', { exact: true });
+    const email = page.getByLabel('Email or username', { exact: true });
     await email.fill('contrast@example.test');
     const submit = page.getByRole('button', { name: 'Sign in', exact: true });
     await expect(submit).toBeEnabled({ timeout: 20_000 });

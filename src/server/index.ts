@@ -10,6 +10,7 @@ import { consent, oauth, protocolRoutes } from './oauth';
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
     '/sign-in/email': ['POST'],
+    '/sign-in/username': ['POST'],
     '/sign-out': ['POST'],
     '/send-verification-email': ['POST'],
     '/verify-email': ['GET'],
@@ -30,13 +31,14 @@ const routes: Record<string, readonly string[]> = {
 };
 
 const fields: Record<string, readonly string[]> = {
-    '/sign-up/email': ['name', 'email', 'password', 'locale', 'callbackURL'],
+    '/sign-up/email': ['name', 'username', 'email', 'password', 'locale', 'callbackURL'],
     '/sign-in/email': ['email', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
+    '/sign-in/username': ['username', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
     '/sign-out': [],
     '/send-verification-email': ['email', 'callbackURL'],
     '/request-password-reset': ['email', 'redirectTo'],
     '/reset-password': ['newPassword', 'token'],
-    '/update-user': ['name', 'locale'],
+    '/update-user': ['name', 'username', 'locale'],
     '/change-password': ['currentPassword', 'newPassword', 'revokeOtherSessions'],
     '/revoke-session': ['token'],
     '/revoke-other-sessions': [],
@@ -137,6 +139,7 @@ app.all('/api/auth/*', async (c) => {
         if (Object.keys(body).some((key) => !fields[path]?.includes(key))) return c.json({ code: 'INVALID_INPUT' }, 400);
         if (body.locale !== undefined && !isLocale(body.locale)) return c.json({ code: 'INVALID_INPUT' }, 400);
         if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 100)) return c.json({ code: 'INVALID_INPUT' }, 400);
+        if (body.username !== undefined && typeof body.username !== 'string') return c.json({ code: 'INVALID_INPUT' }, 400);
         if (path === '/change-password' && body.revokeOtherSessions !== true) return c.json({ code: 'INVALID_INPUT' }, 400);
     }
 

@@ -8,7 +8,7 @@ test('defaults to English regardless of browser locale', async ({ page }) => {
     await expect(page).toHaveURL('/en-us/login');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en-US');
     await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-    await expect(page.getByLabel('Email address', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Email or username', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
     expect(errors).toEqual([]);
     await page.screenshot({ path: test.info().outputPath('login-desktop.png'), fullPage: true });
@@ -77,8 +77,8 @@ test('Material Web controls preserve readable contrast, keyboard interaction, an
     await expect(remember).not.toBeChecked();
     await remember.press('Space');
     await expect(remember).toBeChecked();
-    const email = page.getByLabel('Email address', { exact: true });
-    await email.fill('invalid-email');
+    const email = page.getByLabel('Email or username', { exact: true });
+    await email.fill('');
     await page.getByLabel('Password', { exact: true }).fill('valid-test-password');
     const submit = page.getByRole('button', { name: 'Sign in', exact: true });
     await expect(submit).toBeEnabled({ timeout: 20_000 });

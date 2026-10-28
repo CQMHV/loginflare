@@ -1,5 +1,5 @@
 import { betterAuth } from 'better-auth';
-import { admin, captcha, jwt } from 'better-auth/plugins';
+import { admin, captcha, jwt, username } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { z } from 'zod';
 import { validateConfig, type Env } from './config.ts';
@@ -66,6 +66,7 @@ export function createAuth(env: Env, delivery = { failed: false }) {
             max: 100,
             customRules: {
                 '/sign-in/email': { window: 60, max: 5 },
+                '/sign-in/username': { window: 60, max: 5 },
                 '/sign-up/email': { window: 60, max: 3 },
                 '/request-password-reset': { window: 60, max: 3 },
                 '/send-verification-email': { window: 60, max: 3 },
@@ -74,6 +75,7 @@ export function createAuth(env: Env, delivery = { failed: false }) {
         plugins: [
             policy.plugin,
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
+            username({ displayUsername: false }),
             jwt({
                 jwks: { keyPairConfig: { alg: 'RS256' } },
                 jwt: { issuer: `${env.AUTH_URL}/api/auth` },
@@ -93,7 +95,7 @@ export function createAuth(env: Env, delivery = { failed: false }) {
             captcha({
                 provider: 'cloudflare-turnstile',
                 secretKey: env.TURNSTILE_SECRET_KEY,
-                endpoints: ['/sign-up/email', '/sign-in/email', '/request-password-reset', '/send-verification-email'],
+                endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/request-password-reset', '/send-verification-email'],
             }),
         ],
     });

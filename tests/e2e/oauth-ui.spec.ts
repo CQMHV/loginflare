@@ -17,6 +17,10 @@ test.afterEach(() => {
 
 test('manages applications, consent, and signed registration/recovery continuation through Material Web', async ({ page, browser }) => {
     test.setTimeout(240_000);
+    // Separate local virtual users without changing production rate-limit rules.
+    await page.route('http://localhost:5173/api/**', (route) => route.continue({
+        headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.10' },
+    }));
     const email = `ui-${randomUUID()}@loginflare.test`;
     fixtureEmails.push(email);
     const password = 'OAuth-browser-password-917!';
@@ -28,6 +32,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     const beforeSignup = await snapshotEmails();
     await page.goto('/en-us/signup');
     await page.getByLabel('Display name', { exact: true }).fill('OAuth UI Administrator');
+    await page.getByLabel('Username', { exact: true }).fill(`ui_${randomUUID().replaceAll('-', '').slice(0, 20)}`);
     await page.getByLabel('Email address', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByLabel('Confirm password', { exact: true }).fill(password);
@@ -37,7 +42,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     await expect(page.getByRole('heading', { name: 'Check your inbox' })).toBeVisible();
     await page.goto(await waitForMail(beforeSignup, 'verify'));
     await page.getByRole('link', { name: 'Sign in', exact: true }).click();
-    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Email or username', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     const signin = page.getByRole('button', { name: 'Sign in', exact: true });
     await expect(signin).toBeEnabled({ timeout: 25_000 });
@@ -141,8 +146,12 @@ test('manages applications, consent, and signed registration/recovery continuati
     expect(new URL(page.url()).searchParams.get('state')).toBe('ExpandedScope');
 
     const newcomerEmail = `ui-target-${randomUUID()}@loginflare.test`;
+    const newcomerUsername = `oauth_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
     fixtureEmails.push(newcomerEmail);
     const newcomer = await browser.newContext({ baseURL: 'http://localhost:5173' });
+    await newcomer.route('http://localhost:5173/api/**', (route) => route.continue({
+        headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.11' },
+    }));
     try {
         const registration = await newcomer.newPage();
         await registration.route('https://app.example.test/**', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Test application</title>' }));
@@ -152,6 +161,7 @@ test('manages applications, consent, and signed registration/recovery continuati
         await registration.getByRole('link', { name: 'Create account', exact: true }).click();
         expect(new URL(registration.url()).search).toBe(signupQuery);
         await registration.getByLabel('Display name', { exact: true }).fill('OAuth Newcomer');
+        await registration.getByLabel('Username', { exact: true }).fill(newcomerUsername);
         await registration.getByLabel('Email address', { exact: true }).fill(newcomerEmail);
         await registration.getByLabel('Password', { exact: true }).fill(password);
         await registration.getByLabel('Confirm password', { exact: true }).fill(password);
@@ -165,7 +175,7 @@ test('manages applications, consent, and signed registration/recovery continuati
         await registration.goto(verificationLink);
         await registration.getByRole('link', { name: 'Sign in', exact: true }).click();
         expect(new URL(registration.url()).search).toBe(signupQuery);
-        await registration.getByLabel('Email address', { exact: true }).fill(newcomerEmail);
+        await registration.getByLabel('Email or username', { exact: true }).fill(newcomerUsername.toUpperCase());
         await registration.getByLabel('Password', { exact: true }).fill(password);
         const continueSignin = registration.getByRole('button', { name: 'Sign in', exact: true });
         await expect(continueSignin).toBeEnabled({ timeout: 25_000 });
@@ -199,7 +209,7 @@ test('manages applications, consent, and signed registration/recovery continuati
         await registration.getByRole('link', { name: 'Sign in', exact: true }).click();
         expect(new URL(registration.url()).search).toBe(recoveryQuery);
         expect(new URL(registration.url()).searchParams.has('token')).toBe(false);
-        await registration.getByLabel('Email address', { exact: true }).fill(newcomerEmail);
+        await registration.getByLabel('Email or username', { exact: true }).fill(newcomerEmail);
         await registration.getByLabel('Password', { exact: true }).fill(recoveredPassword);
         await expect(continueSignin).toBeEnabled({ timeout: 25_000 });
         await continueSignin.click();

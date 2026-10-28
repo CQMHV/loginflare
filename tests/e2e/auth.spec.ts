@@ -15,10 +15,13 @@ test('completes registration, recovery, account management, and administrator co
     test.setTimeout(120_000);
     await page.emulateMedia({ colorScheme: 'dark' });
     const email = `ui-${randomUUID()}@loginflare.test`;
+    const username = `ui_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
+    const replacementUsername = `new_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
     fixtureEmails.push(email);
     const beforeSignup = await snapshotEmails();
     await page.goto('/en-us/signup');
     await page.getByLabel('Display name', { exact: true }).fill('Browser Test');
+    await page.getByLabel('Username', { exact: true }).fill(username);
     await page.getByLabel('Email address', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill('Browser-test-password-917!');
     await page.getByLabel('Confirm password', { exact: true }).fill('Browser-test-password-917!');
@@ -41,7 +44,7 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page).toHaveURL('/en-us/verified');
     await expect(page.getByRole('heading', { name: 'Email verified' })).toBeVisible();
     await page.getByRole('link', { name: 'Sign in', exact: true }).click();
-    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Email or username', { exact: true }).fill(username.toUpperCase());
     await page.getByLabel('Password', { exact: true }).fill('Browser-test-password-917!');
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -55,9 +58,25 @@ test('completes registration, recovery, account management, and administrator co
     await page.getByRole('menuitem', { name: 'Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.getByLabel('Display name', { exact: true }).fill('Updated Browser Person');
+    await page.getByLabel('Username', { exact: true }).fill(replacementUsername);
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Your changes have been saved.');
+    await expect(page.getByLabel('Username', { exact: true })).toHaveValue(replacementUsername);
     await page.screenshot({ path: test.info().outputPath('profile-desktop.png'), fullPage: true });
+
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(page).toHaveURL('/en-us/login');
+    await page.getByLabel('Email or username', { exact: true }).fill(username);
+    await page.getByLabel('Password', { exact: true }).fill('Browser-test-password-917!');
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page).toHaveURL('/en-us/login');
+    await page.getByLabel('Email or username', { exact: true }).fill(replacementUsername.toUpperCase());
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page).toHaveURL('/en-us/account');
+    await expect(page.getByLabel('Username', { exact: true })).toHaveValue(replacementUsername);
 
     const preferenceResponse = page.waitForResponse((response) => response.url().endsWith('/api/auth/update-user') && response.request().postDataJSON()?.locale === 'zh-CN');
     await page.getByRole('combobox', { name: 'Language', exact: true }).first().click();
@@ -82,6 +101,7 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByRole('status')).toContainText('密码已修改，其他会话已退出。');
     await page.getByRole('button', { name: '退出登录', exact: true }).click();
     await expect(page).toHaveURL('/zh-cn/login');
+    await expect(page.getByLabel('邮箱或用户名', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: '忘记密码？', exact: true }).click();
     await page.getByLabel('邮箱地址', { exact: true }).fill(email);
@@ -101,7 +121,7 @@ test('completes registration, recovery, account management, and administrator co
 
     // An explicit English URL takes precedence over the saved Chinese preference.
     await page.goto('/en-us/login');
-    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Email or username', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill('Recovered-browser-password-639!');
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -123,6 +143,7 @@ test('completes registration, recovery, account management, and administrator co
     const targetPage = await targetContext.newPage();
     await targetPage.goto('/en-us/signup');
     await targetPage.getByLabel('Display name', { exact: true }).fill('Browser Target');
+    await targetPage.getByLabel('Username', { exact: true }).fill(`ui_${randomUUID().replaceAll('-', '').slice(0, 20)}`);
     await targetPage.getByLabel('Email address', { exact: true }).fill(targetEmail);
     await targetPage.getByLabel('Password', { exact: true }).fill('Target-account-password-917!');
     await targetPage.getByLabel('Confirm password', { exact: true }).fill('Target-account-password-917!');

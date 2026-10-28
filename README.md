@@ -10,9 +10,9 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 
 ## Features
 
-- Register, verify email, resend verification, sign in, and sign out.
+- Register, verify email, resend verification, sign in with an email address or username, and sign out.
 - Recover a forgotten password and change a known password.
-- Update a display name and manage active sessions.
+- Update a display name and username, and manage active sessions.
 - Find users by exact email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
 - Register server Web and SPA clients through the administrator console, with exact redirects, consent, and client-secret rotation.
 - OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
@@ -20,6 +20,8 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - Better Auth account/session primitives, D1-backed rate limiting, and server-verified Turnstile challenges.
 
 This release does not offer social login, MFA, organizations, multi-tenancy, account deletion, email changes, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
+
+Usernames are separate from display names. The registration form asks for a unique username of 3–30 ASCII letters, numbers, underscores, or dots; usernames are stored in lowercase and sign-in is case-insensitive. Existing accounts can continue using email and choose a username in their profile. Users can change their username; an existing username cannot be cleared. Email verification is required for both sign-in methods, and password recovery still uses the verified email address.
 
 ## Interface
 

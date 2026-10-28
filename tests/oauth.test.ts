@@ -229,8 +229,9 @@ describe('OAuth/OIDC protocol in the Workers runtime', () => {
         expect((await redirectUrl(await protocol(client, `/api/auth/oauth2/authorize?${expanded.query}`, { cookie }))).pathname).toBe('/en-us/consent');
     });
 
-    it('preserves signed login context and rejects modified consent context', async () => {
+    it.each(['email', 'username'] as const)('preserves signed %s login context and rejects modified consent context', async (method) => {
         const { client, registered, cookie } = await fixture();
+        if (method === 'username') expect((await client.request('/api/auth/update-user', { cookie, body: { username: 'oauth_person' } })).status).toBe(200);
         const initial = await authorizationParameters(registered);
         const response = await protocol(client, `/api/auth/oauth2/authorize?${initial.query}`);
         const login = await redirectUrl(response);
@@ -241,7 +242,8 @@ describe('OAuth/OIDC protocol in the Workers runtime', () => {
         login.searchParams.set('scope', 'openid profile email arbitrary');
         const tampered = await client.request('/api/auth/oauth2/consent', { cookie, body: { accept: true, oauth_query: login.search.slice(1) } });
         expect(tampered.ok).toBe(false);
-        const signedIn = await client.request('/api/auth/sign-in/email', { body: { email: 'person@example.test', password, oauth_query: original } });
+        const identifier = method === 'username' ? { username: 'OAUTH_PERSON' } : { email: 'person@example.test' };
+        const signedIn = await client.request(`/api/auth/sign-in/${method}`, { body: { ...identifier, password, oauth_query: original } });
         expect(signedIn.status, await signedIn.clone().text()).toBe(200);
         expect((await redirectUrl(signedIn)).pathname).toBe('/en-us/consent');
     });

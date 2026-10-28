@@ -3,6 +3,7 @@ import type { Locale } from '../shared/locales';
 export interface User {
     id: string;
     name: string;
+    username?: string | null;
     email: string;
     emailVerified: boolean;
     role?: string | null;
