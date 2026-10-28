@@ -19,6 +19,8 @@ This repository does not create remote resources or deploy itself during depende
 
 ## Configure the environment
 
+The staging environment is available at `https://loginflare-staging.cqmhv.workers.dev`, with its own `loginflare-staging` D1 database and Turnstile widget. Cloudflare Workers Builds connects it to this repository's `main` branch. Build variables are `CLOUDFLARE_ENV=staging`, `NODE_VERSION=24`, and `PNPM_VERSION=11.25.0`; the build command is `pnpm build`, and the deploy command is `pnpm exec wrangler d1 migrations apply DB --remote && pnpm exec wrangler deploy`. The dedicated build token can deploy Workers and apply D1 migrations in the configured account. Authentication and Turnstile secrets are runtime Worker Secrets, not build variables or repository files. Production remains unconfigured.
+
 The committed `wrangler.jsonc` contains a local configuration and explicit `staging` / `production` sections. Replace the remote D1 placeholder IDs and empty public configuration before building for either environment. Keep development secrets in the ignored `.dev.vars` file; `pnpm setup:local` generates it safely without overwriting an existing file. Store remote authentication and Turnstile secrets as Worker secrets, never as committed configuration. Authentication secrets must be unique per environment and remain stable across routine redeployments.
 
 | Setting | Location | Purpose |

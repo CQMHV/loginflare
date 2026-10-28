@@ -19,6 +19,8 @@ Email Sending 当前为 Beta，生产上线前应核对最新的 [Email Service 
 
 ## 配置环境
 
+staging 地址为 `https://loginflare-staging.cqmhv.workers.dev`，使用独立的 `loginflare-staging` D1 数据库和 Turnstile 组件。Cloudflare Workers Builds 将它连接到本仓库的 `main` 分支。构建变量为 `CLOUDFLARE_ENV=staging`、`NODE_VERSION=24` 和 `PNPM_VERSION=11.25.0`；构建命令为 `pnpm build`，部署命令为 `pnpm exec wrangler d1 migrations apply DB --remote && pnpm exec wrangler deploy`。专用构建令牌具有目标账号的 Worker 部署和 D1 迁移权限。认证与 Turnstile 密钥保存为运行时 Worker Secrets，不放入构建变量或仓库。production 尚未配置。
+
 已提交的 `wrangler.jsonc` 包含本地配置以及独立的 `staging`、`production` 节。构建远程环境前，先填入其 D1 数据库 ID 和公开配置。本地密钥放在被忽略的 `.dev.vars` 中；`pnpm setup:local` 可安全生成，已有文件不会覆盖。远程认证和 Turnstile 密钥使用 Worker Secrets，不写进已提交配置。不同环境的认证密钥应独立，常规重新部署时保持稳定。
 
 | 配置 | 位置 | 用途 |

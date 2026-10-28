@@ -33,8 +33,10 @@
     "env": {
         "staging": {
             "name": "loginflare-staging",
-            "vars": { "APP_ENV": "staging", "AUTH_URL": "", "EMAIL_FROM": "", "TURNSTILE_SITE_KEY": "" },
-            "d1_databases": [{ "binding": "DB", "database_name": "loginflare-staging", "database_id": "REPLACE_WITH_STAGING_D1_ID", "migrations_dir": "migrations", "remote": false }],
+            "workers_dev": true,
+            "preview_urls": false,
+            "vars": { "APP_ENV": "staging", "AUTH_URL": "https://loginflare-staging.cqmhv.workers.dev", "EMAIL_FROM": "no-reply@cqmhv.com", "TURNSTILE_SITE_KEY": "0x4AAAAAAFpRgigtHONTmoD_" },
+            "d1_databases": [{ "binding": "DB", "database_name": "loginflare-staging", "database_id": "d5cc3bc9-28f5-4f17-9789-88b02530ada7", "migrations_dir": "migrations", "remote": false }],
             "send_email": [{ "name": "EMAIL", "remote": false }]
         },
         "production": {
