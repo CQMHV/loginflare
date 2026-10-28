@@ -1,5 +1,5 @@
 import { createElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type PropsWithChildren, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, type NavLinkProps } from 'react-router-dom';
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
@@ -12,6 +12,11 @@ import '@material/web/progress/circular-progress.js';
 import '@material/web/dialog/dialog.js';
 import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
+import '@material/web/list/list.js';
+import '@material/web/list/list-item.js';
+import '@material/web/divider/divider.js';
+import '@material/web/ripple/ripple.js';
+import '@material/web/focus/md-focus-ring.js';
 import type { MdDialog } from '@material/web/dialog/dialog.js';
 import type { MdMenu } from '@material/web/menu/menu.js';
 import type { Locale } from '../shared/locales';
@@ -30,16 +35,40 @@ export function Button({ children, busy, className = '', type = 'button', ...pro
     return createElement(tag, { ...props, type, className, disabled: busy || props.disabled, 'aria-busy': busy || undefined }, busy && <Progress />, children);
 }
 
-export function ButtonLink({ children, to, className = '' }: PropsWithChildren<{ to: string; className?: string }>) {
+export function ButtonLink({ children, to, className = '', variant = 'filled', ...props }: PropsWithChildren<{ to: string; className?: string; variant?: 'filled' | 'text' | 'icon'; 'aria-label'?: string }>) {
     const navigate = useNavigate();
-    return createElement('md-filled-button', {
-        href: to, className,
+    const tag = variant === 'icon' ? 'md-icon-button' : variant === 'text' ? 'md-text-button' : 'md-filled-button';
+    return createElement(tag, {
+        ...props, href: to, className,
         onClick: (event: MouseEvent) => {
             if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault();
             navigate(to);
         },
     }, children);
+}
+
+export function NavigationLink({ children, ...props }: PropsWithChildren<Omit<NavLinkProps, 'children'>>) {
+    return <NavLink {...props}>{createElement('md-ripple')}{createElement('md-focus-ring', { inward: true })}{children}</NavLink>;
+}
+
+export function Divider() {
+    return createElement('md-divider');
+}
+
+export function List({ children, className, label }: PropsWithChildren<{ className?: string; label: string }>) {
+    return createElement('md-list', { className, role: 'list', 'aria-label': label }, children);
+}
+
+export function ListItem({ headline, supportingText, start, end, className }: {
+    headline: ReactNode; supportingText?: ReactNode; start?: ReactNode; end?: ReactNode; className?: string;
+}) {
+    return createElement('md-list-item', { className, type: 'text' },
+        start && <span slot="start">{start}</span>,
+        <div slot="headline">{headline}</div>,
+        supportingText && <div slot="supporting-text">{supportingText}</div>,
+        end && <div slot="end">{end}</div>,
+    );
 }
 
 interface TextFieldProps {

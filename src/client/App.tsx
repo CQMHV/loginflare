@@ -1,13 +1,13 @@
 import {
-    createContext, useCallback, useContext, useEffect, useRef, useState,
+    createContext, Fragment, useCallback, useContext, useEffect, useRef, useState,
     type FormEvent, type PropsWithChildren,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
 import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
-import { Button, ButtonLink, Checkbox, ConfirmationDialog, LanguageSelect, Progress, TextField, ThemeMenu } from './material';
+import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, LanguageSelect, List, ListItem, NavigationLink, Progress, TextField, ThemeMenu } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
 import { ApplicationEditor, ApplicationsPage } from './Applications';
 import { EmailsPage } from './Emails';
@@ -448,11 +448,11 @@ function AccountLayout() {
             <Brand />
             <nav aria-label="Account navigation">
                 <p className="nav-label">{t('account')}</p>
-                <NavLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavLink>
-                <NavLink to={localizedPath(locale, 'account/emails')}><Icon name="mail" />{t('emails.title')}</NavLink>
-                <NavLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavLink>
-                <NavLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavLink>
-                {identity?.user.role === 'admin' && <><p className="nav-label admin-label">{t('administration')}</p><NavLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavLink><NavLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavLink></>}
+                <NavigationLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'account/emails')}><Icon name="mail" />{t('emails.title')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavigationLink>
+                {identity?.user.role === 'admin' && <><p className="nav-label admin-label">{t('administration')}</p><NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink><NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink></>}
             </nav>
             <div className="sidebar-bottom"><span className="small-cloud">☁</span><p>{t('tagline')}</p><small>Cloudflare Workers + D1</small></div>
         </aside>
@@ -494,10 +494,10 @@ function ProfilePage() {
             <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={setName} maxLength={100} required />
             <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
             <TextField label={t('email')} type="email" value={identity?.user.email ?? ''} readOnly supportingText={t('emails.profileHint')} />
-            <Link className="email-management-link" to={localizedPath(locale, 'account/emails')}>{t('emails.manage')}<Icon name="arrow" size={16} /></Link>
+            <ButtonLink variant="text" className="email-management-link" to={localizedPath(locale, 'account/emails')}>{t('emails.manage')}<Icon name="arrow" size={16} /></ButtonLink>
             <div className="form-footer"><Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
         </form></section>
-        <section className="card"><div className="card-heading"><h2>{t('preferences')}</h2><p>{t('preferencesDescription')}</p></div><div className="card-body preference-row"><span>{t('language')}</span><LanguageSwitcher /></div></section>
+        <section className="card"><div className="card-heading"><h2>{t('preferences')}</h2><p>{t('preferencesDescription')}</p></div><List className="preference-list" label={t('preferences')}><ListItem headline={t('language')} end={<LanguageSwitcher />} /></List></section>
         <div className="account-metadata"><span>{t('memberSince')} {formatDate(identity?.user.createdAt, locale)}</span><span>{t('accountId')}: <code>{identity?.user.id}</code></span></div>
     </>;
 }
@@ -569,11 +569,17 @@ function SessionsPage() {
         } catch (cause) { setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ErrorNotice code={error} /><SuccessNotice message={success ? t(success) : undefined} /><section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!sessions || sessions.length < 2} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div><div className="session-list">
+    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ErrorNotice code={error} /><SuccessNotice message={success ? t(success) : undefined} /><section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!sessions || sessions.length < 2} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
         {!sessions && !error && <Busy />}
         {sessions?.length === 0 && <p className="empty-state">{t('sessionsEmpty')}</p>}
-        {sessions?.map((session) => <div className="session-row" key={session.id}><span className="session-icon"><Icon name="sessions" size={25} /></span><div className="session-description"><div><strong>{deviceName(session.userAgent) || t('unknownDevice')}</strong>{session.id === identity?.session.id && <span className="badge current">{t('currentSession')}</span>}</div><p>{session.ipAddress || t('unknownIp')}</p><small>{t('signedIn')} {formatDate(session.createdAt, locale)} <span>·</span> {t('expires')} {formatDate(session.expiresAt, locale)}</small></div><Button className="text-button danger" busy={busy} onClick={() => { void revoke(session); }}>{t('revoke')}</Button></div>)}
-    </div></section></>;
+        {!!sessions?.length && <List className="session-list" label={t('activeSessions')}>{sessions.map((session, index) => <Fragment key={session.id}>
+            {index > 0 && <Divider />}
+            <ListItem className="session-row" start={<span className="session-icon"><Icon name="sessions" size={25} /></span>}
+                headline={<div className="session-headline"><strong>{deviceName(session.userAgent) || t('unknownDevice')}</strong>{session.id === identity?.session.id && <span className="badge current">{t('currentSession')}</span>}</div>}
+                supportingText={<div className="session-description"><p>{session.ipAddress || t('unknownIp')}</p><small>{t('signedIn')} {formatDate(session.createdAt, locale)} <span>·</span> {t('expires')} {formatDate(session.expiresAt, locale)}</small><Button className="text-button danger" busy={busy} onClick={() => { void revoke(session); }}>{t('revoke')}</Button></div>}
+            />
+        </Fragment>)}</List>}
+    </section></>;
 }
 
 function UserStatus({ user }: { user: User }) {
@@ -601,7 +607,7 @@ function UsersPage() {
     const userPath = (id: string) => `${localizedPath(locale, 'admin/users/detail')}?${new URLSearchParams({ id })}`;
     return <><PageHeading title={t('usersTitle')} description={t('usersDescription')}>{data && <span className="count-pill">{t('userCount', { count: data.total })}</span>}</PageHeading><ErrorNotice code={error} /><section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); setSearch(query.trim().toLowerCase()); setPage(0); }}><div className="search-input"><TextField type="email" label={t('searchUsers')} value={query} onValueChange={setQuery} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
         {!data && !error && <Busy />}
-        {data && <><div className="table-scroll"><table><thead><tr><th>{t('user')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.users.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><span className="table-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><Link className="table-arrow" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></Link></td></tr>)}</tbody></table>{data.users.length === 0 && <p className="empty-state">{t('usersEmpty')}</p>}</div><div className="pagination"><small>{t('page', { page: page + 1 })}</small><div><Button className="secondary small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>{t('previous')}</Button><Button className="secondary small" disabled={(page + 1) * pageSize >= data.total} onClick={() => setPage((value) => value + 1)}>{t('next')}</Button></div></div></>}
+        {data && <><div className="table-scroll"><table><thead><tr><th>{t('user')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.users.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><span className="table-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><ButtonLink variant="icon" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></ButtonLink></td></tr>)}</tbody></table>{data.users.length === 0 && <p className="empty-state">{t('usersEmpty')}</p>}</div><div className="pagination"><small>{t('page', { page: page + 1 })}</small><div><Button className="secondary small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>{t('previous')}</Button><Button className="secondary small" disabled={(page + 1) * pageSize >= data.total} onClick={() => setPage((value) => value + 1)}>{t('next')}</Button></div></div></>}
     </section></>;
 }
 
@@ -631,7 +637,7 @@ function UserDetailPage() {
         } catch (cause) { setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void action(kind, true); }} />}<Link className="back-link detail-back" to={localizedPath(locale, 'admin/users')}><Icon name="back" size={15} />{t('backToUsers')}</Link><PageHeading title={t('userDetails')} description={user?.email ?? ''} /><ErrorNotice code={error} /><SuccessNotice message={success ? t('userUpdated') : undefined} />{!user && !error && <Busy />}{user && <>
+    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void action(kind, true); }} />}<ButtonLink variant="text" className="detail-back" to={localizedPath(locale, 'admin/users')}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''} /><ErrorNotice code={error} /><SuccessNotice message={success ? t('userUpdated') : undefined} />{!user && !error && <Busy />}{user && <>
         <section className="card"><div className="card-body user-detail-grid"><div><small>{t('name')}</small><strong>{user.name}</strong></div><div><small>{t('email')}</small><strong>{user.email}</strong></div><div><small>{t('status')}</small><UserStatus user={user} /></div><div><small>{t('role')}</small><strong>{t(user.role === 'admin' ? 'admin' : 'user')}</strong></div><div><small>{t('joined')}</small><strong>{formatDate(user.createdAt, locale)}</strong></div><div><small>{t('emailVerification')}</small><strong>{t(user.emailVerified ? 'verified' : 'unverified')}</strong></div><div className="full-width"><small>{t('accountId')}</small><code>{user.id}</code></div>{user.banReason && <div className="full-width"><small>{t('reason')}</small><strong>{user.banReason}</strong></div>}</div></section>
         <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
     </>}</>;

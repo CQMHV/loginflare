@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { errorCode, request } from './api';
 import i18n from './i18n';
-import { Button, Progress, TextField } from './material';
+import { Button, Divider, List, ListItem, Progress, TextField } from './material';
 
 interface EmailAddress {
     id: string;
@@ -117,11 +117,14 @@ export function EmailsPage({ refreshIdentity }: { refreshIdentity: () => Promise
                 }}>{t('emails.resendCode')}</Button><Button className="text-button" disabled={busy} onClick={() => choose()}>{t('cancel')}</Button></div>
             </form>
         </section>}
-        {emails && <section className="card"><div className="card-heading"><h2>{t('emails.list')}</h2><p>{t('emails.rules')}</p></div><ul className="email-list">
-            {emails.map((address) => <li className="email-row" key={address.id}>
-                <div className="email-description"><strong>{address.email}</strong><div className="email-badges"><span className={`badge ${address.primary ? 'current' : ''}`}>{t(address.primary ? 'emails.primary' : 'emails.additional')}</span><span className={`badge ${address.verified ? 'verified' : ''}`}>{t(address.verified ? 'verified' : 'emails.pending')}</span></div>{address.primary && <p>{t('emails.primaryHint')}</p>}</div>
-                <div className="email-actions">{!address.verified && <Button className="secondary small" disabled={busy} onClick={() => choose({ kind: 'resend', address })} aria-label={`${t('emails.resendCode')}: ${address.email}`}>{t('emails.resendCode')}</Button>}{address.verified && !address.primary && <Button className="secondary small" disabled={busy} onClick={() => choose({ kind: 'set-primary', address })} aria-label={`${t('emails.setPrimary')}: ${address.email}`}>{t('emails.setPrimary')}</Button>}{!address.primary && <Button className="text-button danger" disabled={busy} onClick={() => choose({ kind: 'remove', address })} aria-label={`${t('emails.remove')}: ${address.email}`}>{t('emails.remove')}</Button>}</div>
-            </li>)}
-        </ul></section>}
+        {emails && <section className="card"><div className="card-heading"><h2>{t('emails.list')}</h2><p>{t('emails.rules')}</p></div><List className="email-list" label={t('emails.list')}>
+            {emails.map((address, index) => <Fragment key={address.id}>
+                {index > 0 && <Divider />}
+                <ListItem className="email-row" headline={<strong>{address.email}</strong>} supportingText={<div className="email-description">
+                    <div className="email-badges"><span className={`badge ${address.primary ? 'current' : ''}`}>{t(address.primary ? 'emails.primary' : 'emails.additional')}</span><span className={`badge ${address.verified ? 'verified' : ''}`}>{t(address.verified ? 'verified' : 'emails.pending')}</span></div>{address.primary && <p>{t('emails.primaryHint')}</p>}
+                    {!address.primary && <div className="email-actions">{!address.verified && <Button className="secondary small" disabled={busy} onClick={() => choose({ kind: 'resend', address })} aria-label={`${t('emails.resendCode')}: ${address.email}`}>{t('emails.resendCode')}</Button>}{address.verified && <Button className="secondary small" disabled={busy} onClick={() => choose({ kind: 'set-primary', address })} aria-label={`${t('emails.setPrimary')}: ${address.email}`}>{t('emails.setPrimary')}</Button>}<Button className="text-button danger" disabled={busy} onClick={() => choose({ kind: 'remove', address })} aria-label={`${t('emails.remove')}: ${address.email}`}>{t('emails.remove')}</Button></div>}
+                </div>} />
+            </Fragment>)}
+        </List></section>}
     </>;
 }

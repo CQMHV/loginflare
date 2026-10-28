@@ -148,7 +148,7 @@ export function ApplicationEditor({ locale, create = false }: { locale: Locale; 
 
     return <>
         {confirmation && <ConfirmationDialog title={t(confirmation === 'disable' ? 'oauth.disableApplication' : 'oauth.rotateSecret')} description={t(confirmation === 'disable' ? 'oauth.disableApplicationConfirm' : 'oauth.rotateSecretConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void control(kind); }} />}
-        <Link className="back-link detail-back" to={localizedPath(locale, 'admin/applications')}>{t('oauth.backToApplications')}</Link>
+        <ButtonLink variant="text" className="detail-back" to={localizedPath(locale, 'admin/applications')}>{t('oauth.backToApplications')}</ButtonLink>
         <div className="page-heading"><div><h1>{t(create ? 'oauth.createApplication' : 'oauth.applicationDetails')}</h1><p>{application?.name ?? t('oauth.applicationsDescription')}</p></div>{application && <Status disabled={application.disabled} />}</div>
         <ErrorNotice code={error} />
         {saved && <div className="notice success" role="status">{t(created ? 'oauth.applicationCreated' : 'oauth.applicationSaved')}</div>}
