@@ -478,6 +478,58 @@ describe('application management and protocol boundaries', () => {
         }
     });
 
+    it.each([
+        { path: '/api/auth/.well-known/openid-configuration', headStatus: 200 },
+        { path: '/api/auth/.well-known/oauth-authorization-server', headStatus: 200 },
+        { path: '/.well-known/oauth-authorization-server/api/auth', headStatus: 200 },
+        // The native JWT plugin exposes GET only; its HEAD error still needs CORS.
+        { path: '/api/auth/jwks', headStatus: 404 },
+    ])('preserves public CORS on discovery and signing-key responses at $path', async ({ path, headStatus }) => {
+        const client = harness();
+        for (const method of ['GET', 'HEAD']) {
+            const response = await protocol(client, path, { method, headers: { Origin: appOrigin } });
+            expect(response.status).toBe(method === 'HEAD' ? headStatus : 200);
+            expect(response.headers.get('access-control-allow-origin')).toBe('*');
+            expect(response.headers.get('access-control-allow-credentials')).toBeNull();
+            if (method === 'HEAD') expect(await response.text()).toBe('');
+        }
+    });
+
+    it('preserves registered SPA CORS on successful token and UserInfo responses', async () => {
+        const { client, registered, cookie } = await fixture();
+        const { code, verifier } = await authorize(client, registered, cookie);
+        const response = await exchange(client, registered, code, verifier);
+        expect(response.status, await response.clone().text()).toBe(200);
+        expect(response.headers.get('access-control-allow-origin')).toBe(appOrigin);
+        expect(response.headers.get('vary')?.split(',').map((value) => value.trim())).toContain('Origin');
+        expect(response.headers.get('access-control-allow-credentials')).toBeNull();
+        const tokens = await response.json<Tokens>();
+        for (const method of ['GET', 'POST']) {
+            const profile = await protocol(client, '/api/auth/oauth2/userinfo', {
+                method, headers: { Origin: appOrigin, Authorization: `Bearer ${tokens.access_token}` },
+                ...(method === 'POST' ? { form: {} } : {}),
+            });
+            expect(profile.status, await profile.clone().text()).toBe(200);
+            expect(profile.headers.get('access-control-allow-origin')).toBe(appOrigin);
+            expect(profile.headers.get('vary')?.split(',').map((value) => value.trim())).toContain('Origin');
+            expect(profile.headers.get('access-control-allow-credentials')).toBeNull();
+            expect(profile.headers.get('access-control-expose-headers')).toBe('WWW-Authenticate');
+            expect(await profile.json()).toMatchObject({ email: 'person@example.test', email_verified: true });
+        }
+    });
+
+    it('does not grant protocol CORS to a confidential Web application origin', async () => {
+        const { client } = await fixture('web');
+        for (const method of ['GET', 'POST']) {
+            const response = await protocol(client, '/api/auth/oauth2/userinfo', {
+                method, headers: { Origin: appOrigin, Authorization: 'Bearer invalid' },
+                ...(method === 'POST' ? { form: {} } : {}),
+            });
+            expect(response.status).toBe(403);
+            expect(response.headers.get('access-control-allow-origin')).toBeNull();
+        }
+    });
+
     it('limits protocol CORS to registered application origins without granting account or admin access', async () => {
         const { client, registered, cookie, adminCookie } = await fixture();
         const preflight = await protocol(client, '/api/auth/oauth2/token', { method: 'OPTIONS', headers: { Origin: appOrigin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } });
@@ -486,6 +538,14 @@ describe('application management and protocol boundaries', () => {
         expect(preflight.headers.get('access-control-allow-credentials')).not.toBe('true');
         const foreign = await protocol(client, '/api/auth/oauth2/token', { method: 'OPTIONS', headers: { Origin: 'https://attacker.invalid', 'Access-Control-Request-Method': 'POST' } });
         expect(foreign.headers.get('access-control-allow-origin')).toBeNull();
+        for (const options of [
+            { headers: { Origin: 'https://attacker.invalid' } },
+            { headers: { Origin: appOrigin }, cookie },
+        ]) {
+            const denied = await protocol(client, '/api/auth/oauth2/token', { ...options, form: { grant_type: 'refresh_token', client_id: registered.application.clientId, refresh_token: 'invalid' } });
+            expect(denied.status).toBe(403);
+            expect(denied.headers.get('access-control-allow-origin')).toBeNull();
+        }
         const account = await client.request('/api/auth/update-user', { cookie, body: { name: 'Cross origin' }, headers: { Origin: appOrigin } });
         expect(account.status).toBe(403);
         const management = await client.request(`/api/admin/applications/${registered.application.clientId}`, { cookie: adminCookie, method: 'PATCH', body: { name: 'Cross origin' }, headers: { Origin: appOrigin } });

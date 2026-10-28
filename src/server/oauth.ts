@@ -89,7 +89,8 @@ oauth.all('*', async (c) => {
             }
         }
     }
-    return response;
+    // Merge the protocol headers prepared on this context into the native response.
+    return c.newResponse(response.body, response);
 });
 
 export const consent = new Hono<{ Bindings: Env }>();

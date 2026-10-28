@@ -110,7 +110,8 @@ app.route('/api/oauth', consent);
 app.all('/.well-known/oauth-authorization-server/api/auth', async (c) => {
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cache-Control', 'no-store');
-    return createAuth(c.env).handler(c.req.raw);
+    const response = await createAuth(c.env).handler(c.req.raw);
+    return c.newResponse(response.body, response);
 });
 app.use('/api/auth/*', async (c, next) => {
     if (Object.hasOwn(protocolRoutes, c.req.path.slice('/api/auth'.length))) return oauth.fetch(c.req.raw, c.env, c.executionCtx);
