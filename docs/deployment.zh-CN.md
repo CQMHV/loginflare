@@ -23,6 +23,8 @@ staging 地址为 `https://loginflare-staging.cqmhv.workers.dev`，使用独立�
 
 已提交的 `wrangler.jsonc` 包含本地配置以及独立的 `staging`、`production` 节。构建远程环境前，先填入其 D1 数据库 ID 和公开配置。本地密钥放在被忽略的 `.dev.vars` 中；`pnpm setup:local` 可安全生成，已有文件不会覆盖。远程认证和 Turnstile 密钥使用 Worker Secrets，不写进已提交配置。不同环境的认证密钥应独立，常规重新部署时保持稳定。
 
+保留 `nodejs_compat` 和 `global_fetch_strictly_public` 两个兼容标志。OIDC 退出会请求 issuer 的 `/api/auth/jwks` 验证 ID Token hint；后一个标志让同区请求经过公开 Worker 入口，即使使用较新的兼容日期也需要显式配置。参见 [Cloudflare 请求路由说明](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public)。
+
 | 配置 | 位置 | 用途 |
 | --- | --- | --- |
 | `APP_ENV` | 对应环境的 `vars` | `development`、`staging` 或 `production` |

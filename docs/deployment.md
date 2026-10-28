@@ -23,6 +23,8 @@ The staging environment is available at `https://loginflare-staging.cqmhv.worker
 
 The committed `wrangler.jsonc` contains a local configuration and explicit `staging` / `production` sections. Replace the remote D1 placeholder IDs and empty public configuration before building for either environment. Keep development secrets in the ignored `.dev.vars` file; `pnpm setup:local` generates it safely without overwriting an existing file. Store remote authentication and Turnstile secrets as Worker secrets, never as committed configuration. Authentication secrets must be unique per environment and remain stable across routine redeployments.
 
+Keep the `global_fetch_strictly_public` compatibility flag enabled alongside `nodejs_compat`. OIDC logout verifies its ID Token hint by fetching the issuer's `/api/auth/jwks`; this flag routes that same-zone request through the public Worker entry point. It requires explicit configuration even with a recent compatibility date. See [Cloudflare's fetch routing documentation](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public).
+
 | Setting | Location | Purpose |
 | --- | --- | --- |
 | `APP_ENV` | Environment's `vars` | `development`, `staging`, or `production` |
