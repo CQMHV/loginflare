@@ -24,7 +24,16 @@ export async function sendAccountMail(env: Env, kind: 'verify' | 'reset', user: 
     const path = localeToPath[locale];
     const url = new URL(sourceUrl);
     if (url.origin !== env.AUTH_URL) throw new Error('Invalid mail origin');
-    url.searchParams.set('callbackURL', `${env.AUTH_URL}/${path}/${kind === 'verify' ? 'verified' : 'reset-password'}`);
+    const callback = new URL(`${env.AUTH_URL}/${path}/${kind === 'verify' ? 'verified' : 'reset-password'}`);
+    const originalCallback = url.searchParams.get('callbackURL');
+    if (originalCallback) {
+        const original = new URL(originalCallback, env.AUTH_URL);
+        if (original.origin !== env.AUTH_URL) throw new Error('Invalid mail callback origin');
+        // Preserve the provider-signed flow query while the account preference
+        // determines the email and result-page language.
+        callback.search = original.search;
+    }
+    url.searchParams.set('callbackURL', callback.toString());
     const [subject, introduction, label] = copy[locale][kind];
     const link = url.toString();
     try {

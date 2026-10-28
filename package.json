@@ -15,6 +15,9 @@
         "test": "vitest run",
         "test:e2e": "playwright test",
         "test:ops": "node --test scripts/database.test.mjs",
+        "example:web": "node --env-file-if-exists=examples/server-web/.env examples/server-web/server.mjs",
+        "example:spa": "vite --config examples/spa/vite.config.ts",
+        "example:tls": "node examples/setup-tls.mjs",
         "db:migrate": "node scripts/database.mjs migrate --local",
         "admin:promote": "node scripts/database.mjs promote",
         "types": "wrangler types",
@@ -22,6 +25,7 @@
         "check": "pnpm typecheck && pnpm test && pnpm test:ops && pnpm build"
     },
     "dependencies": {
+        "@better-auth/oauth-provider": "1.7.13",
         "@material/web": "2.5.0",
         "better-auth": "1.7.13",
         "hono": "4.13.14",
@@ -43,6 +47,8 @@
         "@vitejs/plugin-react": "6.1.2",
         "cf": "1.0.0-beta.22",
         "miniflare": "4.20260730.0",
+        "oidc-client-ts": "3.5.0",
+        "openid-client": "6.8.8",
         "typescript": "7.0.2",
         "vite": "8.3.5",
         "vitest": "5.0.5",

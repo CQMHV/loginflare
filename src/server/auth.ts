@@ -1,12 +1,15 @@
 import { betterAuth } from 'better-auth';
-import { admin, captcha } from 'better-auth/plugins';
+import { admin, captcha, jwt } from 'better-auth/plugins';
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { z } from 'zod';
 import { validateConfig, type Env } from './config.ts';
 import { sendAccountMail } from './mail.ts';
 import { locales } from '../shared/locales.ts';
+import { createOAuthPolicy } from './oauth-policy.ts';
 
 export function createAuth(env: Env, delivery = { failed: false }) {
     validateConfig(env);
+    const policy = createOAuthPolicy(env);
     async function send(kind: 'verify' | 'reset', user: { email: string; name: string; locale?: unknown }, url: string) {
         try {
             await sendAccountMail(env, kind, user, url);
@@ -19,6 +22,7 @@ export function createAuth(env: Env, delivery = { failed: false }) {
         appName: 'Loginflare',
         baseURL: env.AUTH_URL,
         basePath: '/api/auth',
+        disabledPaths: ['/token'],
         secret: env.BETTER_AUTH_SECRET,
         database: env.DB,
         trustedOrigins: [env.AUTH_URL],
@@ -28,6 +32,7 @@ export function createAuth(env: Env, delivery = { failed: false }) {
             enabled: true,
             requireEmailVerification: true,
             revokeSessionsOnPasswordReset: true,
+            onPasswordReset: policy.onPasswordReset,
             sendResetPassword: ({ user, url }) => send('reset', user, url),
         },
         emailVerification: {
@@ -67,7 +72,24 @@ export function createAuth(env: Env, delivery = { failed: false }) {
             },
         },
         plugins: [
+            policy.plugin,
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
+            jwt({
+                jwks: { keyPairConfig: { alg: 'RS256' } },
+                jwt: { issuer: `${env.AUTH_URL}/api/auth` },
+                disableSettingJwtHeader: true,
+            }),
+            oauthProvider({
+                extensions: [policy.extension],
+                loginPage: '/en-us/login',
+                consentPage: '/en-us/consent',
+                scopes: ['openid', 'profile', 'email', 'offline_access'],
+                grantTypes: ['authorization_code', 'refresh_token'],
+                allowDynamicClientRegistration: false,
+                allowUnauthenticatedClientRegistration: false,
+                clientReference: () => 'loginflare',
+                clientPrivileges: ({ user }) => user?.role === 'admin' && !user?.banned,
+            }),
             captcha({
                 provider: 'cloudflare-turnstile',
                 secretKey: env.TURNSTILE_SECRET_KEY,

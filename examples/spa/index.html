@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en-US">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="referrer" content="no-referrer">
+        <title>Loginflare — SPA example</title>
+    </head>
+    <body>
+        <main>
+            <h1>SPA example</h1>
+            <p>This independent application uses <code>oidc-client-ts</code>. Tokens stay in memory.</p>
+            <p id="status" role="status">Loading configuration…</p>
+            <pre id="profile" hidden></pre>
+            <nav>
+                <button id="signin" hidden>Sign in with Loginflare</button>
+                <button id="refresh" hidden>Refresh tokens</button>
+                <button id="logout" hidden>Sign out of this app</button>
+                <button id="logout-center" hidden>Sign out of this app and Loginflare</button>
+            </nav>
+            <p>Reloading discards tokens. An application that was signed in starts a new top-level authorization request using the existing Loginflare session.</p>
+        </main>
+        <script type="module" src="/main.ts"></script>
+    </body>
+</html>

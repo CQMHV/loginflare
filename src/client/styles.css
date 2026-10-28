@@ -272,6 +272,17 @@ tr:last-child td { border-bottom: 0; }
 .user-detail-grid strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
 .full-width { grid-column: 1 / -1; }
 .action-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.application-name { font-weight: 500; }
+.application-id { display: block; margin-top: 8px; color: var(--muted); }
+.scope-options { display: flex; flex-direction: column; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.scope-options legend { font-weight: 500; padding: 0; margin-bottom: 12px; }
+.scope-options p, .card-body > .muted { font-size: 14px; line-height: 1.6; }
+.card-body.stack-form > md-outlined-select { max-width: 560px; }
+.secret-notice { border-color: var(--md-sys-color-primary); margin-top: 24px; }
+.consent-permissions { padding-left: 24px; margin: 20px 0 28px; }
+.consent-permissions li { margin: 12px 0; line-height: 1.6; }
+.consent-account { padding: 16px; border-radius: 16px; background: var(--md-sys-color-surface-container); overflow-wrap: anywhere; margin-bottom: 24px; font-size: 14px; }
+.oauth-context { font-size: 14px; line-height: 1.6; color: var(--muted); margin-bottom: 24px; }
 md-dialog { min-width: min(320px, calc(100vw - 48px)); max-width: min(560px, calc(100vw - 48px)); }
 md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px; }
 .state-page { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; gap: 24px; }
@@ -292,6 +303,7 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .header-actions { margin-left: auto; }
 }
 @media (max-width: 760px) {
+    .page-heading { flex-wrap: wrap; }
     .auth-shell { display: block; padding: 0; }
     .auth-story { display: none; }
     .mobile-brand { display: block; }

@@ -12,8 +12,8 @@ Browser: React 19 + Material Web + React Router + react-i18next
 Cloudflare Worker
     +-- Workers Static Assets: browser application
     +-- Hono: routing, request boundaries, authorization, safe errors
-         +-- Better Auth: email/password, sessions, admin and CAPTCHA plugins
-              +-- D1: users, accounts, sessions, verification and rate-limit records
+         +-- Better Auth: email/password, sessions, admin, CAPTCHA, OAuth provider and JWT
+              +-- D1: accounts, sessions, verification, rate limits, OAuth clients/tokens/consents, signing keys
               +-- Email Service binding: transactional delivery
               +-- Turnstile: server-side verification
 ```
@@ -40,6 +40,10 @@ API routes are not localized. `/api/auth/*` reaches the selected Better Auth end
 
 Only required user and administrator operations are exposed. The presence of a Better Auth plugin does not expose all of its operations. Role assignment, account deletion, email changes, administrator-set passwords, and impersonation are excluded from the public HTTP surface.
 
+External applications use the dedicated OAuth/OIDC surface. The issuer is `${AUTH_URL}/api/auth`; protocol requests use their native methods and content types. Registered SPA callback Origins receive protocol-only CORS access without account cookies. Account and administrator APIs remain same-origin JSON. Discovery and JWKS are public, while the JWT plugin's standalone `/token` route, dynamic registration, native/device grants, and client credentials remain closed.
+
+Application management is exposed through `/api/admin/applications` with server-side administrator checks. It calls the provider's management APIs and never exposes general client self-registration. Clients share an instance reference, so they are managed by all instance administrators rather than owned by the administrator who created them. Redirects use the upstream web-client policy: exact HTTPS URLs on non-loopback hostnames. The local examples satisfy that policy with HTTPS `web.localhost` and `spa.localhost` hostnames; they do not use the provider's native-client redirect exceptions.
+
 User lookup uses an exact email equality filter through Better Auth's native list-users endpoint. The UI trims and lowercases email input. The HTTP boundary permits only the email equality filter, supported sort fields, and bounded pagination. This keeps long addresses searchable within D1's LIKE/GLOB pattern limits without introducing a separate query implementation.
 
 ## Identity and authorization
@@ -50,16 +54,20 @@ The console can inspect ordinary users, suspend/restore them, and revoke their s
 
 Sessions are stored and checked in D1, without a cached cookie user snapshot or read replicas. Suspension revokes sessions, and restoring an account does not restore them. Password change revokes other sessions; password recovery revokes all sessions. No browser persistent storage contains authentication tokens.
 
+The OAuth provider and core are pinned together at 1.7.13. Authorization code + PKCE S256 is required for both Web and SPA clients. The provider owns code consumption, token rotation, client secrets, consent, and protocol validation; its JWT plugin issues RS256 ID Tokens and encrypts private signing keys stored in D1. Access tokens are opaque because no business resource audiences are registered. Roles and administrator capabilities are not issued as application permissions.
+
+Ordinary logout preserves the provider's `offline_access` refresh-token semantics. Security events have a separate Loginflare revocation policy. The [integration guide](oauth.md) describes the resulting behavior and the limits of application-owned sessions. There is no global logout notification service or custom OAuth protocol implementation.
+
 ## Mail and failure behavior
 
 Email Service sends verification and password recovery messages using both HTML and plain text in the account's preferred language. The verification/reset token value must survive URL handling unchanged. Delivery failures provide a retry/resend path, without automatically switching providers or bypassing verification.
 
 Local email delivery is simulated. Production configuration must include the verified sending domain and required email binding. Logs must omit secrets, passwords, session tokens, and full recovery or verification URLs.
 
-Structured API request logs include a generated request ID, method, known route, status, and duration. Reset-link path tokens are replaced with `:token`; request queries, bodies, and cookies are never logged. Automatic platform invocation logs and traces are disabled, and query-string redaction is enabled, so platform URL capture does not bypass application redaction.
+Structured API request logs include a generated request ID, method, known route, status, and duration. Reset-link path tokens are replaced with `:token`; request queries, bodies, cookies, OAuth codes, client secrets, and tokens are never logged. Automatic platform invocation logs and traces are disabled, and query-string redaction is enabled, so platform URL capture does not bypass application redaction.
 
 Turnstile and persistent rate limits protect sensitive authentication endpoints. Missing/invalid challenges and verification service failures reject the request. Production must never use Turnstile test credentials.
 
 ## Validation boundaries
 
-Vitest and Workers integration tests exercise the Worker with local data. Playwright exercises localized user and administrator journeys in a real browser. Local mail simulation and Turnstile test behavior are used instead of production resources. Remote deployment, real delivery, and resource provisioning are separate operator actions.
+Vitest and Workers integration tests exercise the Worker with local data. Playwright exercises localized user and administrator journeys and independent standard-client examples in a real browser. Example TLS certificates are local files, browser certificate exceptions and host-resolution overrides apply only to the test process, and system certificate/DNS settings remain unchanged. Local mail simulation and Turnstile test behavior are used instead of production resources. Remote deployment, real delivery, and resource provisioning are separate operator actions.

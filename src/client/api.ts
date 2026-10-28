@@ -37,7 +37,7 @@ export async function request<T>(path: string, body?: unknown): Promise<T> {
     return fetchJson<T>(`/api/auth${path}`, body);
 }
 
-export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string): Promise<T> {
+export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH'): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (captchaToken) headers['x-captcha-response'] = captchaToken;
@@ -45,7 +45,7 @@ export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: 
     let response: Response;
     try {
         response = await fetch(path, {
-            method: body === undefined ? 'GET' : 'POST',
+            method: method ?? (body === undefined ? 'GET' : 'POST'),
             credentials: 'same-origin',
             headers,
             body: body === undefined ? undefined : JSON.stringify(body),

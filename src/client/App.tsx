@@ -5,10 +5,12 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
-import { captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
+import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, LanguageSelect, Progress, TextField, ThemeMenu } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
+import { ApplicationEditor, ApplicationsPage } from './Applications';
+import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
 
 const preferenceKey = 'loginflare.locale';
 
@@ -236,8 +238,10 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const token = new URLSearchParams(location.search).get('token');
     const urlError = new URLSearchParams(location.search).get('error');
     const needsCaptcha = ['login', 'signup', 'verify-email', 'forgot-password'].includes(mode);
-    const callbackURL = `${window.location.origin}${localizedPath(locale, 'verified')}`;
-    const resetURL = `${window.location.origin}${localizedPath(locale, 'reset-password')}`;
+    const oauthQuery = oauthSearch(location.search);
+    const authPath = (page: string, extra?: Record<string, string>) => withOAuthSearch(localizedPath(locale, page), location.search, extra);
+    const callbackURL = `${window.location.origin}${authPath('verified')}`;
+    const resetURL = `${window.location.origin}${authPath('reset-password')}`;
 
     useEffect(() => {
         setError(undefined);
@@ -246,7 +250,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         setConfirmPassword('');
     }, [mode]);
 
-    if (identity && (mode === 'login' || mode === 'signup')) return <Navigate to={localizedPath(locale, 'account')} replace />;
+    if (identity && !oauthQuery && (mode === 'login' || mode === 'signup')) return <Navigate to={localizedPath(locale, 'account')} replace />;
 
     const titleKeys: Record<AuthMode, string> = {
         login: 'loginTitle', signup: 'signupTitle', 'verify-email': 'verificationTitle',
@@ -273,6 +277,12 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         try {
             switch (mode) {
                 case 'login':
+                    if (oauthQuery) {
+                        const result = await providerRequest('/sign-in/email', { email, password, rememberMe }, captchaToken);
+                        savePreference(locale);
+                        if (result?.redirect) return;
+                        throw new ApiError('INVALID_OAUTH_QUERY', 400);
+                    }
                     await captchaRequest('/sign-in/email', { email, password, rememberMe }, captchaToken);
                     await refresh();
                     savePreference(locale);
@@ -281,7 +291,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                 case 'signup':
                     await captchaRequest('/sign-up/email', { email, password, name, locale, callbackURL }, captchaToken);
                     savePreference(locale);
-                    navigate(`${localizedPath(locale, 'verify-email')}?email=${encodeURIComponent(email)}`);
+                    navigate(authPath('verify-email', { email }));
                     break;
                 case 'verify-email':
                     await captchaRequest('/send-verification-email', { email, callbackURL }, captchaToken);
@@ -311,25 +321,71 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         {['verify-email', 'forgot-password', 'reset-password', 'verified'].includes(mode) && <div className="auth-step-icon"><Icon name={mode === 'verified' ? 'check' : mode === 'verify-email' ? 'mail' : 'lock'} size={26} /></div>}
         <h2>{t(titleKeys[mode])}</h2>
         <p className="section-description">{t(descriptionKeys[mode])}</p>
+        {oauthQuery && <p className="oauth-context">{t('oauth.authorizationPending')}</p>}
         <ErrorNotice code={urlError ? 'INVALID_TOKEN' : error === 'PASSWORD_MISMATCH' ? undefined : error} />
         {error === 'PASSWORD_MISMATCH' && <div className="notice error" role="alert">{t('passwordMismatch')}</div>}
         <SuccessNotice message={success ? t(success) : undefined} />
-        {mode === 'verified' && !urlError ? <ButtonLink className="primary full" to={localizedPath(locale, 'login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
+        {mode === 'verified' && !urlError ? <ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
             mode === 'reset-password' && (!token || urlError) ? <div className="notice error" role="alert">{t('invalidLink')}</div> :
-            mode === 'reset-password' && success ? <ButtonLink className="primary full" to={localizedPath(locale, 'login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
+            mode === 'reset-password' && success ? <ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
             mode !== 'verified' && <form onSubmit={(event) => { void submit(event); }} className="stack-form">
                 {mode === 'signup' && <TextField label={t('name')} autoComplete="nickname" name="name" value={name} onValueChange={setName} placeholder={t('namePlaceholder')} maxLength={100} required />}
                 {mode !== 'reset-password' && <TextField label={t('email')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} required />}
                 {['login', 'signup', 'reset-password'].includes(mode) && <TextField label={t(mode === 'reset-password' ? 'newPassword' : 'password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" name="password" value={password} onValueChange={setPassword} minLength={mode === 'login' ? undefined : 8} maxLength={128} supportingText={mode === 'login' ? undefined : t('passwordHint')} required />}
                 {(mode === 'signup' || mode === 'reset-password') && <TextField label={t('confirmPassword')} autoComplete="new-password" type="password" name="confirmPassword" value={confirmPassword} onValueChange={setConfirmPassword} minLength={8} maxLength={128} required />}
-                {mode === 'login' && <div className="form-options"><Checkbox label={t('rememberMe')} checked={rememberMe} onCheckedChange={setRememberMe} /><Link to={localizedPath(locale, 'forgot-password')}>{t('forgotPassword')}</Link></div>}
+                {mode === 'login' && <div className="form-options"><Checkbox label={t('rememberMe')} checked={rememberMe} onCheckedChange={setRememberMe} /><Link to={authPath('forgot-password')}>{t('forgotPassword')}</Link></div>}
                 {needsCaptcha && <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />}
                 <Button type="submit" className="primary full" busy={busy} disabled={needsCaptcha && !captchaToken}>{busy ? t('working') : t(mode === 'login' ? 'login' : mode === 'signup' ? 'signup' : mode === 'verify-email' ? 'resend' : mode === 'forgot-password' ? 'sendReset' : 'resetPassword')}<Icon name="arrow" size={18} /></Button>
             </form>}
-        {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={localizedPath(locale, 'signup')}>{t('signup')}</Link></p><Link className="resend-link" to={`${localizedPath(locale, 'verify-email')}${email ? `?email=${encodeURIComponent(email)}` : ''}`}>{t('resend')}</Link></>}
-        {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={localizedPath(locale, 'login')}>{t('login')}</Link></p>}
-        {mode === 'signup' && error && <Link className="resend-link" to={`${localizedPath(locale, 'verify-email')}?email=${encodeURIComponent(email)}`}>{t('resend')}</Link>}
-        {['verify-email', 'forgot-password', 'reset-password'].includes(mode) && <Link className="back-link" to={localizedPath(locale, 'login')}><Icon name="back" size={15} />{t('backToLogin')}</Link>}
+        {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p><Link className="resend-link" to={authPath('verify-email', email ? { email } : undefined)}>{t('resend')}</Link></>}
+        {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
+        {mode === 'signup' && error && <Link className="resend-link" to={authPath('verify-email', { email })}>{t('resend')}</Link>}
+        {['verify-email', 'forgot-password', 'reset-password'].includes(mode) && <Link className="back-link" to={authPath('login')}><Icon name="back" size={15} />{t('backToLogin')}</Link>}
+    </AuthLayout>;
+}
+
+function ConsentPage() {
+    const { locale, identity } = useApp();
+    const { t } = useTranslation();
+    const location = useLocation();
+    const [consent, setConsent] = useState<{ client: { clientId: string; name: string }; scopes: string[] }>();
+    const [error, setError] = useState<string>();
+    const [busy, setBusy] = useState(false);
+    const query = oauthSearch(location.search);
+    useEffect(() => {
+        if (!identity || !query) return;
+        let current = true;
+        setError(undefined); setConsent(undefined);
+        void fetchJson<{ client: { clientId: string; name: string }; scopes: string[] }>(`/api/oauth/consent?${new URLSearchParams({ oauth_query: query })}`).then((data) => {
+            if (current) setConsent(data);
+        }).catch((cause) => { if (current) setError(errorCode(cause)); });
+        return () => { current = false; };
+    }, [query, identity]);
+    async function decide(accept: boolean) {
+        setBusy(true); setError(undefined);
+        try {
+            const result = await providerRequest('/oauth2/consent', { accept });
+            if (!result?.redirect) throw new ApiError('INVALID_OAUTH_QUERY', 400);
+        }
+        catch (cause) { setError(errorCode(cause)); setBusy(false); }
+    }
+    if (!query) return <AuthLayout><h2>{t('oauth.consentTitle')}</h2><ErrorNotice code="INVALID_OAUTH_QUERY" /><p className="oauth-context">{t('oauth.restartAuthorization')}</p></AuthLayout>;
+    if (identity === undefined) return <AuthLayout><Busy /></AuthLayout>;
+    if (!identity) return <Navigate to={withOAuthSearch(localizedPath(locale, 'login'), location.search)} replace />;
+    return <AuthLayout>
+        <div className="auth-step-icon"><Icon name="shield" size={26} /></div>
+        <h2>{t('oauth.consentTitle')}</h2>
+        <ErrorNotice code={error} />
+        {!consent && !error && <Busy />}
+        {consent && <>
+            <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name })}</p>
+            <p className="consent-account">{t('oauth.consentAccount', { email: identity.user.email })}</p>
+            <p>{t('oauth.consentPermissions')}</p>
+            <ul className="consent-permissions">{consent.scopes.map((scope) => <li key={scope}>{t(`oauth.scope_${scope}`)}</li>)}</ul>
+            <p className="section-description">{t('oauth.consentNotice')}</p>
+            <div className="action-row"><Button busy={busy} onClick={() => { void decide(true); }}>{t('oauth.allow')}</Button><Button className="secondary" disabled={busy} onClick={() => { void decide(false); }}>{t('oauth.deny')}</Button></div>
+        </>}
+        {error && <p className="oauth-context">{t('oauth.restartAuthorization')}</p>}
     </AuthLayout>;
 }
 
@@ -369,7 +425,7 @@ function AccountLayout() {
                 <NavLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavLink>
                 <NavLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavLink>
                 <NavLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavLink>
-                {identity?.user.role === 'admin' && <><p className="nav-label admin-label">{t('administration')}</p><NavLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavLink></>}
+                {identity?.user.role === 'admin' && <><p className="nav-label admin-label">{t('administration')}</p><NavLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavLink><NavLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavLink></>}
             </nav>
             <div className="sidebar-bottom"><span className="small-cloud">☁</span><p>{t('tagline')}</p><small>Cloudflare Workers + D1</small></div>
         </aside>
@@ -558,6 +614,7 @@ function StatePage({ forbidden = false }: { forbidden?: boolean }) {
 
 function LocaleRoutes() {
     const { pathname } = useLocation();
+    const { locale } = useApp();
     const segment = pathname.split('/')[1] ?? '';
     if (!pathToLocale[segment] || pathname !== pathname.toLowerCase()) return <StatePage />;
     return <Routes>
@@ -569,6 +626,7 @@ function LocaleRoutes() {
             <Route path="verified" element={<AuthPage mode="verified" />} />
             <Route path="forgot-password" element={<AuthPage mode="forgot-password" />} />
             <Route path="reset-password" element={<AuthPage mode="reset-password" />} />
+            <Route path="consent" element={<ConsentPage />} />
             <Route element={<Protected />}>
                 <Route element={<AccountLayout />}>
                     <Route path="account" element={<ProfilePage />} />
@@ -577,6 +635,9 @@ function LocaleRoutes() {
                     <Route element={<Protected adminOnly />}>
                         <Route path="admin/users" element={<UsersPage />} />
                         <Route path="admin/users/detail" element={<UserDetailPage />} />
+                        <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
+                        <Route path="admin/applications/new" element={<ApplicationEditor key="new" locale={locale} create />} />
+                        <Route path="admin/applications/detail" element={<ApplicationEditor key="detail" locale={locale} />} />
                     </Route>
                 </Route>
             </Route>

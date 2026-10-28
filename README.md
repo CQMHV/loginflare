@@ -2,9 +2,9 @@
 
 An open-source account and identity center built for Cloudflare.
 
-[简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Architecture](docs/architecture.md)
+[简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Application integration](docs/oauth.md) · [Architecture](docs/architecture.md)
 
-Loginflare's first version provides email/password accounts, verified email sign-in, password recovery, a personal account center, session management, and a small administrator console. The application runs as one Cloudflare Worker with D1, Email Service, Turnstile, and Workers Static Assets.
+Loginflare provides email/password accounts, verified email sign-in, password recovery, a personal account center, session management, and an administrator console. Other websites can sign in with Loginflare through OAuth/OIDC. The application runs as one Cloudflare Worker with D1, Email Service, Turnstile, and Workers Static Assets.
 
 The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use lowercase language segments: `/en-us/` and `/zh-cn/`.
 
@@ -14,10 +14,12 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - Recover a forgotten password and change a known password.
 - Update a display name and manage active sessions.
 - Find users by exact email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
+- Register server Web and SPA clients through the administrator console, with exact redirects, consent, and client-secret rotation.
+- OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
 - English and Simplified Chinese pages, error messages, and transactional emails.
 - Better Auth account/session primitives, D1-backed rate limiting, and server-verified Turnstile challenges.
 
-The initial release does not offer external application/OIDC integration, social login, MFA, organizations, multi-tenancy, account deletion, email changes, browser-based role assignment, impersonation, or administrator-set passwords. Those endpoints are not exposed.
+This release does not offer social login, MFA, organizations, multi-tenancy, account deletion, email changes, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
 
 ## Interface
 
@@ -88,6 +90,14 @@ pnpm exec playwright install chromium
 - Protected responses are not cached. Logs must not contain passwords, session tokens, or full verification/reset links.
 
 The pinned Better Auth version uses password lengths of 8–128, one-hour verification and password-reset tokens, and seven-day sessions with its standard renewal behavior. Loginflare keeps those defaults while explicitly disabling cookie session caching.
+
+## Connect another application
+
+Administrators create applications under **Applications**. Server applications use `client_secret_basic`; browser SPAs use `none` and never receive a secret. Both require authorization code + PKCE S256 and first-use consent. Discover the provider at `${AUTH_URL}/api/auth/.well-known/openid-configuration`.
+
+See the [integration guide](docs/oauth.md) for callbacks, token lifetimes, security-event revocation, and the standard `openid-client` / `oidc-client-ts` examples. The examples use local HTTPS subdomains and locally generated certificates; no system trust-store changes or remote resources are required.
+
+Ordinary central logout retains native `offline_access` refresh authorization. Applications own their local sessions; logging out of Loginflare does not sign every application out. Security actions such as password recovery and account suspension have separate credential-invalidation rules described in the integration guide.
 
 ## Languages and URLs
 

@@ -2,9 +2,9 @@
 
 基于 Cloudflare 的开源账号与身份管理中心。
 
-[English](README.md) · [部署说明](docs/deployment.zh-CN.md) · [架构说明](docs/architecture.md)
+[English](README.md) · [部署说明](docs/deployment.zh-CN.md) · [应用接入](docs/oauth.zh-CN.md) · [架构说明](docs/architecture.md)
 
-首版提供邮箱与密码账号、邮箱验证、密码恢复、个人中心、会话管理和基础管理后台。应用通过一个 Cloudflare Worker 运行，使用 D1、Email Service、Turnstile 和 Workers Static Assets。
+提供邮箱与密码账号、邮箱验证、密码恢复、个人中心、会话管理和管理后台。其他网站可以通过 OAuth/OIDC 使用 Loginflare 登录。应用通过一个 Cloudflare Worker 运行，使用 D1、Email Service、Turnstile 和 Workers Static Assets。
 
 产品默认语言为 **`en-US`**，可手动选择 **`zh-CN`**。页面网址使用小写语言段：`/en-us/`、`/zh-cn/`。
 
@@ -14,10 +14,12 @@
 - 找回密码，以及通过当前密码修改密码。
 - 修改昵称、查看和撤销活跃会话。
 - 按完整邮箱精确查找与查看用户、停用与恢复普通账号、撤销用户会话。
+- 管理员注册服务端 Web 与 SPA 客户端，配置精确回调地址、用户同意与客户端密钥轮换。
+- 通过授权码 + PKCE S256 登录，提供 OIDC 发现、UserInfo、RS256 ID Token、刷新令牌和应用发起的中心退出。
 - 英文和简体中文页面、错误提示与事务邮件。
 - 复用 Better Auth 的账号与会话能力，使用 D1 持久化限流，服务端验证 Turnstile。
 
-首版不包含外部应用/OIDC 接入、社交登录、MFA、组织、多租户、删除账号、修改邮箱、网页分配角色、模拟登录或管理员代设密码，相应接口不对外开放。
+当前版本不包含社交登录、MFA、组织、多租户、删除账号、修改邮箱、网页分配角色、模拟登录或管理员代设密码。OAuth 机器客户端授权、原生/设备客户端、动态注册、自定义业务 API 权限和跨应用协同退出也不在范围内，相应接口不对外开放。
 
 ## 界面
 
@@ -88,6 +90,14 @@ pnpm exec playwright install chromium
 - 受保护响应不缓存；日志不应包含密码、会话令牌或完整的验证/重置链接。
 
 锁定的 Better Auth 版本默认要求密码长度为 8–128，邮箱验证和重置令牌有效期为一小时，会话有效期为七天并按组件默认规则续期。Loginflare 沿用这些默认值，同时明确关闭 Cookie 会话缓存。
+
+## 接入其他应用
+
+管理员在**应用**页面创建客户端。服务端应用使用 `client_secret_basic`；浏览器 SPA 使用 `none`，不获取客户端密钥。两者均要求授权码 + PKCE S256，并在首次使用时取得用户同意。发现文档位于 `${AUTH_URL}/api/auth/.well-known/openid-configuration`。
+
+[接入说明](docs/oauth.zh-CN.md)包含回调配置、令牌有效期、安全事件撤销策略，以及标准 `openid-client` / `oidc-client-ts` 示例。示例使用本地 HTTPS 子域和本地生成的证书，不修改系统证书信任，也不创建远程资源。
+
+普通中心退出保留上游 `offline_access` 刷新授权语义。应用自行管理本地会话，退出 Loginflare 不代表所有应用都退出。密码恢复、停用账号等安全操作另有凭据失效规则，详见接入说明。
 
 ## 语言与网址
 

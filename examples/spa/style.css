@@ -1,0 +1,8 @@
+:root { font-family: system-ui, sans-serif; color: #201a15; background: #fff8f4; }
+body { max-width: 48rem; margin: 3rem auto; padding: 0 1.5rem; }
+h1 { font-size: 2rem; }
+p { line-height: 1.5; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; border-radius: 1rem; background: #f4e5db; }
+nav { display: flex; flex-wrap: wrap; gap: .75rem; }
+button { font: inherit; border: 0; border-radius: 2rem; padding: .8rem 1.3rem; color: #201a15; background: #f38020; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }

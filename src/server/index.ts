@@ -4,6 +4,8 @@ import { secureHeaders } from 'hono/secure-headers';
 import { createAuth } from './auth';
 import { ConfigurationError, validateConfig, type Env } from './config';
 import { isLocale } from '../shared/locales';
+import { applications } from './applications';
+import { consent, oauth, protocolRoutes } from './oauth';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -14,6 +16,7 @@ const routes: Record<string, readonly string[]> = {
     '/request-password-reset': ['POST'],
     '/reset-password': ['POST'],
     '/get-session': ['GET'],
+    '/error': ['GET'],
     '/update-user': ['POST'],
     '/change-password': ['POST'],
     '/list-sessions': ['GET'],
@@ -28,7 +31,7 @@ const routes: Record<string, readonly string[]> = {
 
 const fields: Record<string, readonly string[]> = {
     '/sign-up/email': ['name', 'email', 'password', 'locale', 'callbackURL'],
-    '/sign-in/email': ['email', 'password', 'rememberMe', 'callbackURL'],
+    '/sign-in/email': ['email', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
     '/sign-out': [],
     '/send-verification-email': ['email', 'callbackURL'],
     '/request-password-reset': ['email', 'redirectTo'],
@@ -68,6 +71,9 @@ const headers = {
     xFrameOptions: 'DENY',
 } as const;
 const productionHeaders = secureHeaders({ ...headers, contentSecurityPolicy });
+// Native logout uses a browser form and its own document CSP. Send only the
+// origin as Referer so a same-origin form keeps a usable Origin header.
+const logoutHeaders = secureHeaders({ ...headers, referrerPolicy: 'strict-origin' });
 const developmentHeaders = secureHeaders({
     ...headers,
     contentSecurityPolicy: {
@@ -76,7 +82,10 @@ const developmentHeaders = secureHeaders({
         connectSrc: [...contentSecurityPolicy.connectSrc, 'ws://localhost:5173'],
     },
 });
-app.use('*', (c, next) => (c.env.APP_ENV === 'development' ? developmentHeaders : productionHeaders)(c, next));
+app.use('*', (c, next) => {
+    if (c.req.path === '/api/auth/oauth2/end-session' || c.req.path === '/api/auth/oauth2/end-session/confirm') return logoutHeaders(c, next);
+    return (c.env.APP_ENV === 'development' ? developmentHeaders : productionHeaders)(c, next);
+});
 
 app.use('/api/*', async (c, next) => {
     const started = Date.now();
@@ -92,6 +101,18 @@ app.get('/api/health', (c) => c.json({ status: 'ok' }));
 app.get('/api/config', (c) => {
     validateConfig(c.env);
     return c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY });
+});
+
+app.route('/api/admin/applications', applications);
+app.route('/api/oauth', consent);
+app.all('/.well-known/oauth-authorization-server/api/auth', async (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Cache-Control', 'no-store');
+    return createAuth(c.env).handler(c.req.raw);
+});
+app.use('/api/auth/*', async (c, next) => {
+    if (Object.hasOwn(protocolRoutes, c.req.path.slice('/api/auth'.length))) return oauth.fetch(c.req.raw, c.env, c.executionCtx);
+    await next();
 });
 
 app.all('/api/auth/*', async (c) => {
@@ -181,7 +202,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|signup|verify-email|verified|forgot-password|reset-password|account|account\/security|account\/sessions|admin\/users|admin\/users\/detail)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/security|account\/sessions|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);

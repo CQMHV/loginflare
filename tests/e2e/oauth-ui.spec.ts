@@ -1,0 +1,221 @@
+import { expect, test } from '@playwright/test';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { removeLocalApplications, removeLocalFixtures } from './database';
+import { snapshotEmails, waitForMail } from './mailbox';
+import { renderedTextContrast } from './contrast';
+
+const fixtureEmails: string[] = [];
+const fixtureClients: string[] = [];
+
+test.afterEach(() => {
+    removeLocalApplications(fixtureClients);
+    removeLocalFixtures(fixtureEmails);
+    fixtureClients.length = 0;
+    fixtureEmails.length = 0;
+});
+
+test('manages applications, consent, and signed registration/recovery continuation through Material Web', async ({ page, browser }) => {
+    test.setTimeout(240_000);
+    const email = `ui-${randomUUID()}@loginflare.test`;
+    fixtureEmails.push(email);
+    const password = 'OAuth-browser-password-917!';
+    const applicationName = `ui-oauth-${randomUUID()}`;
+    const callback = 'https://app.example.test/callback';
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.route('https://app.example.test/**', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Test application</title><p>Application callback reached.</p>' }));
+
+    const beforeSignup = await snapshotEmails();
+    await page.goto('/en-us/signup');
+    await page.getByLabel('Display name', { exact: true }).fill('OAuth UI Administrator');
+    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    await page.getByLabel('Confirm password', { exact: true }).fill(password);
+    const signup = page.getByRole('button', { name: 'Create account', exact: true });
+    await expect(signup).toBeEnabled({ timeout: 25_000 });
+    await signup.click();
+    await expect(page.getByRole('heading', { name: 'Check your inbox' })).toBeVisible();
+    await page.goto(await waitForMail(beforeSignup, 'verify'));
+    await page.getByRole('link', { name: 'Sign in', exact: true }).click();
+    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    const signin = page.getByRole('button', { name: 'Sign in', exact: true });
+    await expect(signin).toBeEnabled({ timeout: 25_000 });
+    await signin.click();
+    await expect(page).toHaveURL('/en-us/account');
+    execFileSync(process.execPath, ['scripts/database.mjs', 'promote', '--email', email, '--local'], { cwd: process.cwd(), stdio: 'pipe', timeout: 30_000 });
+    await page.reload();
+
+    await page.getByRole('link', { name: 'Applications', exact: true }).click();
+    await page.getByRole('link', { name: 'Create application', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Application type', exact: true })).toBeVisible();
+    await page.getByLabel('Application name', { exact: true }).fill(applicationName);
+    await page.getByLabel('Sign-in redirect URIs', { exact: true }).fill(callback);
+    await page.getByLabel('Sign-out redirect URIs', { exact: true }).fill('https://app.example.test/signed-out');
+    const createdResponse = page.waitForResponse((response) => response.url().endsWith('/api/admin/applications') && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Create application', exact: true }).click();
+    const response = await createdResponse;
+    expect(response.status(), await response.text()).toBe(201);
+    const created = await response.json();
+    fixtureClients.push(created.application.clientId);
+    await expect(page.getByRole('status')).toContainText('Application created.');
+    await expect(page.getByLabel('Client secret', { exact: true })).toHaveValue(created.clientSecret);
+    await page.getByRole('button', { name: 'I have saved the secret', exact: true }).click();
+    await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Application details', exact: true }).click();
+    await expect(page.getByLabel('Client ID', { exact: true })).toHaveValue(created.application.clientId);
+    await page.reload();
+    await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
+    await page.getByLabel('Application name', { exact: true }).fill(`${applicationName}-edited`);
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Application updated.');
+
+    await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
+    const rotatedResponse = page.waitForResponse((result) => result.url().endsWith('/rotate-secret') && result.request().method() === 'POST');
+    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    const rotation = await rotatedResponse;
+    expect(rotation.status()).toBe(200);
+    const rotated = await rotation.json();
+    expect(rotated.clientSecret).not.toBe(created.clientSecret);
+    await expect(page.getByLabel('Client secret', { exact: true })).toHaveValue(rotated.clientSecret);
+    await page.reload();
+    await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Disable application', exact: true }).click();
+    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await expect(page.getByText('Disabled', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Enable application', exact: true }).click();
+    await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: test.info().outputPath('application-desktop-dark.png'), fullPage: true });
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath('application-mobile-dark.png'), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    const authorize = (scope: string, state: string) => {
+        const verifier = randomBytes(32).toString('base64url');
+        const challenge = createHash('sha256').update(verifier).digest('base64url');
+        return `/api/auth/oauth2/authorize?${new URLSearchParams({ client_id: created.application.clientId, redirect_uri: callback, response_type: 'code', scope, state, nonce: randomUUID(), code_challenge: challenge, code_challenge_method: 'S256' })}`;
+    };
+    const state = 'UiState+Case/Keep=Value';
+    await page.goto(authorize('openid profile', state));
+    await expect(page.getByRole('heading', { name: 'Authorize application', exact: true })).toBeVisible();
+    await expect(page.getByText(`${applicationName}-edited wants to use your Loginflare account.`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Signed in as ${email}`, { exact: true })).toBeVisible();
+    expect(await renderedTextContrast(page.getByRole('button', { name: 'Allow', exact: true }), true)).toBeGreaterThanOrEqual(4.5);
+    await page.screenshot({ path: test.info().outputPath('consent-desktop-dark.png'), fullPage: true });
+    await page.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect(page).toHaveURL(/^https:\/\/app\.example\.test\/callback\?/);
+    expect(new URL(page.url()).searchParams.get('state')).toBe(state);
+    expect(new URL(page.url()).searchParams.get('code')).toBeTruthy();
+
+    // The native API returns the next URL without visiting this fixture's
+    // nonexistent external server; real SDK navigation is covered separately.
+    const approved = await page.request.get(authorize('openid profile', 'AlreadyApproved'), { maxRedirects: 0, headers: { Accept: 'application/json' } });
+    expect(approved.status()).toBe(200);
+    const approvedBody = await approved.json();
+    expect(approvedBody.redirect).toBe(true);
+    const approvedUrl = new URL(approvedBody.url);
+    expect(`${approvedUrl.origin}${approvedUrl.pathname}`).toBe(callback);
+    expect(approvedUrl.searchParams.get('code')).toBeTruthy();
+
+    await page.goto(authorize('openid profile email', 'ExpandedScope'));
+    await expect(page.getByRole('heading', { name: 'Authorize application', exact: true })).toBeVisible();
+    const signedQuery = new URL(page.url()).search;
+    await page.getByRole('combobox', { name: 'Language', exact: true }).click();
+    await page.getByRole('option', { name: '简体中文', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '授权应用', exact: true })).toBeVisible();
+    expect(new URL(page.url()).search).toBe(signedQuery);
+    await expect(page.getByText('读取你的邮箱地址与验证状态', { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.getByRole('button', { name: '主题', exact: true }).click();
+    await page.getByRole('menuitem', { name: '浅色', exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(page.locator('.theme-control md-menu .menu')).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(await renderedTextContrast(page.getByRole('button', { name: '允许', exact: true }), true)).toBeGreaterThanOrEqual(4.5);
+    await page.screenshot({ path: test.info().outputPath('consent-zh-cn-mobile.png'), fullPage: true });
+    await page.getByRole('button', { name: '拒绝', exact: true }).click();
+    await expect(page).toHaveURL(/^https:\/\/app\.example\.test\/callback\?/);
+    expect(new URL(page.url()).searchParams.get('error')).toBe('access_denied');
+    expect(new URL(page.url()).searchParams.get('state')).toBe('ExpandedScope');
+
+    const newcomerEmail = `ui-target-${randomUUID()}@loginflare.test`;
+    fixtureEmails.push(newcomerEmail);
+    const newcomer = await browser.newContext({ baseURL: 'http://localhost:5173' });
+    try {
+        const registration = await newcomer.newPage();
+        await registration.route('https://app.example.test/**', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Test application</title>' }));
+        await registration.goto(authorize('openid profile', 'RegisteredFlow'));
+        await expect(registration.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
+        const signupQuery = new URL(registration.url()).search;
+        await registration.getByRole('link', { name: 'Create account', exact: true }).click();
+        expect(new URL(registration.url()).search).toBe(signupQuery);
+        await registration.getByLabel('Display name', { exact: true }).fill('OAuth Newcomer');
+        await registration.getByLabel('Email address', { exact: true }).fill(newcomerEmail);
+        await registration.getByLabel('Password', { exact: true }).fill(password);
+        await registration.getByLabel('Confirm password', { exact: true }).fill(password);
+        const createAccount = registration.getByRole('button', { name: 'Create account', exact: true });
+        await expect(createAccount).toBeEnabled({ timeout: 25_000 });
+        const beforeVerification = await snapshotEmails();
+        await createAccount.click();
+        await expect(registration.getByRole('heading', { name: 'Check your inbox', exact: true })).toBeVisible();
+        const verificationLink = await waitForMail(beforeVerification, 'verify');
+        expect(new URL(new URL(verificationLink).searchParams.get('callbackURL')!).search).toBe(signupQuery);
+        await registration.goto(verificationLink);
+        await registration.getByRole('link', { name: 'Sign in', exact: true }).click();
+        expect(new URL(registration.url()).search).toBe(signupQuery);
+        await registration.getByLabel('Email address', { exact: true }).fill(newcomerEmail);
+        await registration.getByLabel('Password', { exact: true }).fill(password);
+        const continueSignin = registration.getByRole('button', { name: 'Sign in', exact: true });
+        await expect(continueSignin).toBeEnabled({ timeout: 25_000 });
+        await continueSignin.click();
+        await expect(registration.getByRole('heading', { name: 'Authorize application', exact: true })).toBeVisible();
+        await registration.getByRole('button', { name: 'Deny', exact: true }).click();
+        await expect(registration).toHaveURL(/^https:\/\/app\.example\.test\/callback\?/);
+        expect(new URL(registration.url()).searchParams.get('state')).toBe('RegisteredFlow');
+
+        const signout = await newcomer.request.post('http://localhost:5173/api/auth/sign-out', { data: {}, headers: { Origin: 'http://localhost:5173' } });
+        expect(signout.status()).toBe(200);
+        await registration.goto(authorize('openid profile', 'RecoveryFlow'));
+        await expect(registration.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
+        const recoveryQuery = new URL(registration.url()).search;
+        await registration.getByRole('link', { name: 'Forgot password?', exact: true }).click();
+        expect(new URL(registration.url()).search).toBe(recoveryQuery);
+        await registration.getByLabel('Email address', { exact: true }).fill(newcomerEmail);
+        const reset = registration.getByRole('button', { name: 'Send reset link', exact: true });
+        await expect(reset).toBeEnabled({ timeout: 25_000 });
+        const beforeReset = await snapshotEmails();
+        await reset.click();
+        await expect(registration.getByRole('status')).toContainText('password reset link has been requested');
+        const resetLink = await waitForMail(beforeReset, 'reset');
+        expect(new URL(new URL(resetLink).searchParams.get('callbackURL')!).search).toBe(recoveryQuery);
+        await registration.goto(resetLink);
+        const recoveredPassword = 'OAuth-recovered-password-815!';
+        await registration.getByLabel('New password', { exact: true }).fill(recoveredPassword);
+        await registration.getByLabel('Confirm password', { exact: true }).fill(recoveredPassword);
+        await registration.getByRole('button', { name: 'Reset password', exact: true }).click();
+        await expect(registration.getByRole('status')).toContainText('Password updated.');
+        await registration.getByRole('link', { name: 'Sign in', exact: true }).click();
+        expect(new URL(registration.url()).search).toBe(recoveryQuery);
+        expect(new URL(registration.url()).searchParams.has('token')).toBe(false);
+        await registration.getByLabel('Email address', { exact: true }).fill(newcomerEmail);
+        await registration.getByLabel('Password', { exact: true }).fill(recoveredPassword);
+        await expect(continueSignin).toBeEnabled({ timeout: 25_000 });
+        await continueSignin.click();
+        await expect(registration.getByRole('heading', { name: 'Authorize application', exact: true })).toBeVisible();
+        await registration.getByRole('button', { name: 'Allow', exact: true }).click();
+        await expect(registration).toHaveURL(/^https:\/\/app\.example\.test\/callback\?/);
+        expect(new URL(registration.url()).searchParams.get('state')).toBe('RecoveryFlow');
+        expect(new URL(registration.url()).searchParams.get('code')).toBeTruthy();
+    } finally {
+        await newcomer.close();
+    }
+});
+
+test('shows a translated error for missing consent state without starting an unrelated login', async ({ page }) => {
+    await page.goto('/zh-cn/consent');
+    await expect(page.getByRole('heading', { name: '授权应用', exact: true })).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('此登录请求无效或已过期');
+    await expect(page.getByRole('button', { name: '允许', exact: true })).toHaveCount(0);
+});

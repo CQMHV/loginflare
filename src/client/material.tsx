@@ -79,6 +79,13 @@ export function LanguageSelect({ label, value, onChange }: { label: string; valu
         createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
 }
 
+export function Select({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
+    return createElement('md-outlined-select', {
+        value, label, 'aria-label': label,
+        onChange: (event: Event) => onChange((event.currentTarget as HTMLElement & { value: string }).value),
+    }, ...options.map((option) => createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
+}
+
 export function ThemeMenu({ label, currentLabel, icon, options, onChange }: {
     label: string; currentLabel: string; icon: ReactNode;
     options: { value: ThemePreference; label: string; selected: boolean; icon: ReactNode }[];

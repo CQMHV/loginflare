@@ -1,7 +1,9 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import { oauthEn, oauthZh } from './oauth-translations';
 
 const enUS = {
+    oauth: oauthEn,
     brand: 'Loginflare',
     tagline: 'Your identity. Your cloud.',
     platform: 'CLOUDFLARE-NATIVE IDENTITY',
@@ -175,10 +177,14 @@ const enUS = {
         PAYLOAD_TOO_LARGE: 'The request is too large. Check your information and try again.',
         USER_NOT_FOUND: 'This account could not be found.',
         ADMIN_ACCOUNT_PROTECTED: 'Administrator accounts cannot be managed from this interface.',
+        INVALID_OAUTH_QUERY: 'This sign-in request is invalid or has expired. Return to the application and start again.',
+        APPLICATION_NOT_FOUND: 'This application could not be found.',
+        APPLICATION_DISABLED: 'This application is disabled. Contact its administrator.',
     },
 };
 
 const zhCN: typeof enUS = {
+    oauth: oauthZh,
     brand: 'Loginflare',
     tagline: '你的身份，你的云。',
     platform: 'CLOUDFLARE 原生身份平台',
@@ -352,6 +358,9 @@ const zhCN: typeof enUS = {
         PAYLOAD_TOO_LARGE: '请求内容过大，请检查输入信息后重试。',
         USER_NOT_FOUND: '找不到此账号。',
         ADMIN_ACCOUNT_PROTECTED: '此界面不能管理管理员账号。',
+        INVALID_OAUTH_QUERY: '此登录请求无效或已过期，请返回应用重新发起登录。',
+        APPLICATION_NOT_FOUND: '找不到此应用。',
+        APPLICATION_DISABLED: '此应用已停用，请联系其管理员。',
     },
 };
 
