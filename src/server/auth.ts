@@ -6,13 +6,14 @@ import { validateConfig, type Env } from './config.ts';
 import { sendAccountMail } from './mail.ts';
 import { locales } from '../shared/locales.ts';
 import { createOAuthPolicy } from './oauth-policy.ts';
+import { emailManagement } from './emails';
 
-export function createAuth(env: Env, delivery = { failed: false }) {
+export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
-    async function send(kind: 'verify' | 'reset', user: { email: string; name: string; locale?: unknown }, url: string) {
+    async function send(user: { email: string; name: string; locale?: unknown }, url: string) {
         try {
-            await sendAccountMail(env, kind, user, url);
+            await sendAccountMail(env, user, url);
         } catch (error) {
             delivery.failed = true;
             throw error;
@@ -33,13 +34,12 @@ export function createAuth(env: Env, delivery = { failed: false }) {
             requireEmailVerification: true,
             revokeSessionsOnPasswordReset: true,
             onPasswordReset: policy.onPasswordReset,
-            sendResetPassword: ({ user, url }) => send('reset', user, url),
         },
         emailVerification: {
             sendOnSignUp: true,
             sendOnSignIn: false,
             autoSignInAfterVerification: false,
-            sendVerificationEmail: ({ user, url }) => send('verify', user, url),
+            sendVerificationEmail: ({ user, url }) => send(user, url),
         },
         user: {
             additionalFields: {
@@ -68,12 +68,19 @@ export function createAuth(env: Env, delivery = { failed: false }) {
                 '/sign-in/email': { window: 60, max: 5 },
                 '/sign-in/username': { window: 60, max: 5 },
                 '/sign-up/email': { window: 60, max: 3 },
-                '/request-password-reset': { window: 60, max: 3 },
+                '/emails/recovery/start': { window: 60, max: 3 },
+                '/emails/recovery/verify': { window: 60, max: 10 },
+                '/emails/add': { window: 60, max: 5 },
+                '/emails/resend': { window: 60, max: 5 },
+                '/emails/verify': { window: 60, max: 10 },
+                '/emails/set-primary': { window: 60, max: 5 },
+                '/emails/remove': { window: 60, max: 5 },
                 '/send-verification-email': { window: 60, max: 3 },
             },
         },
         plugins: [
             policy.plugin,
+            emailManagement(env, schedule),
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
             username({ displayUsername: false }),
             jwt({
@@ -95,7 +102,7 @@ export function createAuth(env: Env, delivery = { failed: false }) {
             captcha({
                 provider: 'cloudflare-turnstile',
                 secretKey: env.TURNSTILE_SECRET_KEY,
-                endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/request-password-reset', '/send-verification-email'],
+                endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/emails/recovery/start', '/send-verification-email'],
             }),
         ],
     });

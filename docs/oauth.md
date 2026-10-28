@@ -45,7 +45,7 @@ SPA protocol requests use the exact Origin associated with a registered callback
 
 Login and consent entry pages default to `/en-us/`; a user may switch to `/zh-cn/`. The signed OAuth query must survive language switches, registration, email verification, and recovery unchanged. Expired authorization transactions restart from the application.
 
-The Loginflare sign-in page accepts either an email address or username with the same password, verification, Turnstile, and suspension requirements. Both methods resume the signed authorization request. Usernames are editable login identifiers, separate from display names; applications must use the OIDC `sub` claim as the stable account identifier.
+The Loginflare sign-in page accepts either the primary email address or username with the same password, verification, Turnstile, and suspension requirements. Both methods resume the signed authorization request. Secondary emails receive verification/recovery codes but cannot identify an account for sign-in. Changing the primary email updates subsequent email claims without changing the user ID, username or OIDC subject. Usernames are editable login identifiers, separate from display names; applications must use the OIDC `sub` claim as the stable account identifier.
 
 ## Native lifetimes and lifecycle semantics
 

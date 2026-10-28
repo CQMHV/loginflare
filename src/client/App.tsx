@@ -10,6 +10,7 @@ import i18n from './i18n';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, LanguageSelect, Progress, TextField, ThemeMenu } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
 import { ApplicationEditor, ApplicationsPage } from './Applications';
+import { EmailsPage } from './Emails';
 import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
 
 const preferenceKey = 'loginflare.locale';
@@ -237,19 +238,22 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [rememberMe, setRememberMe] = useState(true);
+    const [recoveryChallenge, setRecoveryChallenge] = useState<string>();
+    const [recoveryCode, setRecoveryCode] = useState('');
     const token = new URLSearchParams(location.search).get('token');
     const urlError = new URLSearchParams(location.search).get('error');
-    const needsCaptcha = ['login', 'signup', 'verify-email', 'forgot-password'].includes(mode);
+    const needsCaptcha = ['login', 'signup', 'verify-email'].includes(mode) || (mode === 'forgot-password' && !recoveryChallenge);
     const oauthQuery = oauthSearch(location.search);
     const authPath = (page: string, extra?: Record<string, string>) => withOAuthSearch(localizedPath(locale, page), location.search, extra);
     const callbackURL = `${window.location.origin}${authPath('verified')}`;
-    const resetURL = `${window.location.origin}${authPath('reset-password')}`;
 
     useEffect(() => {
         setError(undefined);
         setSuccess(undefined);
         setPassword('');
         setConfirmPassword('');
+        setRecoveryChallenge(undefined);
+        setRecoveryCode('');
     }, [mode]);
 
     if (identity && !oauthQuery && (mode === 'login' || mode === 'signup')) return <Navigate to={localizedPath(locale, 'account')} replace />;
@@ -304,8 +308,14 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     setSuccess('emailRequested');
                     break;
                 case 'forgot-password':
-                    await captchaRequest('/request-password-reset', { email, redirectTo: resetURL }, captchaToken);
-                    setSuccess('resetRequested');
+                    if (recoveryChallenge) {
+                        const result = await request<{ token: string }>('/emails/recovery/verify', { challengeId: recoveryChallenge, code: recoveryCode.trim() });
+                        navigate(authPath('reset-password', { token: result.token }));
+                    } else {
+                        const result = await captchaRequest<{ challengeId: string }>('/emails/recovery/start', { identifier: loginIdentifier.trim(), email: email.trim() }, captchaToken);
+                        setRecoveryChallenge(result.challengeId);
+                        setSuccess('emails.recoveryRequested');
+                    }
                     break;
                 case 'reset-password':
                     await request('/reset-password', { token, newPassword: password });
@@ -337,12 +347,21 @@ function AuthPage({ mode }: { mode: AuthMode }) {
             mode !== 'verified' && <form onSubmit={(event) => { void submit(event); }} className="stack-form">
                 {mode === 'signup' && <TextField label={t('name')} autoComplete="nickname" name="name" value={name} onValueChange={setName} placeholder={t('namePlaceholder')} maxLength={100} required />}
                 {mode === 'signup' && <TextField label={t('username')} autoComplete="username" name="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={t('usernameHint')} required />}
-                {mode === 'login' ? <TextField label={t('loginIdentifier')} autoComplete="username" type="text" name="identifier" value={loginIdentifier} onValueChange={setLoginIdentifier} placeholder={t('loginIdentifierPlaceholder')} maxLength={254} required /> : mode !== 'reset-password' && <TextField label={t('email')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} required />}
+                {mode === 'login' && <TextField label={t('loginIdentifier')} autoComplete="username" type="text" name="identifier" value={loginIdentifier} onValueChange={setLoginIdentifier} placeholder={t('loginIdentifierPlaceholder')} maxLength={254} required />}
+                {mode === 'forgot-password' && !recoveryChallenge && <>
+                    <TextField label={t('emails.recoveryIdentifier')} autoComplete="username" name="identifier" value={loginIdentifier} onValueChange={setLoginIdentifier} placeholder={t('loginIdentifierPlaceholder')} maxLength={254} required />
+                    <TextField label={t('emails.recoveryAddress')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} supportingText={t('emails.recoveryAddressHint')} required />
+                </>}
+                {mode === 'forgot-password' && recoveryChallenge && <TextField label={t('emails.code')} autoComplete="one-time-code" inputMode="numeric" name="code" value={recoveryCode} onValueChange={setRecoveryCode} pattern="[0-9]{6}" minLength={6} maxLength={6} supportingText={t('emails.codeHint')} required />}
+                {(mode === 'signup' || mode === 'verify-email') && <TextField label={t('email')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} required />}
                 {['login', 'signup', 'reset-password'].includes(mode) && <TextField label={t(mode === 'reset-password' ? 'newPassword' : 'password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" name="password" value={password} onValueChange={setPassword} minLength={mode === 'login' ? undefined : 8} maxLength={128} supportingText={mode === 'login' ? undefined : t('passwordHint')} required />}
                 {(mode === 'signup' || mode === 'reset-password') && <TextField label={t('confirmPassword')} autoComplete="new-password" type="password" name="confirmPassword" value={confirmPassword} onValueChange={setConfirmPassword} minLength={8} maxLength={128} required />}
                 {mode === 'login' && <div className="form-options"><Checkbox label={t('rememberMe')} checked={rememberMe} onCheckedChange={setRememberMe} /><Link to={authPath('forgot-password')}>{t('forgotPassword')}</Link></div>}
                 {needsCaptcha && <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />}
-                <Button type="submit" className="primary full" busy={busy} disabled={needsCaptcha && !captchaToken}>{busy ? t('working') : t(mode === 'login' ? 'login' : mode === 'signup' ? 'signup' : mode === 'verify-email' ? 'resend' : mode === 'forgot-password' ? 'sendReset' : 'resetPassword')}<Icon name="arrow" size={18} /></Button>
+                <Button type="submit" className="primary full" busy={busy} disabled={needsCaptcha && !captchaToken}>{busy ? t('working') : t(mode === 'login' ? 'login' : mode === 'signup' ? 'signup' : mode === 'verify-email' ? 'resend' : mode === 'forgot-password' ? recoveryChallenge ? 'emails.recoveryVerify' : 'emails.sendCode' : 'resetPassword')}<Icon name="arrow" size={18} /></Button>
+                {mode === 'forgot-password' && recoveryChallenge && <Button className="text-button" disabled={busy} onClick={() => {
+                    setRecoveryChallenge(undefined); setRecoveryCode(''); setSuccess(undefined); setError(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1);
+                }}>{t('emails.recoveryStartOver')}</Button>}
             </form>}
         {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p><Link className="resend-link" to={authPath('verify-email', loginIdentifier.includes('@') ? { email: loginIdentifier.trim() } : undefined)}>{t('resend')}</Link></>}
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
@@ -430,6 +449,7 @@ function AccountLayout() {
             <nav aria-label="Account navigation">
                 <p className="nav-label">{t('account')}</p>
                 <NavLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavLink>
+                <NavLink to={localizedPath(locale, 'account/emails')}><Icon name="mail" />{t('emails.title')}</NavLink>
                 <NavLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavLink>
                 <NavLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavLink>
                 {identity?.user.role === 'admin' && <><p className="nav-label admin-label">{t('administration')}</p><NavLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavLink><NavLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavLink></>}
@@ -473,7 +493,8 @@ function ProfilePage() {
             <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
             <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={setName} maxLength={100} required />
             <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
-            <TextField label={t('email')} type="email" value={identity?.user.email ?? ''} readOnly supportingText={t('emailReadOnly')} />
+            <TextField label={t('email')} type="email" value={identity?.user.email ?? ''} readOnly supportingText={t('emails.profileHint')} />
+            <Link className="email-management-link" to={localizedPath(locale, 'account/emails')}>{t('emails.manage')}<Icon name="arrow" size={16} /></Link>
             <div className="form-footer"><Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
         </form></section>
         <section className="card"><div className="card-heading"><h2>{t('preferences')}</h2><p>{t('preferencesDescription')}</p></div><div className="card-body preference-row"><span>{t('language')}</span><LanguageSwitcher /></div></section>
@@ -624,7 +645,7 @@ function StatePage({ forbidden = false }: { forbidden?: boolean }) {
 
 function LocaleRoutes() {
     const { pathname } = useLocation();
-    const { locale } = useApp();
+    const { locale, refresh } = useApp();
     const segment = pathname.split('/')[1] ?? '';
     if (!pathToLocale[segment] || pathname !== pathname.toLowerCase()) return <StatePage />;
     return <Routes>
@@ -640,6 +661,7 @@ function LocaleRoutes() {
             <Route element={<Protected />}>
                 <Route element={<AccountLayout />}>
                     <Route path="account" element={<ProfilePage />} />
+                    <Route path="account/emails" element={<EmailsPage refreshIdentity={refresh} />} />
                     <Route path="account/security" element={<SecurityPage />} />
                     <Route path="account/sessions" element={<SessionsPage />} />
                     <Route element={<Protected adminOnly />}>

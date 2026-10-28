@@ -49,6 +49,7 @@ interface TextFieldProps {
     type?: 'text' | 'email' | 'password' | 'textarea';
     name?: string;
     autoComplete?: string;
+    inputMode?: 'text' | 'email' | 'numeric';
     placeholder?: string;
     minLength?: number;
     maxLength?: number;

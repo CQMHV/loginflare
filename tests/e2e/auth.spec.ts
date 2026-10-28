@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { snapshotEmails, waitForMail } from './mailbox';
+import { snapshotEmails, waitForCode, waitForMail } from './mailbox';
 import { removeLocalFixtures } from './database';
 
 const fixtureEmails: string[] = [];
@@ -104,14 +104,13 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByLabel('邮箱或用户名', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: '忘记密码？', exact: true }).click();
-    await page.getByLabel('邮箱地址', { exact: true }).fill(email);
-    await expect(page.getByRole('button', { name: '发送重置链接', exact: true })).toBeEnabled({ timeout: 20_000 });
+    await page.getByLabel('主邮箱或用户名', { exact: true }).fill(replacementUsername);
+    await page.getByLabel('接收验证码的邮箱', { exact: true }).fill(email);
+    await expect(page.getByRole('button', { name: '发送验证码', exact: true })).toBeEnabled({ timeout: 20_000 });
     const beforeReset = await snapshotEmails();
-    await page.getByRole('button', { name: '发送重置链接', exact: true }).click();
-    await expect(page.getByRole('status').filter({ hasText: '如果存在符合条件的账号' })).toBeVisible();
-    const resetLink = await waitForMail(beforeReset, 'reset');
-    expect(new URL(resetLink).searchParams.get('callbackURL')).toBe('http://localhost:5173/zh-cn/reset-password');
-    await page.goto(resetLink);
+    await page.getByRole('button', { name: '发送验证码', exact: true }).click();
+    await page.getByLabel('验证码', { exact: true }).fill(await waitForCode(beforeReset));
+    await page.getByRole('button', { name: '继续设置新密码', exact: true }).click();
     await expect(page.getByRole('heading', { name: '设置新密码' })).toBeVisible();
     await page.getByLabel('新密码', { exact: true }).fill('Recovered-browser-password-639!');
     await page.getByLabel('确认密码', { exact: true }).fill('Recovered-browser-password-639!');

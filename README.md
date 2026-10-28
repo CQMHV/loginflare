@@ -1,10 +1,12 @@
 # Loginflare
 
-An open-source account and identity center built for Cloudflare.
+An open-source account and identity management system built for Cloudflare.
 
 [简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Application integration](docs/oauth.md) · [Architecture](docs/architecture.md)
 
-Loginflare provides email/password accounts, verified email sign-in, password recovery, a personal account center, session management, and an administrator console. Other websites can sign in with Loginflare through OAuth/OIDC. The application runs as one Cloudflare Worker with D1, Email Service, Turnstile, and Workers Static Assets.
+Loginflare is a fully functional system for general account and identity management. It combines a user account center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, Email Service, Turnstile, and Workers Static Assets.
+
+The maintainer currently runs only a personal test instance for functional checks, and its management console requires administrator access. Other users use Loginflare by forking this repository, configuring their own resources, and deploying independent instances. The Web/SPA examples exercise the complete integration flows. Applications for specific business needs can build on this project in separate branches, with their own branding and business rules.
 
 The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use lowercase language segments: `/en-us/` and `/zh-cn/`.
 
@@ -13,15 +15,18 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - Register, verify email, resend verification, sign in with an email address or username, and sign out.
 - Recover a forgotten password and change a known password.
 - Update a display name and username, and manage active sessions.
+- Manage primary and secondary email addresses on a dedicated page, verify new addresses with codes, and choose the primary sign-in email.
 - Find users by exact email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
 - Register server Web and SPA clients through the administrator console, with exact redirects, consent, and client-secret rotation.
 - OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
 - English and Simplified Chinese pages, error messages, and transactional emails.
 - Better Auth account/session primitives, D1-backed rate limiting, and server-verified Turnstile challenges.
 
-This release does not offer social login, MFA, organizations, multi-tenancy, account deletion, email changes, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
+This release does not offer social login, MFA, organizations, multi-tenancy, account deletion, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
 
-Usernames are separate from display names. The registration form asks for a unique username of 3–30 ASCII letters, numbers, underscores, or dots; usernames are stored in lowercase and sign-in is case-insensitive. Existing accounts can continue using email and choose a username in their profile. Users can change their username; an existing username cannot be cleared. Email verification is required for both sign-in methods, and password recovery still uses the verified email address.
+Usernames are separate from display names. The registration form asks for a unique username of 3–30 ASCII letters, numbers, underscores, or dots; usernames are stored in lowercase and sign-in is case-insensitive. Existing accounts can continue using email and choose a username in their profile. Users can change their username; an existing username cannot be cleared. Email verification is required for both sign-in methods. Only the primary email works as an email sign-in identifier.
+
+The **Email addresses** page manages one primary email and additional secondary emails. Every address is unique across all accounts, regardless of its role. Adding an address requires the current password and verification of a code sent to that address. A verified secondary email can become primary after password confirmation; the previous primary remains secondary. The primary address must be replaced before it can be removed. Password recovery starts with the username or primary email and sends a code to a specified verified primary or secondary address belonging to that account. Secondary emails never identify an account for sign-in.
 
 ## Interface
 
@@ -35,7 +40,7 @@ Material Web is licensed under Apache-2.0 and is currently in [upstream maintena
 
 ## Local development
 
-Requirements: Node.js 24 LTS and pnpm. The project pins its Cloudflare tooling as development dependencies. Install from the committed lockfile and generate local secrets:
+Requirements: Node.js 24 LTS and pnpm 11.25.0, as declared in `packageManager`. The project pins its Cloudflare tooling as development dependencies. Install from the committed lockfile and generate local secrets:
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -49,7 +54,7 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Open `http://localhost:5173` (the configured authentication origin). A fresh browser opens English by default. The development email binding simulates delivery locally: inspect its output to open verification and reset links. Local development does not need to send real email or create Cloudflare resources. Never use the Turnstile test configuration for a production deployment.
+Open `http://localhost:5173` (the configured authentication origin). A fresh browser opens English by default. The development email binding simulates delivery locally: inspect its output for registration-verification links and email-management/recovery codes. Local development does not need to send real email or create Cloudflare resources. Never use the Turnstile test configuration for a production deployment.
 
 Development and the operator commands share `.cloudflare/state`. Local CLI configuration/registry files are kept in `.cloudflare/tool-config`; both directories are ignored. The resource commands prefer `cf`. This version uses stable Vite/Wrangler for development, build, generated Worker types and deployment because the pinned `cf` development/build path requires the beta Vite plugin. Local administrator promotion also uses Wrangler because this `cf` version has no local D1 query implementation. Remote D1 operations continue to use `cf`.
 
@@ -64,6 +69,8 @@ pnpm admin:promote -- --email admin@example.com --local
 The command requires an existing, verified account and is idempotent. Sign out and sign in again after promotion. Registration never automatically creates an administrator. The web console cannot assign roles or suspend another administrator.
 
 ## Validation
+
+`pnpm check` runs type checking, Worker integration tests, operator-command tests, and the production build. Run `pnpm test:e2e` as well to exercise the browser flows. The [CI workflow](.github/workflows/ci.yml) runs both on pull requests and pushes to `main`, using local D1, simulated email, and Turnstile test keys; browser reports are retained for seven days.
 
 ```powershell
 pnpm typecheck
@@ -91,7 +98,7 @@ pnpm exec playwright install chromium
 - Only the server can set role, email verification, and suspension fields.
 - Protected responses are not cached. Logs must not contain passwords, session tokens, or full verification/reset links.
 
-The pinned Better Auth version uses password lengths of 8–128, one-hour verification and password-reset tokens, and seven-day sessions with its standard renewal behavior. Loginflare keeps those defaults while explicitly disabling cookie session caching.
+Passwords contain 8–128 characters. Registration-verification tokens expire after one hour, and sessions last seven days with Better Auth's standard renewal behavior; cookie session caching is disabled. Email-management and recovery codes expire after ten minutes and allow at most five attempts. Verified recovery hands off a ten-minute token to Better Auth's native password reset. Each account can manage up to ten email addresses; unverified secondary reservations can be reclaimed after one day when that address is added again.
 
 ## Connect another application
 

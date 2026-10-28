@@ -15,7 +15,7 @@ export async function snapshotEmails(): Promise<Set<string>> {
 }
 
 /** Read only the local Cloudflare simulator's newly generated mail. Never send mail remotely. */
-export async function waitForMail(before: Set<string>, kind: 'verify' | 'reset'): Promise<string> {
+export async function waitForMail(before: Set<string>, kind: 'verify'): Promise<string> {
     let link = '';
     await expect.poll(async () => {
         for (const file of await snapshotEmails()) {
@@ -25,12 +25,29 @@ export async function waitForMail(before: Set<string>, kind: 'verify' | 'reset')
             if (!candidate) continue;
             const url = new URL(candidate);
             if (url.origin !== 'http://localhost:5173') throw new Error('Local test email must point to the local server.');
-            if (url.pathname.startsWith(kind === 'verify' ? '/api/auth/verify-email' : '/api/auth/reset-password/')) {
+            if (kind === 'verify' && url.pathname.startsWith('/api/auth/verify-email')) {
                 link = candidate;
                 return true;
             }
         }
         return false;
-    }, { timeout: 10_000, message: 'Expected a new verification/reset email in the local simulator' }).toBe(true);
+    }, { timeout: 10_000, message: 'Expected a new verification email in the local simulator' }).toBe(true);
     return link;
+}
+
+export async function waitForCode(before: Set<string>): Promise<string> {
+    let code = '';
+    await expect.poll(async () => {
+        for (const file of await snapshotEmails()) {
+            if (before.has(file)) continue;
+            const text = await readFile(join(mailboxRoot, file), 'utf8');
+            const match = text.match(/\b\d{6}\b/);
+            if (match) {
+                code = match[0];
+                return true;
+            }
+        }
+        return false;
+    }, { timeout: 10_000, message: 'Expected a new code email in the local simulator' }).toBe(true);
+    return code;
 }

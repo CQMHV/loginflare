@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { createEmailVerificationToken } from 'better-auth/api';
 import { applyD1Migrations, reset } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cookies, harness, mailUrl, origin, password, session } from './helpers';
+import { cookies, harness, mailUrl, origin, password, recoveryToken, session } from './helpers';
 
 let captchaAccepted = true;
 let captchaStatus = 200;
@@ -83,8 +83,8 @@ describe('email accounts in the Workers runtime', () => {
         const cookie = await client.signin();
         expect((await session(client, cookie))?.user.locale).toBe('zh-CN');
         await client.request('/api/auth/update-user', { body: { locale: 'en-US' }, cookie });
-        await client.request('/api/auth/request-password-reset', {
-            body: { email: 'person@example.test', redirectTo: `${origin}/en-us/reset-password` },
+        await client.request('/api/auth/emails/recovery/start', {
+            body: { identifier: 'person@example.test', email: 'person@example.test' },
         });
         const resetMail = client.messages.at(-1);
         expect(resetMail?.subject).not.toMatch(/[\u3400-\u9fff]/);
@@ -121,16 +121,7 @@ describe('email accounts in the Workers runtime', () => {
         await client.verify();
         const first = await client.signin();
         const second = await client.signin();
-        const requested = await client.request('/api/auth/request-password-reset', {
-            body: { email: 'person@example.test', redirectTo: `${origin}/en-us/reset-password` },
-        });
-        expect(requested.status).toBe(200);
-        const linkResponse = await client.request(mailUrl(client.messages.at(-1)));
-        expect(linkResponse.status).toBe(302);
-        const redirect = new URL(linkResponse.headers.get('location')!, origin);
-        expect(redirect.pathname).toBe('/en-us/reset-password');
-        const token = redirect.searchParams.get('token');
-        expect(token).toBeTruthy();
+        const token = await recoveryToken(client);
         const replacement = 'New-integration-password-912!';
         const resetResponse = await client.request('/api/auth/reset-password', {
             body: { token, newPassword: replacement },
@@ -148,11 +139,7 @@ describe('email accounts in the Workers runtime', () => {
     it('rejects expired reset tokens', async () => {
         const client = harness();
         await client.verify();
-        await client.request('/api/auth/request-password-reset', {
-            body: { email: 'person@example.test', redirectTo: `${origin}/en-us/reset-password` },
-        });
-        const linkResponse = await client.request(mailUrl(client.messages.at(-1)));
-        const token = new URL(linkResponse.headers.get('location')!, origin).searchParams.get('token');
+        const token = await recoveryToken(client);
         await env.DB.prepare('UPDATE "verification" SET "expiresAt" = ?').bind(Date.now() - 60_000).run();
         const response = await client.request('/api/auth/reset-password', {
             body: { token, newPassword: 'Replacement-password-123!' },
@@ -234,14 +221,16 @@ describe('email accounts in the Workers runtime', () => {
     it('does not reveal whether a password-reset email belongs to an account', async () => {
         const client = harness();
         await client.verify();
-        const known = await client.request('/api/auth/request-password-reset', {
-            body: { email: 'person@example.test', redirectTo: `${origin}/en-us/reset-password` },
+        const known = await client.request('/api/auth/emails/recovery/start', {
+            body: { identifier: 'person@example.test', email: 'person@example.test' },
         });
-        const unknown = await client.request('/api/auth/request-password-reset', {
-            body: { email: 'nobody@example.test', redirectTo: `${origin}/en-us/reset-password` },
+        const unknown = await client.request('/api/auth/emails/recovery/start', {
+            body: { identifier: 'nobody@example.test', email: 'nobody@example.test' },
         });
         expect(unknown.status).toBe(known.status);
-        expect(await unknown.json()).toEqual(await known.json());
+        for (const response of [known, unknown]) {
+            expect(await response.json()).toEqual({ status: true, challengeId: expect.any(String) });
+        }
     });
 
     it('reports email-send failures and supports resending without creating a second account', async () => {
@@ -391,7 +380,7 @@ describe('server-side management boundaries', () => {
     });
 
     it.each(['admin/set-role', 'admin/set-user-password', 'admin/create-user', 'admin/remove-user',
-        'admin/impersonate-user', 'delete-user', 'change-email', 'sign-in/social'])('closes unused endpoint %s', async (path) => {
+        'admin/impersonate-user', 'delete-user', 'change-email', 'sign-in/social', 'request-password-reset'])('closes unused endpoint %s', async (path) => {
         const client = harness();
         const response = await client.request(`/api/auth/${path}`, { body: {} });
         expect([403, 404, 405]).toContain(response.status);

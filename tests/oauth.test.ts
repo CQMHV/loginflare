@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations, createExecutionContext, reset, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
-import { cookies, harness, mailUrl, origin, password, session } from './helpers';
+import { addVerifiedEmail, cookies, harness, origin, password, recoveryToken, session } from './helpers';
 
 const issuer = `${origin}/api/auth`;
 const callback = 'https://client.example.test/callback';
@@ -339,10 +339,11 @@ describe('OAuth/OIDC protocol in the Workers runtime', () => {
         const tokens = await tokensFor(client, registered, cookie);
         const other = await client.signin();
         if (operation === 'reset-password') {
-            await client.request('/api/auth/request-password-reset', { body: { email: 'person@example.test', redirectTo: `${origin}/en-us/reset-password` } });
-            const redirect = await client.request(mailUrl(client.messages.at(-1)));
-            const token = new URL(redirect.headers.get('location')!, origin).searchParams.get('token');
+            await addVerifiedEmail(client, cookie, 'recovery@example.test');
+            const token = await recoveryToken(client, 'person@example.test', 'recovery@example.test');
             expect((await client.request('/api/auth/reset-password', { body: { token, newPassword: 'Changed-integration-password-643!' } })).status).toBe(200);
+            expect(await session(client, cookie)).toBeNull();
+            expect(await session(client, other)).toBeNull();
         } else {
             const body = operation === 'revoke-session' ? { token: linked.session.token }
                 : operation === 'change-password' ? { currentPassword: password, newPassword: 'Changed-integration-password-643!', revokeOtherSessions: true } : {};
@@ -374,9 +375,7 @@ describe('OAuth/OIDC protocol in the Workers runtime', () => {
         expect(renewed.status, await renewed.clone().text()).toBe(200);
         const offline = await renewed.json<Tokens>();
         if (operation === 'reset-password') {
-            await client.request('/api/auth/request-password-reset', { body: { email: 'person@example.test', redirectTo: `${origin}/en-us/reset-password` } });
-            const redirect = await client.request(mailUrl(client.messages.at(-1)));
-            const token = new URL(redirect.headers.get('location')!, origin).searchParams.get('token');
+            const token = await recoveryToken(client);
             expect((await client.request('/api/auth/reset-password', { body: { token, newPassword: 'Changed-integration-password-643!' } })).status).toBe(200);
         } else {
             expect((await client.request('/api/auth/admin/revoke-user-sessions', { cookie: adminCookie, body: { userId: identity.user.id } })).status).toBe(200);

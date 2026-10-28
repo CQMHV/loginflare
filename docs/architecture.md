@@ -2,6 +2,8 @@
 
 [English README](../README.md) · [简体中文说明](../README.zh-CN.md)
 
+Loginflare is a fully functional system for general account and identity management, combining a user account center, an administrator console, and standard OAuth/OIDC integration for independent applications. The maintainer currently runs only a personal test instance for functional checks, and its management console requires administrator access. Other users fork the repository and configure and deploy independent instances. The Web/SPA examples exercise the complete integration flows; applications for specific business needs can build on this implementation in separate branches, with their own branding and business rules.
+
 ## Runtime boundaries
 
 ```text
@@ -38,7 +40,7 @@ Page paths are localized under `/en-us/` and `/zh-cn/`. Language identifiers ins
 
 API routes are not localized. `/api/auth/*` reaches the selected Better Auth endpoints through Hono's route/method boundary. `/api/health` only reports service health. Unknown API routes return JSON errors, never the SPA HTML entrypoint.
 
-Only required user and administrator operations are exposed. The presence of a Better Auth plugin does not expose all of its operations. Role assignment, account deletion, email changes, administrator-set passwords, and impersonation are excluded from the public HTTP surface.
+Only required user and administrator operations are exposed. The presence of a Better Auth plugin does not expose all of its operations. Role assignment, account deletion, administrator-set passwords, and impersonation are excluded from the public HTTP surface. Email management and code-based recovery use the Loginflare email plugin; the generic native change-email and request-password-reset routes are not exposed.
 
 External applications use the dedicated OAuth/OIDC surface. The issuer is `${AUTH_URL}/api/auth`; protocol requests use their native methods and content types. Registered SPA callback Origins receive protocol-only CORS access without account cookies. Account and administrator APIs remain same-origin JSON. Discovery and JWKS are public, while the JWT plugin's standalone `/token` route, dynamic registration, native/device grants, and client credentials remain closed.
 
@@ -52,6 +54,10 @@ User lookup uses an exact email equality filter through Better Auth's native lis
 
 The official Username plugin adds a unique, lowercase `username` to the existing user model, without a separate `displayUsername` field. Display names remain independent and need not be unique. The browser's sign-in field accepts an email address or username and selects the corresponding native password endpoint; both endpoints use Turnstile, persistent rate limiting, email-verification checks, and account-suspension rules. Username sign-in also preserves the provider-signed OAuth query. Usernames contain 3–30 ASCII letters, digits, underscores, or dots and match case-insensitively. The nullable field preserves existing accounts without inventing login names; those users can choose or change a username in their profile. Configuring username support does not change the account's stable user ID or OIDC subject.
 
+The dedicated localized `/account/emails` page manages all addresses. Better Auth's `user.email` and `emailVerified` remain the authoritative primary email and its verification status. An email registry records primary and secondary addresses with global case-insensitive uniqueness, covering both registration and subsequent management. Verified secondary addresses can become primary; the previous primary remains registered as secondary. Only the primary address or username identifies a password sign-in, and the stable user ID, credentials and OIDC subject do not change when the primary address changes.
+
+Email management requires a valid unbanned session, same-origin JSON, and current-password confirmation for sensitive changes. Adding an address proves mailbox access with a short-lived code. Recovery first resolves a username or primary email, then sends a code only to a specified verified address registered to that account. Unknown accounts and ineligible destinations return a generic challenge result. Codes bind the account, address, purpose and individual challenge, are stored as hashes, and have bounded attempts, lifetime and send rates. A verified recovery challenge produces a native Better Auth reset token; native reset owns password hashing, single-use consumption and security-event revocation. No secondary email can independently select an account.
+
 The console can inspect ordinary users, suspend/restore them, and revoke their sessions. Administrator accounts cannot be suspended through this console. Browser navigation checks improve the experience; server checks enforce permissions.
 
 Sessions are stored and checked in D1, without a cached cookie user snapshot or read replicas. Suspension revokes sessions, and restoring an account does not restore them. Password change revokes other sessions; password recovery revokes all sessions. No browser persistent storage contains authentication tokens.
@@ -62,7 +68,7 @@ Ordinary logout preserves the provider's `offline_access` refresh-token semantic
 
 ## Mail and failure behavior
 
-Email Service sends verification and password recovery messages using both HTML and plain text in the account's preferred language. The verification/reset token value must survive URL handling unchanged. Delivery failures provide a retry/resend path, without automatically switching providers or bypassing verification.
+Email Service sends registration-verification links and email-management/recovery codes using both HTML and plain text in the account's preferred language. Registration token values must survive URL handling unchanged. Private verification delivery failures provide a retry/resend path. Public recovery delivery runs through the request's `waitUntil` callback and returns the same generic result on failed delivery, so delivery status and network latency do not disclose account eligibility. Failed delivery invalidates its challenge and records only a redacted failure event. There is no automatic provider switch or verification bypass.
 
 Local email delivery is simulated. Production configuration must include the verified sending domain and required email binding. Logs must omit secrets, passwords, session tokens, and full recovery or verification URLs.
 

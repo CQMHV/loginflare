@@ -112,6 +112,37 @@ export function mailUrl(mail: RecordedMail | undefined) {
     return match[0];
 }
 
+export function mailCode(mail: RecordedMail | undefined) {
+    if (!mail) throw new Error('No captured email');
+    const match = mail.text.match(/\b[0-9]{6}\b/);
+    if (!match) throw new Error('No six-digit code in captured email');
+    return match[0];
+}
+
+export async function addVerifiedEmail(client: ReturnType<typeof harness>, cookie: string, email: string) {
+    const added = await client.request('/api/auth/emails/add', { cookie, body: { email, password } });
+    expect(added.status, await added.clone().text()).toBe(200);
+    const challenge = await added.json<{ emailId: string; challengeId: string }>();
+    const verified = await client.request('/api/auth/emails/verify', {
+        cookie, body: { challengeId: challenge.challengeId, code: mailCode(client.messages.at(-1)) },
+    });
+    expect(verified.status, await verified.clone().text()).toBe(200);
+    return challenge.emailId;
+}
+
+export async function recoveryToken(client: ReturnType<typeof harness>, identifier = 'person@example.test', email = identifier) {
+    const started = await client.request('/api/auth/emails/recovery/start', { body: { identifier, email } });
+    expect(started.status, await started.clone().text()).toBe(200);
+    const { challengeId } = await started.json<{ challengeId: string }>();
+    const verified = await client.request('/api/auth/emails/recovery/verify', {
+        body: { challengeId, code: mailCode(client.messages.at(-1)) },
+    });
+    expect(verified.status, await verified.clone().text()).toBe(200);
+    const { token } = await verified.json<{ token: string }>();
+    expect(token).toBeTruthy();
+    return token;
+}
+
 export async function session(client: ReturnType<typeof harness>, cookie: string) {
     const response = await client.request('/api/auth/get-session', { cookie });
     if (response.status === 401 || response.status === 403) return null;

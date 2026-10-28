@@ -14,7 +14,6 @@ const routes: Record<string, readonly string[]> = {
     '/sign-out': ['POST'],
     '/send-verification-email': ['POST'],
     '/verify-email': ['GET'],
-    '/request-password-reset': ['POST'],
     '/reset-password': ['POST'],
     '/get-session': ['GET'],
     '/error': ['GET'],
@@ -28,6 +27,14 @@ const routes: Record<string, readonly string[]> = {
     '/admin/ban-user': ['POST'],
     '/admin/unban-user': ['POST'],
     '/admin/revoke-user-sessions': ['POST'],
+    '/emails': ['GET'],
+    '/emails/add': ['POST'],
+    '/emails/resend': ['POST'],
+    '/emails/verify': ['POST'],
+    '/emails/set-primary': ['POST'],
+    '/emails/remove': ['POST'],
+    '/emails/recovery/start': ['POST'],
+    '/emails/recovery/verify': ['POST'],
 };
 
 const fields: Record<string, readonly string[]> = {
@@ -36,7 +43,6 @@ const fields: Record<string, readonly string[]> = {
     '/sign-in/username': ['username', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
     '/sign-out': [],
     '/send-verification-email': ['email', 'callbackURL'],
-    '/request-password-reset': ['email', 'redirectTo'],
     '/reset-password': ['newPassword', 'token'],
     '/update-user': ['name', 'username', 'locale'],
     '/change-password': ['currentPassword', 'newPassword', 'revokeOtherSessions'],
@@ -45,9 +51,17 @@ const fields: Record<string, readonly string[]> = {
     '/admin/ban-user': ['userId', 'banReason'],
     '/admin/unban-user': ['userId'],
     '/admin/revoke-user-sessions': ['userId'],
+    '/emails/add': ['email', 'password'],
+    '/emails/resend': ['emailId', 'password'],
+    '/emails/verify': ['challengeId', 'code'],
+    '/emails/set-primary': ['emailId', 'password'],
+    '/emails/remove': ['emailId', 'password'],
+    '/emails/recovery/start': ['identifier', 'email'],
+    '/emails/recovery/verify': ['challengeId', 'code'],
 };
 
-const privatePaths = new Set(['/update-user', '/change-password', '/list-sessions', '/revoke-session', '/revoke-other-sessions']);
+const privatePaths = new Set(['/update-user', '/change-password', '/list-sessions', '/revoke-session', '/revoke-other-sessions',
+    '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove']);
 const app = new Hono<{ Bindings: Env }>();
 
 function logPath(path: string): string {
@@ -120,8 +134,7 @@ app.use('/api/auth/*', async (c, next) => {
 
 app.all('/api/auth/*', async (c) => {
     const path = c.req.path.slice('/api/auth'.length);
-    const resetLink = /^\/reset-password\/[A-Za-z0-9_-]+$/.test(path);
-    const methods = resetLink ? ['GET'] : routes[path];
+    const methods = routes[path];
     if (!methods) return c.json({ code: 'NOT_FOUND' }, 404);
     if (!methods.includes(c.req.method)) return c.json({ code: 'METHOD_NOT_ALLOWED' }, 405);
     validateConfig(c.env);
@@ -174,7 +187,7 @@ app.all('/api/auth/*', async (c) => {
     }
 
     const delivery = { failed: false };
-    const auth = createAuth(c.env, delivery);
+    const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task));
     if (privatePaths.has(path) || path.startsWith('/admin/') || path === '/get-session') {
         const identity = await auth.api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (!identity && path !== '/get-session') return c.json({ code: 'UNAUTHORIZED' }, 401);
@@ -196,6 +209,13 @@ app.all('/api/auth/*', async (c) => {
     const response = await auth.handler(c.req.raw);
     if (delivery.failed) return c.json({ code: 'EMAIL_DELIVERY_FAILED' }, 503);
     if (response.status >= 500) {
+        // A secondary reservation can win after the signup preflight. The
+        // database rolls back signup; expose the same address-conflict result.
+        if (path === '/sign-up/email' && typeof body.email === 'string') {
+            const reserved = await c.env.DB.prepare('SELECT 1 FROM "userEmail" WHERE "email" = ?')
+                .bind(body.email.toLowerCase()).first();
+            if (reserved) return c.json({ code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' }, 400);
+        }
         console.error(JSON.stringify({ event: 'auth_request_failed', path: logPath(c.req.path), status: response.status }));
         return c.json({ code: 'REQUEST_FAILED' }, 503);
     }
@@ -206,7 +226,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/security|account\/sessions|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);

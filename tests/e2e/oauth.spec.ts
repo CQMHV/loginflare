@@ -67,6 +67,10 @@ async function waitForExample(port: number, host: string, process: ReturnType<ty
 
 test('standard Web and SPA clients sign in, refresh, restore, and sign out over local HTTPS', async ({ page }) => {
     test.setTimeout(180_000);
+    // Keep this local fixture's password sign-ins separate from other browser journeys.
+    await page.route('http://localhost:5173/api/auth/sign-in/email', (route) => route.continue({
+        headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.21' },
+    }));
     prepareExampleTls();
     const email = `ui-${randomUUID()}@loginflare.test`;
     emails.push(email);
@@ -91,6 +95,44 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).toHaveURL('/en-us/account');
+
+    async function signInToCenter() {
+        await page.goto('/en-us/login');
+        await page.getByLabel('Email or username', { exact: true }).fill(email);
+        await page.getByLabel('Password', { exact: true }).fill('OIDC-browser-password-739!');
+        await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
+        await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+        await expect(page).toHaveURL('/en-us/account');
+    }
+
+    async function signOutWithCenter(applicationOrigin: string, requireState: boolean) {
+        const activeSession = await page.request.get('http://localhost:5173/api/auth/get-session');
+        expect((await activeSession.json())?.user?.email).toBe(email);
+        const endSession = page.waitForResponse((response) => {
+            const url = new URL(response.url());
+            return url.origin === 'http://localhost:5173' && url.pathname === '/api/auth/oauth2/end-session'
+                && response.request().method() === 'GET';
+        });
+        const callback = page.waitForResponse((response) => {
+            const url = new URL(response.url());
+            return url.origin === applicationOrigin && url.pathname === '/logout-callback'
+                && response.request().isNavigationRequest();
+        });
+        await page.getByRole('button', { name: 'Sign out of this app and Loginflare', exact: true }).click();
+        const response = await endSession;
+        const parameters = new URL(response.request().url()).searchParams;
+        expect(Boolean(parameters.get('id_token_hint'))).toBe(true);
+        expect(parameters.get('post_logout_redirect_uri')).toBe(`${applicationOrigin}/logout-callback`);
+        if (requireState) expect(Boolean(parameters.get('state'))).toBe(true);
+        expect(response.status()).toBe(302);
+        const redirect = new URL(response.headers().location);
+        expect(`${redirect.origin}${redirect.pathname}`).toBe(`${applicationOrigin}/logout-callback`);
+        expect(redirect.searchParams.get('state')).toBe(parameters.get('state'));
+        const returned = new URL((await callback).url());
+        expect(returned.searchParams.get('state')).toBe(parameters.get('state'));
+        await expect(page).toHaveURL(`${applicationOrigin}/`);
+        expect(await (await page.request.get('http://localhost:5173/api/auth/get-session')).json()).toBeNull();
+    }
 
     async function register(type: 'web' | 'spa', host: string, port: number) {
         const response = await page.request.post('/api/admin/applications', {
@@ -158,6 +200,14 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     await page.getByRole('button', { name: 'Sign in with Loginflare', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Signed in', exact: true })).toBeVisible();
 
+    // Exercise openid-client's hinted logout while its matching center session is still active.
+    await signOutWithCenter('https://web.localhost:5181', true);
+    await expect(page.getByText('You are signed out of this application.', { exact: true })).toBeVisible();
+    await signInToCenter();
+    await page.goto('https://web.localhost:5181');
+    await page.getByRole('button', { name: 'Sign in with Loginflare', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Signed in', exact: true })).toBeVisible();
+
     await page.goto('https://spa.localhost:5182');
     await page.getByRole('button', { name: 'Sign in with Loginflare', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Authorize application', exact: true })).toBeVisible();
@@ -175,6 +225,15 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     await expect(page.getByRole('status')).toContainText('signed out');
     await page.getByRole('button', { name: 'Sign in with Loginflare', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Signed in.');
+
+    // Exercise oidc-client-ts independently before the no-hint confirmation removes its session.
+    await signOutWithCenter('https://spa.localhost:5182', false);
+    await expect(page.getByRole('status')).toContainText('signed out');
+    await signInToCenter();
+    await page.goto('https://spa.localhost:5182');
+    await page.getByRole('button', { name: 'Sign in with Loginflare', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Signed in.');
+
     const confirmationPage = await page.context().newPage();
     await confirmationPage.goto(`http://localhost:5173/api/auth/oauth2/end-session?${new URLSearchParams({
         client_id: spa.application.clientId, post_logout_redirect_uri: 'https://spa.localhost:5182/logout-callback',

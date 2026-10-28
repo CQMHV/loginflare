@@ -272,6 +272,17 @@ tr:last-child td { border-bottom: 0; }
 .user-detail-grid strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
 .full-width { grid-column: 1 / -1; }
 .action-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.email-management-link { display: inline-flex; align-items: center; gap: 8px; width: fit-content; font-size: 14px; }
+.email-limit { margin: -12px 0 24px; font-size: 14px; line-height: 1.6; }
+.email-list { list-style: none; margin: 0; padding: 0 32px; }
+.email-row { display: flex; align-items: center; gap: 24px; padding: 24px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.email-row:last-child { border-bottom: 0; }
+.email-description { flex: 1; min-width: 0; }
+.email-description strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.email-description p { margin-top: 12px; font-size: 13px; line-height: 1.6; color: var(--md-sys-color-on-surface-variant); }
+.email-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.email-badges .badge:not(.current):not(.verified) { color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container); }
+.email-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .application-name { font-weight: 500; }
 .application-id { display: block; margin-top: 8px; color: var(--muted); }
 .scope-options { display: flex; flex-direction: column; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -328,6 +339,9 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .language-control > svg { display: none; }
     .card-heading, .card-body { padding: 24px; }
     .session-list { padding: 0 24px; }
+    .email-list { padding: 0 24px; }
+    .email-row { align-items: flex-start; flex-direction: column; gap: 16px; }
+    .email-actions { justify-content: flex-start; }
     .profile-overview { flex-wrap: wrap; gap: 16px; }
     .profile-overview > div { flex: 1 1 calc(100% - 80px); min-width: 0; }
     .profile-overview > .badge { margin-left: 80px; }
@@ -346,6 +360,7 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .page-content { padding: 24px 16px; }
     .card-heading, .card-body { padding: 20px; }
     .session-list { padding: 0 20px; }
+    .email-list { padding: 0 20px; }
     .form-options { font-size: 12px; }
     .check-label { font-size: 12px; gap: 8px; }
     .sidebar nav > a { font-size: 12px; padding: 12px; }
