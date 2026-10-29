@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { renderedTextContrast } from './contrast';
 
 test('defaults to English regardless of browser locale', async ({ page }) => {
@@ -55,7 +55,7 @@ test('renders a readable Chinese mobile form without horizontal overflow', async
 });
 
 test('protects account and administrator routes for anonymous visitors', async ({ page }) => {
-    for (const path of ['/en-us/account/security', '/zh-cn/account/sessions', '/en-us/admin/users']) {
+    for (const path of ['/en-us/account/security', '/zh-cn/account/sessions', '/en-us/admin', '/zh-cn/admin', '/en-us/admin/users', '/en-us/admin/applications']) {
         await page.goto(path);
         const locale = path.startsWith('/zh-cn/') ? 'zh-cn' : 'en-us';
         await expect(page).toHaveURL(`/${locale}/login`);

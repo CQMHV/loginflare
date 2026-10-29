@@ -1,8 +1,9 @@
 import { expect } from '@playwright/test';
 import { readdir, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { testMailbox, testOrigin } from './runtime';
 
-const mailboxRoot = resolve('.wrangler/tmp/email');
+const mailboxRoot = testMailbox;
 
 export async function snapshotEmails(): Promise<Set<string>> {
     try {
@@ -14,7 +15,7 @@ export async function snapshotEmails(): Promise<Set<string>> {
     }
 }
 
-/** Read only the local Cloudflare simulator's newly generated mail. Never send mail remotely. */
+/** Read only new messages captured by the isolated local browser-test harness. */
 export async function waitForMail(before: Set<string>, kind: 'verify'): Promise<string> {
     let link = '';
     await expect.poll(async () => {
@@ -24,7 +25,7 @@ export async function waitForMail(before: Set<string>, kind: 'verify'): Promise<
             const candidate = text.match(/https?:\/\/\S+/)?.[0];
             if (!candidate) continue;
             const url = new URL(candidate);
-            if (url.origin !== 'http://localhost:5173') throw new Error('Local test email must point to the local server.');
+            if (url.origin !== testOrigin) throw new Error('Local test email must point to the local server.');
             if (kind === 'verify' && url.pathname.startsWith('/api/auth/verify-email')) {
                 link = candidate;
                 return true;

@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { testOrigin } from './runtime';
+import { expect, test } from './fixtures';
 import { randomUUID } from 'node:crypto';
 import { removeLocalFixtures } from './database';
 import { snapshotEmails, waitForCode, waitForMail } from './mailbox';
@@ -17,7 +18,7 @@ test('manages email addresses and recovers the same account through a secondary 
     const password = 'Email-browser-password-917!';
     const recovered = 'Recovered-email-password-619!';
     fixtureEmails.push(primary, secondary);
-    await page.route('http://localhost:5173/api/**', (route) => route.continue({
+    await page.route(`${testOrigin}/api/**`, (route) => route.continue({
         headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.60' },
     }));
     await page.emulateMedia({ colorScheme: 'light' });
@@ -33,12 +34,16 @@ test('manages email addresses and recovers the same account through a secondary 
     await expect(page.getByRole('heading', { name: 'Check your inbox' })).toBeVisible();
     await page.goto(await waitForMail(beforeSignup, 'verify'));
 
-    async function signIn(identifier: string, candidate: string) {
+    async function signIn(identifier: string, candidate: string, expectedStatus = 200) {
         await page.goto('/en-us/login');
         await page.getByLabel('Email or username', { exact: true }).fill(identifier);
         await page.getByLabel('Password', { exact: true }).fill(candidate);
         await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 25_000 });
+        const endpoint = identifier.includes('@') ? '/api/auth/sign-in/email' : '/api/auth/sign-in/username';
+        const signedIn = page.waitForResponse((response) => response.url() === `${testOrigin}${endpoint}`
+            && response.request().method() === 'POST', { timeout: 60_000 });
         await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+        expect((await signedIn).status()).toBe(expectedStatus);
     }
 
     await signIn(username, password);
@@ -78,7 +83,7 @@ test('manages email addresses and recovers the same account through a secondary 
     await page.getByRole('button', { name: '退出登录', exact: true }).click();
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    await signIn(primary, password);
+    await signIn(primary, password, 401);
     await expect(page.getByRole('alert')).toBeVisible();
     await expect(page).toHaveURL('/en-us/login');
     await page.getByRole('link', { name: 'Forgot password?', exact: true }).click();
@@ -86,7 +91,10 @@ test('manages email addresses and recovers the same account through a secondary 
     await page.getByLabel('Email to receive the code', { exact: true }).fill(primary);
     await expect(page.getByRole('button', { name: 'Send verification code', exact: true })).toBeEnabled({ timeout: 25_000 });
     const beforeRecovery = await snapshotEmails();
+    const recoveryStarted = page.waitForResponse((response) => response.url() === `${testOrigin}/api/auth/emails/recovery/start`
+        && response.request().method() === 'POST', { timeout: 60_000 });
     await page.getByRole('button', { name: 'Send verification code', exact: true }).click();
+    expect((await recoveryStarted).status()).toBe(200);
     await page.getByLabel('Verification code', { exact: true }).fill(await waitForCode(beforeRecovery));
     await page.getByRole('button', { name: 'Continue to new password', exact: true }).click();
     await page.getByLabel('New password', { exact: true }).fill(recovered);

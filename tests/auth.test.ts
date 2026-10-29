@@ -19,10 +19,11 @@ it('logs request metadata without passwords, verification queries or reset-path 
         await client.request(link);
         await client.request(`/api/auth/reset-password/CaseSensitiveResetSecret?${new URLSearchParams({ callbackURL: `${origin}/en-us/reset-password` })}`);
         await client.request('/api/unknown/PrivatePathValue?private=PrivateQueryValue');
+        await client.request('/api/Pv123/jwks');
         const messages = recorder.mock.calls.map((args) => args.join(' ')).join('\n');
         expect(messages).toContain('http_request');
         expect(messages).toContain('/api/auth/reset-password/:token');
-        for (const sensitive of [password, link, token, 'CaseSensitiveResetSecret', 'PrivatePathValue', 'PrivateQueryValue']) {
+        for (const sensitive of [password, link, token, 'CaseSensitiveResetSecret', 'PrivatePathValue', 'PrivateQueryValue', 'Pv123']) {
             expect(messages).not.toContain(sensitive);
         }
     } finally {
@@ -302,7 +303,7 @@ describe('server-side management boundaries', () => {
         const client = harness();
         await client.verify();
         const cookie = await client.signin();
-        const denied = await client.request('/api/auth/admin/list-users', { cookie });
+        const denied = await client.request('/api/admin/users', { cookie });
         expect(denied.status).toBe(403);
         for (const body of [{ role: 'admin' }, { emailVerified: true }, { banned: false }, { email: 'other@example.test' }]) {
             const response = await client.request('/api/auth/update-user', { cookie, body });
@@ -343,21 +344,21 @@ describe('server-side management boundaries', () => {
         const cookie = await client.signin(email);
         const user = (await session(client, cookie))!.user;
         const administrator = await client.administrator();
-        const listed = await client.request('/api/auth/admin/list-users?limit=10&offset=0', { cookie: administrator });
+        const listed = await client.request('/api/admin/users?limit=10', { cookie: administrator });
         expect(listed.status).toBe(200);
-        const list = await listed.json<{ users: { email: string }[]; total: number }>();
-        expect(list.users.some((entry) => entry.email === user.email)).toBe(true);
+        const list = await listed.json<{ items: { email: string }[] }>();
+        expect(list.items.some((entry) => entry.email === user.email)).toBe(true);
         const detail = await client.request(`/api/auth/admin/get-user?${new URLSearchParams({ id: user.id })}`, {
             cookie: administrator,
         });
         expect(detail.status).toBe(200);
         expect(await detail.json()).toMatchObject({ id: user.id, email: user.email, role: 'user' });
-        const searched = await client.request(`/api/auth/admin/list-users?${new URLSearchParams({ filterValue: email, filterField: 'email', filterOperator: 'eq', limit: '1', offset: '0' })}`, {
+        const searched = await client.request(`/api/admin/users?${new URLSearchParams({ lookupValue: email, lookupField: 'email', limit: '1' })}`, {
             cookie: administrator,
         });
         expect(searched.status).toBe(200);
-        expect(await searched.json()).toMatchObject({ total: 1, users: [{ email: user.email }] });
-        const unsupported = await client.request('/api/auth/admin/list-users?searchValue=person&searchField=email&searchOperator=contains', { cookie: administrator });
+        expect(await searched.json()).toMatchObject({ items: [{ email: user.email }] });
+        const unsupported = await client.request('/api/admin/users?searchValue=person&searchField=email&searchOperator=contains', { cookie: administrator });
         expect(unsupported.status).toBe(400);
         const revoked = await client.request('/api/auth/admin/revoke-user-sessions', {
             cookie: administrator, body: { userId: user.id },

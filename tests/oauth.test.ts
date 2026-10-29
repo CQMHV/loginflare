@@ -448,7 +448,7 @@ describe('application management and protocol boundaries', () => {
         expect(serialized).not.toContain(registered.clientSecret!);
         expect(serialized).not.toMatch(/client_secret|clientSecret|secretHash/);
         const listed = await client.request('/api/admin/applications', { cookie: secondAdmin });
-        expect(await listed.json()).toMatchObject({ applications: [{ clientId: registered.application.clientId }] });
+        expect(await listed.json()).toMatchObject({ items: [{ clientId: registered.application.clientId }] });
         const rotated = await client.request(`/api/admin/applications/${registered.application.clientId}/rotate-secret`, { cookie: adminCookie, body: {} });
         expect(rotated.status, await rotated.clone().text()).toBe(200);
         const replacement = await rotated.json<{ clientSecret: string }>();

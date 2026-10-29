@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 import { renderedTextContrast } from './contrast';
 
 async function chooseTheme(page: Page, name: 'Light' | 'Dark' | 'System' | '浅色' | '深色' | '跟随系统') {
@@ -39,7 +39,7 @@ test('uses the Material Web opening and closing animations', async ({ page }) =>
 
 test('initializes the system theme before the React application loads', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.route(/\/src\/client\/main\.tsx(?:\?.*)?$/, (route) => route.abort());
+    await page.route(/\/assets\/index-[^/]+\.js(?:\?.*)?$/, (route) => route.abort());
     await page.goto('/en-us/login');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'system');

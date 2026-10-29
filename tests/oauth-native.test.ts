@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations, reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createAuth } from '../src/server/auth';
-import { harness, origin, session } from './helpers';
+import { cookies, harness, origin, password, recoveryToken, session } from './helpers';
 
 beforeEach(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -66,8 +66,8 @@ async function nativeFixture() {
     expect(issued.status, await issued.clone().text()).toBe(200);
     const tokens = await issued.json<{ refresh_token: string; access_token: string }>();
     expect(tokens.refresh_token).toBeTruthy();
-    async function issueAnotherGrant() {
-        const response = await auth.handler(new Request(`${origin}/api/auth/oauth2/authorize?${query}`, { headers: { Cookie: cookie } }));
+    async function issueAnotherGrant(activeCookie = cookie) {
+        const response = await auth.handler(new Request(`${origin}/api/auth/oauth2/authorize?${query}`, { headers: { Cookie: activeCookie } }));
         expect(response.status, await response.clone().text()).toBe(302);
         const code = new URL(response.headers.get('location')!).searchParams.get('code')!;
         expect(code).toBeTruthy();
@@ -96,6 +96,51 @@ it.each(['sign-out', 'ban-user'] as const)('applies the explicit account policy 
         expect((await token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token })).ok).toBe(false);
     }
 });
+
+it.each(['revoke-other-sessions', 'admin-revoke', 'change-password', 'reset-password', 'ban-user'] as const)(
+    'covers sessions beyond the native first page during %s without a refresh escaping', async (operation) => {
+        const { client, administrator, cookie, identity, token, issueAnotherGrant } = await nativeFixture();
+        const inserts = Array.from({ length: 260 }, (_, index) => env.DB.prepare(`INSERT INTO "session"
+            ("id", "token", "userId", "expiresAt", "createdAt", "updatedAt")
+            SELECT ?, ?, "userId", "expiresAt", "createdAt", "updatedAt" FROM "session" WHERE "id" = ?`)
+            .bind(`bulk-session-${index}`, `bulk-token-${index}`, identity.session.id));
+        await env.DB.batch(inserts);
+        const lateCookie = await client.signin();
+        const lateIdentity = (await session(client, lateCookie))!;
+        const lateGrantResponse = await issueAnotherGrant(lateCookie);
+        expect(lateGrantResponse.status, await lateGrantResponse.clone().text()).toBe(200);
+        const lateTokens = await lateGrantResponse.json<{ refresh_token: string }>();
+        const grant = await env.DB.prepare('SELECT "authorizationCodeId" FROM "oauthGrantPolicy" WHERE "originalSessionId" = ?')
+            .bind(lateIdentity.session.id).first<{ authorizationCodeId: string }>();
+        expect(grant).toBeTruthy();
+        let resetToken: string | undefined;
+        if (operation === 'reset-password') resetToken = await recoveryToken(client);
+        const paused = pauseNextStatement(client.bindings.DB);
+        client.bindings.DB = paused.binding;
+        const rotating = token({ grant_type: 'refresh_token', refresh_token: lateTokens.refresh_token });
+        let response: Response;
+        try {
+            await Promise.race([paused.reached, rotating.then(() => { throw new Error('Rotation missed the insertion boundary'); })]);
+            if (operation === 'admin-revoke' || operation === 'ban-user') {
+                response = await client.request(`/api/auth/admin/${operation === 'admin-revoke' ? 'revoke-user-sessions' : 'ban-user'}`, { cookie: administrator, body: { userId: identity.user.id } });
+            } else if (operation === 'change-password') {
+                response = await client.request('/api/auth/change-password', { cookie, body: { currentPassword: password, newPassword: 'Changed-bulk-password-602!', revokeOtherSessions: true } });
+            } else if (operation === 'reset-password') {
+                response = await client.request('/api/auth/reset-password', { body: { token: resetToken!, newPassword: 'Reset-bulk-password-602!' } });
+            } else {
+                response = await client.request('/api/auth/revoke-other-sessions', { cookie, body: {} });
+            }
+            expect(response.status, await response.clone().text()).toBe(200);
+            const preserved = operation === 'revoke-other-sessions' || operation === 'change-password';
+            expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "session" WHERE "userId" = ?').bind(identity.user.id).first('count')).toBe(preserved ? 1 : 0);
+            expect(await env.DB.prepare('SELECT "revokedAt" FROM "oauthGrantPolicy" WHERE "authorizationCodeId" = ?').bind(grant!.authorizationCodeId).first('revokedAt')).toBeTruthy();
+            if (operation === 'revoke-other-sessions') expect(await session(client, cookie)).not.toBeNull();
+            if (operation === 'change-password') expect(await session(client, cookies(response))).not.toBeNull();
+        } finally { paused.resume(); }
+        expect((await rotating).ok).toBe(false);
+        expect(await session(client, lateCookie)).toBeNull();
+    },
+);
 
 it('rejects token use and issuance from a suspended account even when token revocation is incomplete', async () => {
     const { identity, auth, token, tokens } = await nativeFixture();

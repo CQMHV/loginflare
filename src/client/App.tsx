@@ -3,15 +3,16 @@ import {
     type FormEvent, type PropsWithChildren,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
 import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
-import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, LanguageSelect, List, ListItem, NavigationLink, Progress, TextField, ThemeMenu } from './material';
+import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, LanguageSelect, List, ListItem, NavigationLink, Progress, Select, TextField, ThemeMenu } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
 import { ApplicationEditor, ApplicationsPage } from './Applications';
 import { EmailsPage } from './Emails';
 import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
+import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
 
 const preferenceKey = 'loginflare.locale';
 
@@ -65,9 +66,9 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.shield}</svg>;
 }
 
-function Brand() {
+function Brand({ destination }: { destination?: string }) {
     const { locale } = useApp();
-    return <Link className="brand" to={localizedPath(locale)} aria-label="Loginflare">
+    return <Link className="brand" to={destination ?? localizedPath(locale)} aria-label="Loginflare">
         <span className="brand-mark"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.5 2C14.5 7 8 7.5 8 12c0 1.8 1.5 3 3 3-1-3 3-4 3-6 4 3.5 5.5 5.4 5.5 8A7.5 7.5 0 0 1 4.5 17C4.5 10.5 12 8.5 13.5 2Z" fill="currentColor" /></svg></span>
         Loginflare<span className="version-label">BETA</span>
     </Link>;
@@ -423,7 +424,16 @@ function Protected({ adminOnly = false }: { adminOnly?: boolean }) {
     return <Outlet />;
 }
 
-function AccountLayout() {
+interface AppFrameProps {
+    area: 'account' | 'admin';
+    title: string;
+    home: string;
+    navigationLabel: string;
+    navigation: React.ReactNode;
+    switchTarget?: { to: string; label: string; icon: string };
+}
+
+function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget }: AppFrameProps) {
     const { identity, locale, refresh } = useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
@@ -443,25 +453,41 @@ function AccountLayout() {
         }
     }
 
-    return <div className="app-shell">
+    return <div className="app-shell" data-area={area}>
         <aside className="sidebar">
-            <Brand />
-            <nav aria-label="Account navigation">
-                <p className="nav-label">{t('account')}</p>
-                <NavigationLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavigationLink>
-                <NavigationLink to={localizedPath(locale, 'account/emails')}><Icon name="mail" />{t('emails.title')}</NavigationLink>
-                <NavigationLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavigationLink>
-                <NavigationLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavigationLink>
-                {identity?.user.role === 'admin' && <><p className="nav-label admin-label">{t('administration')}</p><NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink><NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink></>}
-            </nav>
+            <Brand destination={home} />
+            <nav aria-label={navigationLabel}>{navigation}</nav>
             <div className="sidebar-bottom"><span className="small-cloud">☁</span><p>{t('tagline')}</p><small>Cloudflare Workers + D1</small></div>
         </aside>
         <div className="app-content">
-            <header className="app-header"><div className="mobile-brand"><Brand /></div><span className="desktop-header-title">{t('platform')}</span><div className="header-actions"><ThemeSwitcher /><LanguageSwitcher /><span className="header-separator" /><span className="user-avatar" aria-label={identity?.user.name}>{identity?.user.name.slice(0, 1).toUpperCase()}</span><Button className="icon-button" busy={busy} onClick={() => { void signOut(); }} aria-label={t('signout')} title={t('signout')}><Icon name="logout" /></Button></div></header>
+            <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><ThemeSwitcher /><LanguageSwitcher /><span className="header-separator" /><span className="user-avatar" aria-label={identity?.user.name}>{identity?.user.name.slice(0, 1).toUpperCase()}</span><Button className="icon-button" busy={busy} onClick={() => { void signOut(); }} aria-label={t('signout')} title={t('signout')}><Icon name="logout" /></Button></div></header>
+            <div className="workspace-bar"><span className="workspace-title"><Icon name={area === 'admin' ? 'shield' : 'profile'} />{title}</span>{switchTarget && <Link className="workspace-switch" to={switchTarget.to}><Icon name={switchTarget.icon} size={18} />{switchTarget.label}<Icon name="arrow" size={16} /></Link>}</div>
             <main className="page-content"><ErrorNotice code={error} /><Outlet /></main>
             <footer className="app-footer">Loginflare <span>·</span> {t('openSource')}</footer>
         </div>
     </div>;
+}
+
+function AccountLayout() {
+    const { identity, locale } = useApp();
+    const { t } = useTranslation();
+    return <AppFrame area="account" title={t('accountCenter')} home={localizedPath(locale, 'account')} navigationLabel={t('accountNavigation')}
+        navigation={<><p className="nav-label">{t('account')}</p>
+            <NavigationLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'account/emails')}><Icon name="mail" />{t('emails.title')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavigationLink></>}
+        switchTarget={identity?.user.role === 'admin' ? { to: localizedPath(locale, 'admin/users'), label: t('adminConsole'), icon: 'shield' } : undefined} />;
+}
+
+function AdminLayout() {
+    const { locale } = useApp();
+    const { t } = useTranslation();
+    return <AppFrame area="admin" title={t('adminConsole')} home={localizedPath(locale, 'admin/users')} navigationLabel={t('adminNavigation')}
+        navigation={<><p className="nav-label">{t('adminConsole')}</p>
+            <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink></>}
+        switchTarget={{ to: localizedPath(locale, 'account'), label: t('accountCenter'), icon: 'profile' }} />;
 }
 
 function PageHeading({ title, description, children }: PropsWithChildren<{ title: string; description: string }>) {
@@ -488,13 +514,11 @@ function ProfilePage() {
     }
     return <>
         <PageHeading title={t('profileTitle')} description={t('profileDescription')} />
-        <div className="profile-overview"><span className="profile-avatar">{identity?.user.name.slice(0, 1).toUpperCase()}</span><div><h2>{identity?.user.name}</h2><p>{identity?.user.email}</p></div><span className="badge verified"><Icon name="check" size={13} />{t('verified')}</span></div>
+        <div className="profile-overview"><span className="profile-avatar">{identity?.user.name.slice(0, 1).toUpperCase()}</span><div><h2>{identity?.user.name}</h2></div></div>
         <section className="card"><div className="card-heading"><h2>{t('accountDetails')}</h2><p>{t('accountDetailsDescription')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
             <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
             <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={setName} maxLength={100} required />
             <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
-            <TextField label={t('email')} type="email" value={identity?.user.email ?? ''} readOnly supportingText={t('emails.profileHint')} />
-            <ButtonLink variant="text" className="email-management-link" to={localizedPath(locale, 'account/emails')}>{t('emails.manage')}<Icon name="arrow" size={16} /></ButtonLink>
             <div className="form-footer"><Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
         </form></section>
         <section className="card"><div className="card-heading"><h2>{t('preferences')}</h2><p>{t('preferencesDescription')}</p></div><List className="preference-list" label={t('preferences')}><ListItem headline={t('language')} end={<LanguageSwitcher />} /></List></section>
@@ -550,35 +574,48 @@ function deviceName(agent?: string | null): string {
 function SessionsPage() {
     const { identity, locale, refresh } = useApp();
     const { t } = useTranslation();
-    const [sessions, setSessions] = useState<Session[]>();
+    const [parameters, setParameters] = useSearchParams();
+    const cursor = parameters.get('cursor');
+    const query = pageParameters(parameters.toString());
+    const [data, setData] = useState<CursorPage<Session> & { hasOtherSessions: boolean }>();
+    const [revision, setRevision] = useState(0);
     const [error, setError] = useState<string>();
     const [success, setSuccess] = useState<string>();
     const [busy, setBusy] = useState(false);
-    const load = useCallback(async () => {
-        try { setSessions(await request<Session[]>('/list-sessions')); }
-        catch (cause) { setError(errorCode(cause)); }
-    }, []);
-    useEffect(() => { void load(); }, [load]);
+    useEffect(() => {
+        let current = true;
+        setData(undefined); setError(undefined);
+        void fetchJson<CursorPage<Session> & { hasOtherSessions: boolean }>(`/api/account/sessions?${query}`)
+            .then((result) => { if (current) setData(result); })
+            .catch((cause) => { if (current) setError(errorCode(cause)); });
+        return () => { current = false; };
+    }, [query, revision]);
+    function navigatePage(nextCursor: string | null) {
+        setParameters(nextCursor ? { cursor: nextCursor } : {});
+    }
     async function revoke(session?: Session) {
         setBusy(true); setError(undefined); setSuccess(undefined);
         try {
             if (session) await request('/revoke-session', { token: session.token });
             else await request('/revoke-other-sessions', {});
-            await refresh(); await load();
+            await refresh();
+            if (!session) navigatePage(null);
+            setRevision((value) => value + 1);
             setSuccess(session ? 'sessionRevoked' : 'othersRevoked');
         } catch (cause) { setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ErrorNotice code={error} /><SuccessNotice message={success ? t(success) : undefined} /><section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!sessions || sessions.length < 2} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
-        {!sessions && !error && <Busy />}
-        {sessions?.length === 0 && <p className="empty-state">{t('sessionsEmpty')}</p>}
-        {!!sessions?.length && <List className="session-list" label={t('activeSessions')}>{sessions.map((session, index) => <Fragment key={session.id}>
+    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ErrorNotice code={error} />{error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<SuccessNotice message={success ? t(success) : undefined} /><section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!data?.hasOtherSessions} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
+        {!data && !error && <Busy />}
+        {data?.items.length === 0 && <p className="empty-state">{t('sessionsEmpty')}</p>}
+        {!!data?.items.length && <List className="session-list" label={t('activeSessions')}>{data.items.map((session, index) => <Fragment key={session.id}>
             {index > 0 && <Divider />}
             <ListItem className="session-row" start={<span className="session-icon"><Icon name="sessions" size={25} /></span>}
                 headline={<div className="session-headline"><strong>{deviceName(session.userAgent) || t('unknownDevice')}</strong>{session.id === identity?.session.id && <span className="badge current">{t('currentSession')}</span>}</div>}
                 supportingText={<div className="session-description"><p>{session.ipAddress || t('unknownIp')}</p><small>{t('signedIn')} {formatDate(session.createdAt, locale)} <span>·</span> {t('expires')} {formatDate(session.expiresAt, locale)}</small><Button className="text-button danger" busy={busy} onClick={() => { void revoke(session); }}>{t('revoke')}</Button></div>}
             />
         </Fragment>)}</List>}
+        {data && <PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} />}
     </section></>;
 }
 
@@ -590,24 +627,32 @@ function UserStatus({ user }: { user: User }) {
 function UsersPage() {
     const { locale } = useApp();
     const { t } = useTranslation();
-    const [query, setQuery] = useState('');
-    const [search, setSearch] = useState('');
-    const [page, setPage] = useState(0);
-    const [data, setData] = useState<{ users: User[]; total: number }>();
+    const location = useLocation();
+    const [parameters, setParameters] = useSearchParams();
+    const cursor = parameters.get('cursor');
+    const lookupField = parameters.get('lookupField') ?? 'email';
+    const lookupValue = parameters.get('lookupValue') ?? '';
+    const [query, setQuery] = useState(lookupValue);
+    const [field, setField] = useState(lookupField);
+    const [data, setData] = useState<CursorPage<User>>();
     const [error, setError] = useState<string>();
-    const pageSize = 20;
+    const requestQuery = pageParameters(location.search);
+    useEffect(() => { setQuery(lookupValue); setField(lookupField); }, [lookupValue, lookupField]);
     useEffect(() => {
         let current = true;
         setError(undefined); setData(undefined);
-        const params = new URLSearchParams({ limit: String(pageSize), offset: String(page * pageSize), sortBy: 'createdAt', sortDirection: 'desc' });
-        if (search) { params.set('filterValue', search); params.set('filterField', 'email'); params.set('filterOperator', 'eq'); }
-        void request<{ users: User[]; total: number }>(`/admin/list-users?${params}`).then((result) => { if (current) setData(result); }).catch((cause) => { if (current) setError(errorCode(cause)); });
+        void fetchJson<CursorPage<User>>(`/api/admin/users?${requestQuery}`).then((result) => { if (current) setData(result); }).catch((cause) => { if (current) setError(errorCode(cause)); });
         return () => { current = false; };
-    }, [page, search]);
-    const userPath = (id: string) => `${localizedPath(locale, 'admin/users/detail')}?${new URLSearchParams({ id })}`;
-    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')}>{data && <span className="count-pill">{t('userCount', { count: data.total })}</span>}</PageHeading><ErrorNotice code={error} /><section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); setSearch(query.trim().toLowerCase()); setPage(0); }}><div className="search-input"><TextField type="email" label={t('searchUsers')} value={query} onValueChange={setQuery} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
+    }, [requestQuery]);
+    function navigatePage(nextCursor: string | null) {
+        const next = listParameters(location.search);
+        if (nextCursor) next.set('cursor', nextCursor); else next.delete('cursor');
+        setParameters(next);
+    }
+    const userPath = (id: string) => listPath(localizedPath(locale, 'admin/users/detail'), location.search, { id });
+    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')} /><ErrorNotice code={error} />{error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'email', label: t('email') }, { value: 'username', label: t('username') }, { value: 'id', label: t('accountId') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('searchUsers')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
         {!data && !error && <Busy />}
-        {data && <><div className="table-scroll"><table><thead><tr><th>{t('user')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.users.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><span className="table-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><ButtonLink variant="icon" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></ButtonLink></td></tr>)}</tbody></table>{data.users.length === 0 && <p className="empty-state">{t('usersEmpty')}</p>}</div><div className="pagination"><small>{t('page', { page: page + 1 })}</small><div><Button className="secondary small" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>{t('previous')}</Button><Button className="secondary small" disabled={(page + 1) * pageSize >= data.total} onClick={() => setPage((value) => value + 1)}>{t('next')}</Button></div></div></>}
+        {data && <><div className="table-scroll"><table><thead><tr><th>{t('user')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.items.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><span className="table-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><ButtonLink variant="icon" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></ButtonLink></td></tr>)}</tbody></table>{data.items.length === 0 && <p className="empty-state">{t('usersEmpty')}</p>}</div><PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
     </section></>;
 }
 
@@ -637,7 +682,7 @@ function UserDetailPage() {
         } catch (cause) { setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void action(kind, true); }} />}<ButtonLink variant="text" className="detail-back" to={localizedPath(locale, 'admin/users')}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''} /><ErrorNotice code={error} /><SuccessNotice message={success ? t('userUpdated') : undefined} />{!user && !error && <Busy />}{user && <>
+    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void action(kind, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''} /><ErrorNotice code={error} /><SuccessNotice message={success ? t('userUpdated') : undefined} />{!user && !error && <Busy />}{user && <>
         <section className="card"><div className="card-body user-detail-grid"><div><small>{t('name')}</small><strong>{user.name}</strong></div><div><small>{t('email')}</small><strong>{user.email}</strong></div><div><small>{t('status')}</small><UserStatus user={user} /></div><div><small>{t('role')}</small><strong>{t(user.role === 'admin' ? 'admin' : 'user')}</strong></div><div><small>{t('joined')}</small><strong>{formatDate(user.createdAt, locale)}</strong></div><div><small>{t('emailVerification')}</small><strong>{t(user.emailVerified ? 'verified' : 'unverified')}</strong></div><div className="full-width"><small>{t('accountId')}</small><code>{user.id}</code></div>{user.banReason && <div className="full-width"><small>{t('reason')}</small><strong>{user.banReason}</strong></div>}</div></section>
         <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
     </>}</>;
@@ -670,7 +715,10 @@ function LocaleRoutes() {
                     <Route path="account/emails" element={<EmailsPage refreshIdentity={refresh} />} />
                     <Route path="account/security" element={<SecurityPage />} />
                     <Route path="account/sessions" element={<SessionsPage />} />
-                    <Route element={<Protected adminOnly />}>
+                </Route>
+                <Route element={<Protected adminOnly />}>
+                    <Route element={<AdminLayout />}>
+                        <Route path="admin" element={<Navigate to={localizedPath(locale, 'admin/users')} replace />} />
                         <Route path="admin/users" element={<UsersPage />} />
                         <Route path="admin/users/detail" element={<UserDetailPage />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />

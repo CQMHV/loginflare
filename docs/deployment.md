@@ -19,7 +19,7 @@ This repository does not create remote resources or deploy itself during depende
 
 ## Configure the environment
 
-The staging environment is available at `https://loginflare-staging.cqmhv.workers.dev`, with its own `loginflare-staging` D1 database and Turnstile widget. Cloudflare Workers Builds connects it to this repository's `main` branch. Build variables are `CLOUDFLARE_ENV=staging`, `NODE_VERSION=24`, and `PNPM_VERSION=11.25.0`; the build command is `pnpm build`, and the deploy command is `pnpm exec wrangler d1 migrations apply DB --remote && pnpm exec wrangler deploy`. The dedicated build token can deploy Workers and apply D1 migrations in the configured account. Authentication and Turnstile secrets are runtime Worker Secrets, not build variables or repository files. Production remains unconfigured.
+The maintainer's test instance is `https://loginflare-staging.cqmhv.workers.dev`, with its own D1 database and Turnstile widget; production is unconfigured. Independent operators configure their own environments. For Cloudflare Workers Builds, set `CLOUDFLARE_ENV=staging`, `NODE_VERSION=24`, and `PNPM_VERSION=11.25.0`, use `pnpm build` as the build command, and `node scripts/database.mjs migrate --env staging && pnpm exec wrangler deploy` as the deploy command. The migration wrapper performs data preparation and the schema gate before deployment can proceed. The build token needs Worker deployment and D1 migration/query access to that environment. Authentication and Turnstile secrets are runtime Worker Secrets, not build variables or repository files. Verify the remote build configuration separately when upgrading an existing instance.
 
 The committed `wrangler.jsonc` contains a local configuration and explicit `staging` / `production` sections. Replace the remote D1 placeholder IDs and empty public configuration before building for either environment. Keep development secrets in the ignored `.dev.vars` file; `pnpm setup:local` generates it safely without overwriting an existing file. Store remote authentication and Turnstile secrets as Worker secrets, never as committed configuration. Authentication secrets must be unique per environment and remain stable across routine redeployments.
 
@@ -54,13 +54,14 @@ cf cli search "set a worker secret"
 
 Keep discovery queries anonymous; do not put account identifiers, domains, addresses, resource names, or tokens in them.
 
-The CLI's D1 migration command accepts a **database ID**, not a binding or database name. After reviewing the exact target, the remote migration shape is:
+Use the shipped wrapper for migrations so data preparation and schema checks cannot be skipped. After reviewing the exact target:
 
 ```powershell
-cf d1 migrations apply <database-id> --dir migrations
+node scripts/database.mjs migrate --env staging
+node scripts/database.mjs check --env staging
 ```
 
-The local migration command is wrapped by `pnpm db:migrate` so that it uses the same local state directory as development. Do not use the remote form when initializing local development data.
+`pnpm db:migrate` and `pnpm db:check` target local state in `.cloudflare/state`. Use the explicit `node scripts/database.mjs ... --env staging|production` form for remote operations. The wrapper resolves and prints the selected database ID; `cf` migration operations receive that ID. Do not use a remote target to initialize local data. `check` is read-only; `migrate` prepares data, applies the committed SQL, and checks the result.
 
 Build and deployment are separate operations. With the Cloudflare Vite plugin, the target environment is selected **at build time**, not by a deploy-time `--env` flag. For staging, build using PowerShell:
 
@@ -88,13 +89,19 @@ Pre-create and verify the intended D1 databases, then put their IDs in the envir
 
 ## Database and administrator initialization
 
-Apply the committed migrations to the correct environment before starting the new Worker version. Do not replace an established database with a fresh one during routine updates. Review migration SQL before a remote application, and use D1's supported backup/recovery tooling before making a change that requires it.
+Back up the reviewed target, apply the committed migrations through the wrapper, and require its schema gate to pass before starting the new Worker version. Do not replace an established database with a fresh one during routine updates. Review migration SQL and preserve the database's recovery point before remote changes.
+
+Before upgrading, pause application registration, callback editing, and other writes to data being prepared. Keep that window in place through preparation, migrations, schema/URI-registry checks, and switching to the new Worker. Origin backfill compares both the stored callbacks and metadata before writing and aborts on a concurrent change; the gate verifies the derived metadata and registry in both directions. These checks detect inconsistent state but do not pause writers or complete the version switch themselves. An existing remote build trigger must be reviewed and updated separately; the repository does not automatically establish this write window.
 
 OAuth/OIDC adds versioned provider tables and `oauthGrantPolicy` security state in migrations `0002_oauth.sql` and `0003_oauth_policy.sql`. Apply both before enabling the new build. Preserve existing account data, signing keys, grant policy, and the stable `BETTER_AUTH_SECRET`; deleting policy rows is not a supported way to revoke or restore credentials. Keep `${AUTH_URL}/api/auth` stable as the issuer after applications begin using it.
 
 Username sign-in adds a nullable, case-insensitively unique `user.username` in `0004_username.sql`. Apply it before deploying the username-enabled build. Existing accounts keep their email sign-in and choose a username through their account profile; the migration does not invent or reserve usernames for them.
 
 Email management adds `userEmail` and `emailChallenge` in `0005_emails.sql`. Apply it before deploying the email-enabled build. The migration registers every existing primary email and preserves its verification state. Primary and secondary addresses share a case-insensitive unique registry; database triggers protect native registration, primary switches and proof invalidation. Accounts manage at most ten addresses. Unverified secondary reservations can be reclaimed after one day when adding that address. Recovery now uses a code sent to a selected verified registered email, followed by the native password reset; the old public reset-link request endpoint is removed. This needs no additional bindings or secrets.
+
+`0006_management.sql` adds indexed cursor-list access and the OAuth URI projection; `0007_maintenance.sql` adds expiry indexes and grant-policy collection bounds. Before applying SQL, the wrapper derives redirect Origins using the URL parser and normalizes native date columns to ISO UTC text in bounded batches. Invalid stored callbacks must be resolved before migration. The final check compares committed tables, columns, indexes and triggers, checks foreign keys and callback metadata/registry consistency, and rejects invalid native date storage. It does not silently repair a failed schema check or permit mixed request-time date formats. Keep this preparation and check in automated deployment commands.
+
+The five-minute Cron Trigger performs bounded expiry cleanup on the existing Worker and D1. It needs no new resources or secrets. Credential validity is checked on use, so an overdue collection run does not make an expired token valid. Monitor `database_maintenance` and `database_maintenance_failed` events; sustained backlog or exhausted budgets call for workload and database review, not deletion of live grant-policy rows. See [Scaling](scaling.md) for the operational boundaries.
 
 Create production applications in the administrator console with exact HTTPS callback and post-logout URLs. Store server-client secrets in each application's protected server configuration, and never ship them to browser applications. Registered SPA Origins gain protocol-only CORS access, not access to account or administration APIs. See [application integration](oauth.md) for refresh and security-revocation behavior.
 
@@ -114,6 +121,20 @@ pnpm admin:promote -- --email admin@example.com --env staging
 
 Use `--env production` only when production is the intended target. The command refuses missing environment selection, placeholder/invalid database IDs, and a remote target that reuses the local database ID. The email is parameterized for remote queries; local Wrangler SQL uses a quoted literal passed as a structured process argument without a shell. Never bootstrap by assigning privileges to the first user who happens to register. Sign out and sign in again after promotion.
 
+## Backup and restore
+
+For a local snapshot:
+
+```powershell
+pnpm db:backup
+```
+
+An optional output directory can be passed as the next argument. The default is a new timestamped directory under `work/backups/`. Node's SQLite backup API produces consistent snapshots while local development is running. The manifest records database files under `d1/` and the saved local configuration and managed test credentials, including `.dev.vars` when present. Keep the backup private and outside Git; it contains authentication material. This command never contacts a remote D1 database.
+
+To restore, stop the development server, keep the existing state aside, and restore the manifest's `d1/` files to `.cloudflare/state/v3/d1` together with each configuration and credential file at its original relative path. Preserve the matching authentication secret and origin: signing keys are encrypted and existing credentials belong to that instance. Check the restored schema with `pnpm db:check` before opening it. Perform restore drills in an isolated directory so verification does not overwrite the active development database.
+
+For staging or production, record and validate a recovery point using D1's supported recovery facilities before migration. Confirm the selected database and restore point before an actual remote restore. A local SQLite snapshot is not a remote D1 backup, and a Worker rollback does not reverse schema or data changes.
+
 ## Staging acceptance
 
 Use addresses and accounts controlled by the operator. A real email delivery check is a deliberate remote action, not part of the local automated suite.
@@ -130,6 +151,7 @@ Verify the following before promoting a build to production:
 8. Web and SPA applications discover the configured issuer, complete consent, and exchange codes with PKCE S256; invalid callbacks and unregistered Origins fail.
 9. Password reset, explicit session revocation, and suspension invalidate the appropriate OAuth grants; restoration does not resurrect them. Ordinary central logout preserves native offline refresh semantics.
 10. Signing keys survive a routine redeployment; OAuth codes, client secrets, and tokens are absent from logs.
+11. The migration/schema gate passes, cursor pages and exact lookups work, and the scheduled handler reports bounded maintenance without removing live credentials.
 
 ## Updates and troubleshooting
 

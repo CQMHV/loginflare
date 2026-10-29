@@ -66,3 +66,11 @@ test('promotion is conditional on a verified active account and parameterized by
     assert.equal((promotionSql.match(/\?/g) ?? []).length, 1);
     assert.match(promotionSql, /RETURNING "id", "email", "role"/);
 });
+
+test('schema checks require an explicit target and reject promotion-only input', () => {
+    assert.deepEqual(parseArguments(['check', '--local']), { action: 'check', local: true, environment: undefined, email: undefined });
+    assert.deepEqual(parseArguments(['check', '--env', 'staging']), { action: 'check', local: false, environment: 'staging', email: undefined });
+    assert.throws(() => parseArguments(['check']), /exactly one target/);
+    assert.throws(() => parseArguments(['check', '--local', '--env', 'production']), /exactly one target/);
+    assert.throws(() => parseArguments(['check', '--local', '--email', 'user@example.test']), /only valid for promotion/);
+});

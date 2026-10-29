@@ -3,12 +3,12 @@ import { APIError, createAuthEndpoint, createAuthMiddleware, sensitiveSessionMid
 import { z } from 'zod';
 import type { Env } from './config';
 import { sendEmailCode } from './mail';
+import { consumeEmailQuota, consumeRecoveryChallenge, removeEmailAddress, replaceEmailChallenge, setPrimaryAddress, verifyEmailAddress, type Address } from './email-operations';
 
 const emailInput = z.email().max(254).transform((value) => value.toLowerCase());
 const passwordInput = z.string().min(1).max(128);
 const challengeInput = z.object({ challengeId: z.string().uuid(), code: z.string().regex(/^\d{6}$/) });
 const lifetime = 10 * 60_000;
-type Address = { id: string; userId: string; email: string; verified: number; createdAt: number };
 type AccountUser = { id: string; email: string; name: string; locale?: unknown; banned?: boolean | null };
 
 function fail(code: string, status: 'BAD_REQUEST' | 'UNAUTHORIZED' | 'TOO_MANY_REQUESTS' | 'SERVICE_UNAVAILABLE' = 'BAD_REQUEST'): never {
@@ -34,11 +34,7 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
     }
 
     async function quota(key: string) {
-        const now = Date.now();
-        const row = await env.DB.prepare(`INSERT INTO "rateLimit" ("id", "key", "count", "lastRequest") VALUES (?, ?, 1, ?)
-            ON CONFLICT ("key") DO UPDATE SET "count" = CASE WHEN "lastRequest" < ? THEN 1 ELSE "count" + 1 END,
-                "lastRequest" = CASE WHEN "lastRequest" < ? THEN ? ELSE "lastRequest" END RETURNING "count"`)
-            .bind(crypto.randomUUID(), `emails:${key}`, now, now - 60_000, now - 60_000, now).first<{ count: number }>();
+        const row = await consumeEmailQuota(env.DB, key);
         if (!row || row.count > 3) fail('TOO_MANY_REQUESTS', 'TOO_MANY_REQUESTS');
     }
 
@@ -62,15 +58,7 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
         const code = randomCode();
         const hash = await digest(challengeId, code);
         const now = Date.now();
-        const inserted = await env.DB.batch([
-            env.DB.prepare('DELETE FROM "emailChallenge" WHERE "expiresAt" <= ? OR ("userId" = ? AND "emailId" = ? AND "purpose" = ?)').bind(now, user.id, row.id, purpose),
-            env.DB.prepare(`INSERT INTO "emailChallenge" ("id", "userId", "emailId", "purpose", "codeHash", "attempts", "expiresAt", "createdAt")
-                SELECT ?, ?, ?, ?, ?, 0, ?, ? WHERE EXISTS (SELECT 1 FROM "user" u JOIN "userEmail" e ON e."userId" = u."id"
-                    WHERE u."id" = ? AND e."id" = ? AND COALESCE(u."banned", 0) = 0 ${purpose === 'recovery' ? 'AND e."verified" = 1' : ''}
-                    ${credentialHash ? 'AND EXISTS (SELECT 1 FROM "account" a WHERE a."userId" = u."id" AND a."providerId" = \'credential\' AND a."password" = ?)' : ''})`)
-                .bind(challengeId, user.id, row.id, purpose, hash, now + lifetime, now, user.id, row.id, ...(credentialHash ? [credentialHash] : [])),
-        ]);
-        if (!inserted[1].meta.changes) fail('INVALID_CODE');
+        if (!await replaceEmailChallenge(env.DB, { id: challengeId, userId: user.id, emailId: row.id, purpose, hash, now, expiresAt: now + lifetime, credentialHash })) fail('INVALID_CODE');
         async function deliver() {
             try {
                 await sendEmailCode(env, { ...user, email: row.email }, code, purpose);
@@ -174,14 +162,7 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 const userId = ctx.context.session.user.id;
                 const row = await attempt(ctx.body.challengeId, 'verify', userId);
                 const hash = await digest(ctx.body.challengeId, ctx.body.code);
-                const now = Date.now();
-                const results = await env.DB.batch([
-                    env.DB.prepare(`UPDATE "userEmail" SET "verified" = 1 WHERE "id" = ? AND "userId" = ?
-                        AND EXISTS (SELECT 1 FROM "emailChallenge" WHERE "id" = ? AND "userId" = ? AND "purpose" = 'verify' AND "codeHash" = ? AND "expiresAt" > ? AND "attempts" <= 5)`)
-                        .bind(row.emailId, userId, ctx.body.challengeId, userId, hash, now),
-                    env.DB.prepare('DELETE FROM "emailChallenge" WHERE "id" = ? AND "codeHash" = ? AND "purpose" = ?').bind(ctx.body.challengeId, hash, 'verify'),
-                ]);
-                if (!results[0].meta.changes) fail('INVALID_CODE');
+                if (!await verifyEmailAddress(env.DB, row.emailId, userId, ctx.body.challengeId, hash)) fail('INVALID_CODE');
                 return ctx.json({ status: true });
             }),
             setPrimaryEmail: createAuthEndpoint('/emails/set-primary', {
@@ -194,12 +175,7 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 // Bind the final write to the verified target and the password just
                 // checked, so concurrent removal or credential changes cannot revive it.
                 try {
-                    const updated = await env.DB.prepare(`UPDATE "user" SET "email" = ?, "emailVerified" = 1, "updatedAt" = ?
-                        WHERE "id" = ? AND COALESCE("banned", 0) = 0
-                        AND EXISTS (SELECT 1 FROM "userEmail" e WHERE e."id" = ? AND e."userId" = "user"."id" AND e."verified" = 1)
-                        AND EXISTS (SELECT 1 FROM "account" a WHERE a."userId" = "user"."id" AND a."providerId" = 'credential' AND a."password" = ?)`)
-                        .bind(row.email, new Date().toISOString(), user.id, row.id, credentialHash).run();
-                    if (!updated.meta.changes) fail('INVALID_PASSWORD');
+                    if (!await setPrimaryAddress(env.DB, row, credentialHash)) fail('INVALID_PASSWORD');
                 } catch (error) {
                     if (String(error).includes('EMAIL_NOT_VERIFIED')) fail('EMAIL_NOT_VERIFIED');
                     if (String(error).includes('EMAIL_ALREADY_EXISTS')) fail('EMAIL_ALREADY_EXISTS');
@@ -215,11 +191,7 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 const row = await address(user.id, ctx.body.emailId);
                 if (row.email === user.email.toLowerCase()) fail('PRIMARY_EMAIL_REQUIRED');
                 try {
-                    const removed = await env.DB.prepare(`DELETE FROM "userEmail" WHERE "id" = ? AND "userId" = ?
-                        AND EXISTS (SELECT 1 FROM "user" u JOIN "account" a ON a."userId" = u."id"
-                            WHERE u."id" = ? AND COALESCE(u."banned", 0) = 0 AND a."providerId" = 'credential' AND a."password" = ?)`)
-                        .bind(row.id, user.id, user.id, credentialHash).run();
-                    if (!removed.meta.changes) fail('INVALID_PASSWORD');
+                    if (!await removeEmailAddress(env.DB, row, credentialHash)) fail('INVALID_PASSWORD');
                 } catch (error) {
                     if (String(error).includes('PRIMARY_EMAIL_REQUIRED')) fail('PRIMARY_EMAIL_REQUIRED');
                     throw error;
@@ -250,19 +222,10 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 const row = await attempt(ctx.body.challengeId, 'recovery');
                 const hash = await digest(ctx.body.challengeId, ctx.body.code);
                 const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
-                const now = Date.now();
                 // Use the pinned Better Auth version's native reset-ticket shape and consume
                 // the proof in one D1 batch. Its /reset-password endpoint retains sole
                 // ownership of password hashing, ticket use and revocation hooks.
-                const results = await env.DB.batch([
-                    env.DB.prepare(`INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
-                        SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM "emailChallenge" c JOIN "userEmail" e ON e."id" = c."emailId"
-                            JOIN "user" u ON u."id" = c."userId" WHERE c."id" = ? AND c."purpose" = 'recovery' AND c."codeHash" = ?
-                            AND c."expiresAt" > ? AND c."attempts" <= 5 AND e."verified" = 1 AND COALESCE(u."banned", 0) = 0)`)
-                        .bind(crypto.randomUUID(), `reset-password:${token}`, row.userId, new Date(now + lifetime).toISOString(), new Date(now).toISOString(), new Date(now).toISOString(), ctx.body.challengeId, hash, now),
-                    env.DB.prepare('DELETE FROM "emailChallenge" WHERE "id" = ? AND "codeHash" = ? AND "purpose" = ?').bind(ctx.body.challengeId, hash, 'recovery'),
-                ]);
-                if (!results[0].meta.changes) fail('INVALID_CODE');
+                if (!await consumeRecoveryChallenge(env.DB, row.userId, ctx.body.challengeId, hash, token, lifetime)) fail('INVALID_CODE');
                 return ctx.json({ token });
             }),
         },

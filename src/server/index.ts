@@ -6,6 +6,8 @@ import { ConfigurationError, validateConfig, type Env } from './config';
 import { isLocale } from '../shared/locales';
 import { applications } from './applications';
 import { consent, oauth, protocolRoutes } from './oauth';
+import { management } from './management';
+import { maintainDatabase } from './maintenance';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -19,10 +21,8 @@ const routes: Record<string, readonly string[]> = {
     '/error': ['GET'],
     '/update-user': ['POST'],
     '/change-password': ['POST'],
-    '/list-sessions': ['GET'],
     '/revoke-session': ['POST'],
     '/revoke-other-sessions': ['POST'],
-    '/admin/list-users': ['GET'],
     '/admin/get-user': ['GET'],
     '/admin/ban-user': ['POST'],
     '/admin/unban-user': ['POST'],
@@ -60,12 +60,18 @@ const fields: Record<string, readonly string[]> = {
     '/emails/recovery/verify': ['challengeId', 'code'],
 };
 
-const privatePaths = new Set(['/update-user', '/change-password', '/list-sessions', '/revoke-session', '/revoke-other-sessions',
+const privatePaths = new Set(['/update-user', '/change-password', '/revoke-session', '/revoke-other-sessions',
     '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove']);
 const app = new Hono<{ Bindings: Env }>();
 
 function logPath(path: string): string {
     if (path === '/api/health' || path === '/api/config') return path;
+    if (path === '/api/admin/users' || path === '/api/account/sessions') return path;
+    if (path === '/api/admin/applications') return path;
+    if (/^\/api\/admin\/applications\/[^/]+\/rotate-secret$/.test(path)) return '/api/admin/applications/:clientId/rotate-secret';
+    if (/^\/api\/admin\/applications\/[^/]+$/.test(path)) return '/api/admin/applications/:clientId';
+    if (path === '/api/oauth/consent') return path;
+    if (path.startsWith('/api/auth/') && Object.hasOwn(protocolRoutes, path.slice('/api/auth'.length))) return path;
     if (path.startsWith('/api/auth/reset-password/')) return '/api/auth/reset-password/:token';
     const endpoint = path.slice('/api/auth'.length);
     return path.startsWith('/api/auth/') && Object.hasOwn(routes, endpoint) ? `/api/auth${endpoint}` : '/api/unknown';
@@ -109,7 +115,9 @@ app.use('/api/*', async (c, next) => {
     await next();
     c.header('Cache-Control', 'no-store');
     c.header('X-Request-ID', requestId);
-    console.log(JSON.stringify({ event: 'http_request', requestId, method: c.req.method, path: logPath(c.req.path), status: c.res.status, durationMs: Date.now() - started }));
+    if (c.env.APP_ENV === 'development' || c.res.status >= 500 || crypto.getRandomValues(new Uint32Array(1))[0]! < 0x1_0000_0000 * 0.01) {
+        console.log(JSON.stringify({ event: 'http_request', requestId, method: c.req.method, path: logPath(c.req.path), status: c.res.status, durationMs: Date.now() - started }));
+    }
 });
 app.use('/api/*', bodyLimit({ maxSize: 16_384, onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE' }, 413) }));
 
@@ -120,6 +128,7 @@ app.get('/api/config', (c) => {
 });
 
 app.route('/api/admin/applications', applications);
+app.route('/api', management);
 app.route('/api/oauth', consent);
 app.all('/.well-known/oauth-authorization-server/api/auth', async (c) => {
     c.header('Access-Control-Allow-Origin', '*');
@@ -159,22 +168,6 @@ app.all('/api/auth/*', async (c) => {
 
     // Validate all user-controlled navigation values before the auth handler sees them.
     const url = new URL(c.req.url);
-    if (path === '/admin/list-users') {
-        const allowed = ['limit', 'offset', 'sortBy', 'sortDirection', 'filterField', 'filterOperator', 'filterValue'];
-        if ([...url.searchParams.keys()].some((key) => !allowed.includes(key) || url.searchParams.getAll(key).length !== 1)) return c.json({ code: 'INVALID_INPUT' }, 400);
-        const limit = url.searchParams.get('limit');
-        const offset = url.searchParams.get('offset');
-        if (limit !== null && (!Number.isInteger(Number(limit)) || Number(limit) < 1 || Number(limit) > 100)) return c.json({ code: 'INVALID_INPUT' }, 400);
-        if (offset !== null && (!Number.isSafeInteger(Number(offset)) || Number(offset) < 0)) return c.json({ code: 'INVALID_INPUT' }, 400);
-        const sort = url.searchParams.get('sortBy');
-        const direction = url.searchParams.get('sortDirection');
-        if (sort !== null && !['name', 'email', 'createdAt'].includes(sort)) return c.json({ code: 'INVALID_INPUT' }, 400);
-        if (direction !== null && !['asc', 'desc'].includes(direction)) return c.json({ code: 'INVALID_INPUT' }, 400);
-        const filtered = ['filterField', 'filterOperator', 'filterValue'].some((key) => url.searchParams.has(key));
-        // D1 limits LIKE/GLOB patterns to 50 bytes. The v1 console supports
-        // exact email lookup through Better Auth's native equality filter.
-        if (filtered && (url.searchParams.get('filterField') !== 'email' || url.searchParams.get('filterOperator') !== 'eq' || !url.searchParams.get('filterValue'))) return c.json({ code: 'INVALID_INPUT' }, 400);
-    }
     for (const value of [body.callbackURL, body.redirectTo, url.searchParams.get('callbackURL')]) {
         if (value === undefined || value === null) continue;
         if (typeof value !== 'string') return c.json({ code: 'INVALID_CALLBACK_URL' }, 400);
@@ -192,10 +185,9 @@ app.all('/api/auth/*', async (c) => {
         const identity = await auth.api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (!identity && path !== '/get-session') return c.json({ code: 'UNAUTHORIZED' }, 401);
         if (identity) {
-            const current = await c.env.DB.prepare('SELECT "banned", "role" FROM "user" WHERE "id" = ?').bind(identity.user.id).first<{ banned: number | null; role: string | null }>();
-            if (!current || current.banned) return c.json({ code: 'USER_BANNED' }, 403);
+            if (identity.user.banned) return c.json({ code: 'USER_BANNED' }, 403);
             if (path.startsWith('/admin/')) {
-                if (current.role !== 'admin') return c.json({ code: 'FORBIDDEN' }, 403);
+                if (identity.user.role !== 'admin') return c.json({ code: 'FORBIDDEN' }, 403);
                 if (c.req.method === 'POST') {
                     if (typeof body.userId !== 'string') return c.json({ code: 'INVALID_INPUT' }, 400);
                     const target = await c.env.DB.prepare('SELECT "role" FROM "user" WHERE "id" = ?').bind(body.userId).first<{ role: string | null }>();
@@ -226,7 +218,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);
@@ -241,4 +233,14 @@ app.onError((error, c) => {
     return c.json({ code: configuration ? 'CONFIGURATION_ERROR' : 'REQUEST_FAILED' }, 503);
 });
 
-export default app;
+export default {
+    fetch: app.fetch,
+    async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+        ctx.waitUntil(maintainDatabase(env).then((result) => {
+            console.log(JSON.stringify({ event: 'database_maintenance', ...result }));
+        }).catch(() => {
+            console.error(JSON.stringify({ event: 'database_maintenance_failed' }));
+            throw new Error('Database maintenance failed');
+        }));
+    },
+};

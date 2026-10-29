@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { testOrigin } from './runtime';
+import { expect, test, installOfflineRoutes } from './fixtures';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { removeLocalApplications, removeLocalFixtures } from './database';
@@ -18,7 +19,7 @@ test.afterEach(() => {
 test('manages applications, consent, and signed registration/recovery continuation through Material Web', async ({ page, browser }) => {
     test.setTimeout(240_000);
     // Separate local virtual users without changing production rate-limit rules.
-    await page.route('http://localhost:5173/api/**', (route) => route.continue({
+    await page.route(`${testOrigin}/api/**`, (route) => route.continue({
         headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.10' },
     }));
     const email = `ui-${randomUUID()}@loginflare.test`;
@@ -51,7 +52,12 @@ test('manages applications, consent, and signed registration/recovery continuati
     execFileSync(process.execPath, ['scripts/database.mjs', 'promote', '--email', email, '--local'], { cwd: process.cwd(), stdio: 'pipe', timeout: 30_000 });
     await page.reload();
 
-    await page.getByRole('link', { name: 'Applications', exact: true }).click();
+    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await expect(page).toHaveURL('/en-us/admin/users');
+    const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
+    await expect(administrationNavigation.getByRole('link')).toHaveCount(2);
+    await expect(page.getByRole('navigation', { name: 'Account navigation', exact: true })).toHaveCount(0);
+    await administrationNavigation.getByRole('link', { name: 'Applications', exact: true }).click();
     await page.getByRole('link', { name: 'Create application', exact: true }).click();
     await expect(page.getByRole('combobox', { name: 'Application type', exact: true })).toBeVisible();
     await page.getByLabel('Application name', { exact: true }).fill(applicationName);
@@ -148,8 +154,9 @@ test('manages applications, consent, and signed registration/recovery continuati
     const newcomerEmail = `ui-target-${randomUUID()}@loginflare.test`;
     const newcomerUsername = `oauth_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
     fixtureEmails.push(newcomerEmail);
-    const newcomer = await browser.newContext({ baseURL: 'http://localhost:5173' });
-    await newcomer.route('http://localhost:5173/api/**', (route) => route.continue({
+    const newcomer = await browser.newContext({ baseURL: testOrigin });
+    await installOfflineRoutes(newcomer);
+    await newcomer.route(`${testOrigin}/api/**`, (route) => route.continue({
         headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.11' },
     }));
     try {
@@ -185,7 +192,7 @@ test('manages applications, consent, and signed registration/recovery continuati
         await expect(registration).toHaveURL(/^https:\/\/app\.example\.test\/callback\?/);
         expect(new URL(registration.url()).searchParams.get('state')).toBe('RegisteredFlow');
 
-        const signout = await newcomer.request.post('http://localhost:5173/api/auth/sign-out', { data: {}, headers: { Origin: 'http://localhost:5173' } });
+        const signout = await newcomer.request.post(`${testOrigin}/api/auth/sign-out`, { data: {}, headers: { Origin: testOrigin } });
         expect(signout.status()).toBe(200);
         await registration.goto(authorize('openid profile', 'RecoveryFlow'));
         await expect(registration.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();

@@ -35,6 +35,8 @@ jobs:
               run: pnpm setup:local
             - name: Check the platform
               run: pnpm check
+            - name: Check isolated scale scenarios
+              run: pnpm test:scale --sizes=10,10000 --duration=3
 
     browser:
         name: Browser flows

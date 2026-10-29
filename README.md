@@ -2,11 +2,11 @@
 
 An open-source account and identity management system built for Cloudflare.
 
-[简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Application integration](docs/oauth.md) · [Architecture](docs/architecture.md)
+[简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Application integration](docs/oauth.md) · [Architecture](docs/architecture.md) · [Scaling](docs/scaling.md)
 
-Loginflare is a fully functional system for general account and identity management. It combines a user account center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, Email Service, Turnstile, and Workers Static Assets.
+Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, Email Service, Turnstile, and Workers Static Assets.
 
-The maintainer currently runs only a personal test instance for functional checks, and its management console requires administrator access. Other users use Loginflare by forking this repository, configuring their own resources, and deploying independent instances. The Web/SPA examples exercise the complete integration flows. Applications for specific business needs can build on this project in separate branches, with their own branding and business rules.
+The maintainer currently runs a personal test instance for functional checks; this does not limit how independent deployments may be used. Its management console requires administrator access. Other users fork this repository, configure their own resources, and deploy their own instances. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
 
 The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use lowercase language segments: `/en-us/` and `/zh-cn/`.
 
@@ -16,11 +16,11 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - Recover a forgotten password and change a known password.
 - Update a display name and username, and manage active sessions.
 - Manage primary and secondary email addresses on a dedicated page, verify new addresses with codes, and choose the primary sign-in email.
-- Find users by exact email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
+- Find users by exact ID, username, or primary email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
 - Register server Web and SPA clients through the administrator console, with exact redirects, consent, and client-secret rotation.
 - OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
 - English and Simplified Chinese pages, error messages, and transactional emails.
-- Better Auth account/session primitives, D1-backed rate limiting, and server-verified Turnstile challenges.
+- Better Auth account/session primitives, atomic D1-backed rate limiting, scheduled expiry cleanup, and server-verified Turnstile challenges.
 
 This release does not offer social login, MFA, organizations, multi-tenancy, account deletion, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
 
@@ -30,11 +30,15 @@ The **Email addresses** page manages one primary email and additional secondary 
 
 ## Interface
 
+The account center and administrator console have separate layouts and navigation. Personal profile, emails, security and sessions stay in the account center; user and application management stay in the administrator console. Administrators switch areas explicitly, and ordinary users cannot enter the console.
+
 The interface follows Material Design 3 and uses **Material Web (`@material/web` 2.5.0)** Web Components inside React 19. Shared MD3 design tokens define the color, typography, shape, and interaction styles across authentication, account, and administrator pages. Components are bundled with the application; the interface uses system fonts and does not load UI components or fonts from an external CDN.
 
 The theme uses Cloudflare orange (`#F38020`) for brand accents and primary button fills, paired with dark labels. Deeper orange is used for links and focus indicators to preserve contrast on light surfaces.
 
 Light and dark themes follow the system by default. The theme menu can select Light, Dark, or System; this browser preference persists across reloads and synchronizes between tabs. It is separate from the account's language preference. The initial theme is applied before React loads, and Turnstile follows the active theme.
+
+Desktop scrollbars use a thin, rounded thumb in the active theme's primary color with a transparent track. Touch devices keep their native scrollbar behavior.
 
 Material Web is licensed under Apache-2.0 and is currently in [upstream maintenance mode](https://github.com/material-components/material-web/discussions/5642). Loginflare pins its version and includes its third-party license notices.
 
@@ -51,6 +55,7 @@ pnpm setup:local
 
 ```powershell
 pnpm db:migrate
+pnpm db:check
 pnpm dev
 ```
 
@@ -68,21 +73,30 @@ pnpm admin:promote -- --email admin@example.com --local
 
 The command requires an existing, verified account and is idempotent. Sign out and sign in again after promotion. Registration never automatically creates an administrator. The web console cannot assign roles or suspend another administrator.
 
+## Scale and data operations
+
+User, application, and active-session lists use signed cursor pagination over indexed creation-time and ID keys. The interface offers Previous, Next, and Return to latest, reports only the current page's size, and preserves the cursor and exact search in the URL when opening details. It does not scan for an exact total or use an offset. Application search matches an exact client ID or complete name. The account and administrator list APIs are documented in the [scaling guide](docs/scaling.md).
+
+D1 is the only implemented database backend. A million registered accounts describes stored data volume, not simultaneous users or an assured request rate. Validate the intended traffic, database size, email load, and Cloudflare plan limits before a public rollout. Hyperdrive or an external SQL backend would be a separate future integration, not an existing deployment option.
+
+Database migrations prepare native dates as ISO UTC text, populate indexed callback-origin metadata, and verify the resulting schema against the committed migrations. Back up existing data before applying migrations and keep the issuer and authentication secret with the database. Expired records are collected by a bounded scheduled handler on the same Worker and D1; no KV, Queue, Durable Object, or additional Cloudflare resource is required.
+
 ## Validation
 
-`pnpm check` runs type checking, Worker integration tests, operator-command tests, and the production build. Run `pnpm test:e2e` as well to exercise the browser flows. The [CI workflow](.github/workflows/ci.yml) runs both on pull requests and pushes to `main`, using local D1, simulated email, and Turnstile test keys; browser reports are retained for seven days.
+`pnpm check` runs type checking, Worker integration tests, operator-command tests, and the production build. Run `pnpm test:e2e` as well to exercise the browser flows. The [CI workflow](.github/workflows/ci.yml) runs both on pull requests and pushes to `main`, plus isolated scale checks with 10 and 10,000 generated users and three-second workload windows. Tests use local D1, simulated email, and Turnstile test keys; browser reports are retained for seven days. The million-user benchmark remains a separate manual run.
 
 ```powershell
 pnpm typecheck
 pnpm test
 pnpm test:ops
 pnpm test:e2e
+pnpm test:scale
 pnpm build
 ```
 
-Integration and browser tests use isolated local data, simulated email, and Turnstile test responses. They must not be pointed at a production account or database. Install Chromium when setting up Playwright on a new machine:
+Integration and browser tests use local data, simulated email, and Turnstile test responses. They must not be pointed at a remote account or database. The local scale harness exercises large generated datasets without creating paid Cloudflare resources or sending real email; see [Scaling](docs/scaling.md) for its scope and result format. Install Chromium when setting up Playwright on a new machine:
 
-Browser tests load Cloudflare's official Turnstile test widget and require internet access. Database operations and email delivery remain local. On Windows, the test configuration uses an installed Chrome by default; set `PLAYWRIGHT_CHANNEL` to select another installed channel, or use bundled Chromium on other platforms.
+Browser tests build the application and start a separate Miniflare instance at `http://localhost:5174`, with fresh state and captured mail under `work/e2e/<run-id>`. Test fixtures emulate Turnstile, reject external browser/API requests, and disable automatic API redirects; the Worker only permits its own local JWKS request. They do not reuse the development database or server. On Windows, the test configuration uses an installed Chrome by default; set `PLAYWRIGHT_CHANNEL` to select another installed channel, or use bundled Chromium on other platforms. Dependency and browser installation still require their usual downloads.
 
 ```powershell
 pnpm exec playwright install chromium

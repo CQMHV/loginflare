@@ -4,6 +4,7 @@
     "main": "src/server/index.ts",
     "compatibility_date": "2026-10-26",
     "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+    "triggers": { "crons": ["*/5 * * * *"] },
     "observability": {
         "enabled": true,
         "head_sampling_rate": 1,
@@ -32,6 +33,7 @@
     "send_email": [{ "name": "EMAIL", "remote": false }],
     "env": {
         "staging": {
+            "triggers": { "crons": ["*/5 * * * *"] },
             "name": "loginflare-staging",
             "workers_dev": true,
             "preview_urls": false,
@@ -40,6 +42,7 @@
             "send_email": [{ "name": "EMAIL", "remote": false }]
         },
         "production": {
+            "triggers": { "crons": ["*/5 * * * *"] },
             "name": "loginflare-production",
             "vars": { "APP_ENV": "production", "AUTH_URL": "", "EMAIL_FROM": "", "TURNSTILE_SITE_KEY": "" },
             "d1_databases": [{ "binding": "DB", "database_name": "loginflare-production", "database_id": "REPLACE_WITH_PRODUCTION_D1_ID", "migrations_dir": "migrations", "remote": false }],

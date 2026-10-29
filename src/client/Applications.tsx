@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
 import { errorCode, fetchJson } from './api';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, Progress, Select, TextField } from './material';
 import i18n from './i18n';
+import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
 
 export interface Application {
     clientId: string;
@@ -15,6 +16,8 @@ export interface Application {
     scopes: string[];
     disabled: boolean;
 }
+
+type ApplicationItem = Pick<Application, 'clientId' | 'name' | 'type' | 'disabled'> & { createdAt: string };
 
 interface ApplicationResponse {
     application: Application;
@@ -55,26 +58,44 @@ function ConnectionDetails({ application, issuer }: { application: Application; 
 
 export function ApplicationsPage({ locale }: { locale: Locale }) {
     const { t } = useTranslation();
-    const [applications, setApplications] = useState<Application[]>();
+    const location = useLocation();
+    const [parameters, setParameters] = useSearchParams();
+    const cursor = parameters.get('cursor');
+    const lookupField = parameters.get('lookupField') ?? 'clientId';
+    const lookupValue = parameters.get('lookupValue') ?? '';
+    const [field, setField] = useState(lookupField);
+    const [query, setQuery] = useState(lookupValue);
+    const [data, setData] = useState<CursorPage<ApplicationItem> & { issuer: string }>();
     const [error, setError] = useState<string>();
+    const requestQuery = pageParameters(location.search);
+    useEffect(() => { setField(lookupField); setQuery(lookupValue); }, [lookupField, lookupValue]);
     useEffect(() => {
         let current = true;
-        void fetchJson<{ applications: Application[] }>('/api/admin/applications').then((data) => {
-            if (current) setApplications(data.applications);
+        setData(undefined); setError(undefined);
+        void fetchJson<CursorPage<ApplicationItem> & { issuer: string }>(`/api/admin/applications?${requestQuery}`).then((result) => {
+            if (current) setData(result);
         }).catch((cause) => { if (current) setError(errorCode(cause)); });
         return () => { current = false; };
-    }, []);
+    }, [requestQuery]);
+    function navigatePage(nextCursor: string | null) {
+        const next = listParameters(location.search);
+        if (nextCursor) next.set('cursor', nextCursor); else next.delete('cursor');
+        setParameters(next);
+    }
     return <>
-        <div className="page-heading"><div><h1>{t('oauth.applicationsTitle')}</h1><p>{t('oauth.applicationsDescription')}</p></div><ButtonLink to={localizedPath(locale, 'admin/applications/new')}>{t('oauth.createApplication')}</ButtonLink></div>
+        <div className="page-heading"><div><h1>{t('oauth.applicationsTitle')}</h1><p>{t('oauth.applicationsDescription')}</p></div><ButtonLink to={listPath(localizedPath(locale, 'admin/applications/new'), location.search)}>{t('oauth.createApplication')}</ButtonLink></div>
         <ErrorNotice code={error} />
-        {!applications && !error && <div className="loading-state" role="status"><Progress />{t('loading')}</div>}
-        {applications && <section className="card"><div className="table-scroll"><table>
-            <thead><tr><th>{t('oauth.applicationName')}</th><th>{t('oauth.applicationType')}</th><th>{t('status')}</th></tr></thead>
-            <tbody>{applications.map((application) => <tr key={application.clientId}>
-                <td><Link className="application-name" to={`${localizedPath(locale, 'admin/applications/detail')}?${new URLSearchParams({ clientId: application.clientId })}`}>{application.name}</Link><small className="application-id">{application.clientId}</small></td>
-                <td>{t(application.type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')}</td><td><Status disabled={application.disabled} /></td>
+        {error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}
+        <section className="card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'clientId', label: t('oauth.clientId') }, { value: 'name', label: t('oauth.applicationName') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('oauth.searchApplications')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
+        {!data && !error && <div className="loading-state" role="status"><Progress />{t('loading')}</div>}
+        {data && <><div className="table-scroll"><table>
+            <thead><tr><th>{t('oauth.applicationName')}</th><th>{t('oauth.applicationType')}</th><th>{t('status')}</th><th>{t('created')}</th></tr></thead>
+            <tbody>{data.items.map((application) => <tr key={application.clientId}>
+                <td><Link className="application-name" to={listPath(localizedPath(locale, 'admin/applications/detail'), location.search, { clientId: application.clientId })}>{application.name}</Link><small className="application-id">{application.clientId}</small></td>
+                <td>{t(application.type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')}</td><td><Status disabled={application.disabled} /></td><td className="muted">{application.createdAt && !Number.isNaN(Date.parse(application.createdAt)) ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(application.createdAt)) : '—'}</td>
             </tr>)}</tbody>
-        </table></div>{applications.length === 0 && <p className="empty-state">{t('oauth.applicationsEmpty')}</p>}</section>}
+        </table></div>{data.items.length === 0 && <p className="empty-state">{t('oauth.applicationsEmpty')}</p>}<PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
+        </section>
     </>;
 }
 
@@ -148,13 +169,13 @@ export function ApplicationEditor({ locale, create = false }: { locale: Locale; 
 
     return <>
         {confirmation && <ConfirmationDialog title={t(confirmation === 'disable' ? 'oauth.disableApplication' : 'oauth.rotateSecret')} description={t(confirmation === 'disable' ? 'oauth.disableApplicationConfirm' : 'oauth.rotateSecretConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void control(kind); }} />}
-        <ButtonLink variant="text" className="detail-back" to={localizedPath(locale, 'admin/applications')}>{t('oauth.backToApplications')}</ButtonLink>
+        <ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/applications'), location.search)}>{t('oauth.backToApplications')}</ButtonLink>
         <div className="page-heading"><div><h1>{t(create ? 'oauth.createApplication' : 'oauth.applicationDetails')}</h1><p>{application?.name ?? t('oauth.applicationsDescription')}</p></div>{application && <Status disabled={application.disabled} />}</div>
         <ErrorNotice code={error} />
         {saved && <div className="notice success" role="status">{t(created ? 'oauth.applicationCreated' : 'oauth.applicationSaved')}</div>}
         <SecretNotice secret={secret} onDismiss={() => setSecret(undefined)} />
         {!create && !application && !error && <div className="loading-state" role="status"><Progress />{t('loading')}</div>}
-        {created ? <ButtonLink to={`${localizedPath(locale, 'admin/applications/detail')}?${new URLSearchParams({ clientId: application.clientId })}`}>{t('oauth.applicationDetails')}</ButtonLink> : (create || application) && <section className="card"><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
+        {created ? <ButtonLink to={listPath(localizedPath(locale, 'admin/applications/detail'), location.search, { clientId: application.clientId })}>{t('oauth.applicationDetails')}</ButtonLink> : (create || application) && <section className="card"><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
             <TextField label={t('oauth.applicationName')} value={name} onValueChange={setName} maxLength={100} required supportingText={t('oauth.applicationNameHint')} />
             {create ? <Select label={t('oauth.applicationType')} value={type} options={[{ value: 'web', label: t('oauth.typeWeb') }, { value: 'spa', label: t('oauth.typeSpa') }]} onChange={(value) => setType(value === 'spa' ? 'spa' : 'web')} /> : <TextField label={t('oauth.applicationType')} value={t(type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')} readOnly supportingText={t('oauth.typeFixed')} />}
             {create && <p className="muted">{t(type === 'spa' ? 'oauth.typeSpaHint' : 'oauth.typeWebHint')}</p>}

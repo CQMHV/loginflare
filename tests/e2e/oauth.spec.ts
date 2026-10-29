@@ -1,7 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { testOrigin } from './runtime';
+import { expect, test } from './fixtures';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { request as httpsRequest } from 'node:https';
+import { createServer as createPortProbe } from 'node:net';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -67,8 +69,13 @@ async function waitForExample(port: number, host: string, process: ReturnType<ty
 
 test('standard Web and SPA clients sign in, refresh, restore, and sign out over local HTTPS', async ({ page }) => {
     test.setTimeout(180_000);
+    for (const port of [5181, 5182]) await new Promise<void>((resolvePort, rejectPort) => {
+        const probe = createPortProbe();
+        probe.once('error', () => rejectPort(new Error(`Local example port ${port} is occupied; refusing to reuse another process.`)));
+        probe.listen(port, '127.0.0.1', () => probe.close(() => resolvePort()));
+    });
     // Keep this local fixture's password sign-ins separate from other browser journeys.
-    await page.route('http://localhost:5173/api/auth/sign-in/email', (route) => route.continue({
+    await page.route(`${testOrigin}/api/auth/sign-in/email`, (route) => route.continue({
         headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.21' },
     }));
     prepareExampleTls();
@@ -106,11 +113,11 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     }
 
     async function signOutWithCenter(applicationOrigin: string, requireState: boolean) {
-        const activeSession = await page.request.get('http://localhost:5173/api/auth/get-session');
+        const activeSession = await page.request.get(`${testOrigin}/api/auth/get-session`);
         expect((await activeSession.json())?.user?.email).toBe(email);
         const endSession = page.waitForResponse((response) => {
             const url = new URL(response.url());
-            return url.origin === 'http://localhost:5173' && url.pathname === '/api/auth/oauth2/end-session'
+            return url.origin === testOrigin && url.pathname === '/api/auth/oauth2/end-session'
                 && response.request().method() === 'GET';
         });
         const callback = page.waitForResponse((response) => {
@@ -131,12 +138,12 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
         const returned = new URL((await callback).url());
         expect(returned.searchParams.get('state')).toBe(parameters.get('state'));
         await expect(page).toHaveURL(`${applicationOrigin}/`);
-        expect(await (await page.request.get('http://localhost:5173/api/auth/get-session')).json()).toBeNull();
+        expect(await (await page.request.get(`${testOrigin}/api/auth/get-session`)).json()).toBeNull();
     }
 
     async function register(type: 'web' | 'spa', host: string, port: number) {
         const response = await page.request.post('/api/admin/applications', {
-            headers: { Origin: 'http://localhost:5173' },
+            headers: { Origin: testOrigin },
             data: {
                 name: `ui-oauth-${randomUUID()}-${type}`, type,
                 redirectUris: [`https://${host}:${port}/callback`],
@@ -155,7 +162,7 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     expect(web.clientSecret).toBeTruthy();
     expect(spa.clientSecret).toBeUndefined();
     const webProcess = startProcess(['examples/server-web/server.mjs'], {
-        LOGINFLARE_ISSUER: 'http://localhost:5173/api/auth',
+        LOGINFLARE_ISSUER: `${testOrigin}/api/auth`,
         LOGINFLARE_CLIENT_ID: web.application.clientId,
         LOGINFLARE_CLIENT_SECRET: web.clientSecret!,
     });
@@ -163,7 +170,7 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     const vitePackage = require.resolve('vite/package.json');
     const viteMetadata = JSON.parse(readFileSync(vitePackage, 'utf8')) as { bin: { vite: string } };
     const spaProcess = startProcess([resolve(dirname(vitePackage), viteMetadata.bin.vite), '--config', 'examples/spa/vite.config.ts'], {
-        VITE_LOGINFLARE_ISSUER: 'http://localhost:5173/api/auth',
+        VITE_LOGINFLARE_ISSUER: `${testOrigin}/api/auth`,
         VITE_LOGINFLARE_CLIENT_ID: spa.application.clientId,
     });
     await Promise.all([
@@ -185,18 +192,18 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     await expect(page.getByRole('heading', { name: 'Signed in', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Sign out of this app', exact: true }).click();
     await expect(page.getByText('You are signed out of this application.', { exact: true })).toBeVisible();
-    const retainedSession = await page.request.get('http://localhost:5173/api/auth/get-session');
+    const retainedSession = await page.request.get(`${testOrigin}/api/auth/get-session`);
     expect((await retainedSession.json()).user.email).toBe(email);
     await page.getByRole('button', { name: 'Sign in with Loginflare', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Signed in', exact: true })).toBeVisible();
 
     // Local logout remains available when the provider cannot confirm remote revocation.
-    const applicationPath = `http://localhost:5173/api/admin/applications/${web.application.clientId}`;
-    expect((await page.request.patch(applicationPath, { headers: { Origin: 'http://localhost:5173' }, data: { disabled: true } })).status()).toBe(200);
+    const applicationPath = `${testOrigin}/api/admin/applications/${web.application.clientId}`;
+    expect((await page.request.patch(applicationPath, { headers: { Origin: testOrigin }, data: { disabled: true } })).status()).toBe(200);
     await page.getByRole('button', { name: 'Sign out of this app', exact: true }).click();
     await expect(page.getByText('You are signed out of this application.', { exact: true })).toBeVisible();
     await expect(page.getByRole('alert')).toContainText('Remote token revocation could not be confirmed.');
-    expect((await page.request.patch(applicationPath, { headers: { Origin: 'http://localhost:5173' }, data: { disabled: false } })).status()).toBe(200);
+    expect((await page.request.patch(applicationPath, { headers: { Origin: testOrigin }, data: { disabled: false } })).status()).toBe(200);
     await page.getByRole('button', { name: 'Sign in with Loginflare', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Signed in', exact: true })).toBeVisible();
 
@@ -235,23 +242,23 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     await expect(page.getByRole('status')).toContainText('Signed in.');
 
     const confirmationPage = await page.context().newPage();
-    await confirmationPage.goto(`http://localhost:5173/api/auth/oauth2/end-session?${new URLSearchParams({
+    await confirmationPage.goto(`${testOrigin}/api/auth/oauth2/end-session?${new URLSearchParams({
         client_id: spa.application.clientId, post_logout_redirect_uri: 'https://spa.localhost:5182/logout-callback',
     })}`);
     await expect(confirmationPage.getByRole('heading', { name: 'Confirm logout', exact: true })).toBeVisible();
     const confirmed = confirmationPage.waitForResponse((response) => response.url().endsWith('/api/auth/oauth2/end-session/confirm'));
     await confirmationPage.getByRole('button', { name: 'Confirm logout', exact: true }).click();
     const confirmedResponse = await confirmed;
-    expect(confirmedResponse.request().headers().origin).toBe('http://localhost:5173');
+    expect(confirmedResponse.request().headers().origin).toBe(testOrigin);
     expect(confirmedResponse.status()).toBe(302);
     expect(confirmedResponse.headers().location).toBe('https://spa.localhost:5182/logout-callback');
     await expect(confirmationPage).toHaveURL('https://spa.localhost:5182/');
     await expect(confirmationPage.getByRole('status')).toContainText('signed out');
-    expect(await (await page.request.get('http://localhost:5173/api/auth/get-session')).json()).toBeNull();
+    expect(await (await page.request.get(`${testOrigin}/api/auth/get-session`)).json()).toBeNull();
     await confirmationPage.close();
     await page.getByRole('button', { name: 'Sign out of this app and Loginflare', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('signed out');
-    expect(await (await page.request.get('http://localhost:5173/api/auth/get-session')).json()).toBeNull();
+    expect(await (await page.request.get(`${testOrigin}/api/auth/get-session`)).json()).toBeNull();
     await page.goto('https://web.localhost:5181');
     await page.getByRole('button', { name: 'Sign out of this app and Loginflare', exact: true }).click();
     await expect(page.getByText('You are signed out of this application.', { exact: true })).toBeVisible();

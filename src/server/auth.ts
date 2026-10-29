@@ -7,6 +7,7 @@ import { sendAccountMail } from './mail.ts';
 import { locales } from '../shared/locales.ts';
 import { createOAuthPolicy } from './oauth-policy.ts';
 import { emailManagement } from './emails';
+import { databaseRateLimit } from './rate-limit';
 
 export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void) {
     validateConfig(env);
@@ -41,6 +42,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             autoSignInAfterVerification: false,
             sendVerificationEmail: ({ user, url }) => send(user, url),
         },
+        verification: { disableCleanup: true },
         user: {
             additionalFields: {
                 locale: {
@@ -56,12 +58,13 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
         },
         session: { cookieCache: { enabled: false } },
         advanced: {
+            database: { validateSchema: false },
             useSecureCookies: env.APP_ENV !== 'development',
             ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
         },
         rateLimit: {
             enabled: true,
-            storage: 'database',
+            customStorage: databaseRateLimit(env.DB),
             window: 60,
             max: 100,
             customRules: {

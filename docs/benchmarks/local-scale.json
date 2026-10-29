@@ -1,0 +1,2069 @@
+{
+  "runId": "2026-10-28T19-37-38.062Z-22fe12",
+  "startedAt": "2026-10-28T19:37:38.758Z",
+  "configuration": {
+    "sizes": [
+      10,
+      100000,
+      1000000
+    ],
+    "duration": 30
+  },
+  "hardware": {
+    "platform": "win32",
+    "release": "10.0.26300",
+    "cpu": "AMD Ryzen 5 5600 6-Core Processor              ",
+    "logicalProcessors": 12,
+    "totalMemoryBytes": 34282184704,
+    "availableMemoryBytes": 5723185152,
+    "node": "v24.22.1",
+    "miniflare": "5.20261023.0-beta"
+  },
+  "productionBundle": {
+    "path": "dist\\loginflare_local\\index.js",
+    "sha256": "b5a29ea68d8486a07596d406bca59798c53818ac92aa350f3cba2dfafc93e7d7"
+  },
+  "methodology": {
+    "environment": "Isolated local Miniflare/workerd + SQLite; no staging or production bindings.",
+    "timing": "Closed-loop requests per lane; reported latency includes dispatch, test SQL instrumentation and JSON decoding. No external network latency.",
+    "concurrency": [
+      1,
+      10,
+      50
+    ],
+    "durationSecondsPerMixedStage": 30,
+    "workload": "Deterministic round-robin mixed workload. Each lane visits all nine operations. Per-operation throughput is its contribution within the mixed stage, not isolated maximum throughput.",
+    "logging": "The local test bridge suppresses production console.log to avoid terminal I/O dominating local timings; production source and deployed logging are unchanged.",
+    "rowsRead": "unavailable: local Miniflare does not expose authoritative billed D1 rows_read; no bill or SLA estimate is derived.",
+    "rateLimits": "Production HTTP requests use distinct synthetic trusted CF IPs to avoid saturating one-IP policy. The atomic limiter microbenchmark uses the actual helper with a high test-only maximum.",
+    "refresh": "Native authorize/consent/PKCE exchange setup; one rotating refresh token per concurrent lane, never shared between lanes.",
+    "seed": "One shared local-only Better Auth hash; native migrations, indexes and triggers remain enabled. Bulk seed is performed only with Miniflare closed.",
+    "permissions": "The test bridge requires a random run key and exists only under work/scale. It is not built into production."
+  },
+  "sizes": [
+    {
+      "users": 10,
+      "fixture": {
+        "counts": {
+          "user": 10,
+          "userEmail": 13,
+          "account": 10,
+          "session": 7,
+          "oauthClient": 10,
+          "oauthGrantPolicy": 1,
+          "oauthAccessToken": 1,
+          "oauthRefreshToken": 5
+        },
+        "plans": {
+          "userFirst": [
+            {
+              "id": 4,
+              "parent": 0,
+              "notused": 210,
+              "detail": "SCAN user USING COVERING INDEX user_createdAt_id_idx"
+            }
+          ],
+          "userSeek": [
+            {
+              "id": 4,
+              "parent": 0,
+              "notused": 190,
+              "detail": "SEARCH user USING COVERING INDEX user_createdAt_id_idx ((createdAt,id)<(?,?))"
+            }
+          ],
+          "userLookup": [
+            {
+              "id": 3,
+              "parent": 0,
+              "notused": 39,
+              "detail": "SEARCH user USING INDEX sqlite_autoindex_user_2 (email=?)"
+            }
+          ],
+          "session": [
+            {
+              "id": 3,
+              "parent": 0,
+              "notused": 39,
+              "detail": "SEARCH session USING INDEX sqlite_autoindex_session_2 (token=?)"
+            }
+          ],
+          "origin": [
+            {
+              "id": 5,
+              "parent": 0,
+              "notused": 56,
+              "detail": "SEARCH u USING COVERING INDEX sqlite_autoindex_oauthClientUri_1 (kind=? AND value=?)"
+            },
+            {
+              "id": 10,
+              "parent": 0,
+              "notused": 46,
+              "detail": "SEARCH c USING INDEX sqlite_autoindex_oauthClient_2 (clientId=?)"
+            }
+          ]
+        },
+        "elapsedSeconds": 0.035597399999999876,
+        "nativeDates": "ISO UTC milliseconds",
+        "sharedPasswordHash": true
+      },
+      "databaseBytes": 368640,
+      "operations": [
+        {
+          "operation": "userFirst",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 18.7445000000007,
+            "p95": 25.373100000000704,
+            "p99": 30.976200000000972
+          },
+          "sqlStatements": {
+            "total": 676,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 18.91489999999976,
+            "p95": 26.304799999998068,
+            "p99": 32.1218000000008
+          },
+          "sqlStatements": {
+            "total": 676,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 18.453299999999217,
+            "p95": 25.787899999999354,
+            "p99": 30.919200000000274
+          },
+          "sqlStatements": {
+            "total": 676,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 23.10939999999937,
+            "p95": 31.068699999999808,
+            "p99": 36.03849999999875
+          },
+          "sqlStatements": {
+            "total": 845,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 22.100299999998242,
+            "p95": 28.519000000000233,
+            "p99": 33.57960000000094
+          },
+          "sqlStatements": {
+            "total": 845,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 18.532599999998638,
+            "p95": 24.59389999999985,
+            "p99": 30.79190000000017
+          },
+          "sqlStatements": {
+            "total": 676,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 4.748700000000099,
+            "p95": 7.056700000001001,
+            "p99": 8.920099999999366
+          },
+          "sqlStatements": {
+            "total": 169,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 169
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 5.263500000000931,
+            "p95": 7.097900000000664,
+            "p99": 11.260100000003149
+          },
+          "sqlStatements": {
+            "total": 169,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 1,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.0100273,
+          "throughputPerSecond": 5.631451058360083,
+          "latencyMs": {
+            "p50": 41.595900000000256,
+            "p95": 52.49519999999757,
+            "p99": 58.29950000000099
+          },
+          "sqlStatements": {
+            "total": 1690,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "userFirst",
+          "concurrency": 10,
+          "requests": 166,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.523399242037895,
+          "latencyMs": {
+            "p50": 180.37309999999707,
+            "p95": 250.43099999999686,
+            "p99": 275.026300000005
+          },
+          "sqlStatements": {
+            "total": 664,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 166
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 10,
+          "requests": 166,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.523399242037895,
+          "latencyMs": {
+            "p50": 203.84360000000015,
+            "p95": 302.22060000000056,
+            "p99": 318.4959000000017
+          },
+          "sqlStatements": {
+            "total": 664,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 166
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 10,
+          "requests": 167,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.556672731447762,
+          "latencyMs": {
+            "p50": 198.10339999999997,
+            "p95": 254.18820000000414,
+            "p99": 287.3929999999964
+          },
+          "sqlStatements": {
+            "total": 668,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 167
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 10,
+          "requests": 166,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.523399242037895,
+          "latencyMs": {
+            "p50": 192.02780000001076,
+            "p95": 287.47239999999874,
+            "p99": 311.8964999999953
+          },
+          "sqlStatements": {
+            "total": 830,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 166
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 10,
+          "requests": 166,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.523399242037895,
+          "latencyMs": {
+            "p50": 198.3767000000007,
+            "p95": 269.72589999999764,
+            "p99": 309.0279999999984
+          },
+          "sqlStatements": {
+            "total": 830,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 166
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 10,
+          "requests": 167,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.556672731447762,
+          "latencyMs": {
+            "p50": 200.80849999999919,
+            "p95": 279.3983999999982,
+            "p99": 308.87929999999324
+          },
+          "sqlStatements": {
+            "total": 668,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 167
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 10,
+          "requests": 165,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.490125752628028,
+          "latencyMs": {
+            "p50": 190.95379999999568,
+            "p95": 270.76890000000276,
+            "p99": 307.1402999999991
+          },
+          "sqlStatements": {
+            "total": 165,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 165
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 10,
+          "requests": 166,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.523399242037895,
+          "latencyMs": {
+            "p50": 182.39249999999447,
+            "p95": 254.3761999999988,
+            "p99": 280.51640000000043
+          },
+          "sqlStatements": {
+            "total": 166,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 166
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 10,
+          "requests": 165,
+          "errors": 0,
+          "elapsedSeconds": 30.05395640000001,
+          "throughputPerSecond": 5.490125752628028,
+          "latencyMs": {
+            "p50": 216.74579999999696,
+            "p95": 301.52640000000247,
+            "p99": 342.54349999999977
+          },
+          "sqlStatements": {
+            "total": 1650,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 165
+          }
+        },
+        {
+          "operation": "userFirst",
+          "concurrency": 50,
+          "requests": 176,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.749022333837895,
+          "latencyMs": {
+            "p50": 943.9779999999882,
+            "p95": 1169.1330000000016,
+            "p99": 1238.1197000000102
+          },
+          "sqlStatements": {
+            "total": 704,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 176
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 50,
+          "requests": 177,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.781687233461974,
+          "latencyMs": {
+            "p50": 960.6566000000021,
+            "p95": 1207.7124999999942,
+            "p99": 1238.2280000000028
+          },
+          "sqlStatements": {
+            "total": 708,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 177
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 50,
+          "requests": 178,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.814352133086053,
+          "latencyMs": {
+            "p50": 957.0025000000023,
+            "p95": 1200.2174000000086,
+            "p99": 1238.3328000000038
+          },
+          "sqlStatements": {
+            "total": 712,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 178
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 50,
+          "requests": 179,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.847017032710132,
+          "latencyMs": {
+            "p50": 941.1597000000038,
+            "p95": 1201.762699999992,
+            "p99": 1261.5341000000044
+          },
+          "sqlStatements": {
+            "total": 895,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 179
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 50,
+          "requests": 180,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.87968193233421,
+          "latencyMs": {
+            "p50": 955.7473999999929,
+            "p95": 1195.7042999999976,
+            "p99": 1240.2736000000004
+          },
+          "sqlStatements": {
+            "total": 900,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 180
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 50,
+          "requests": 180,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.87968193233421,
+          "latencyMs": {
+            "p50": 937.8153999999922,
+            "p95": 1195.8559999999998,
+            "p99": 1239.2414999999892
+          },
+          "sqlStatements": {
+            "total": 720,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 180
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 50,
+          "requests": 178,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.814352133086053,
+          "latencyMs": {
+            "p50": 898.2320999999938,
+            "p95": 1079.938399999999,
+            "p99": 1220.7042999999976
+          },
+          "sqlStatements": {
+            "total": 178,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 178
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 50,
+          "requests": 178,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.814352133086053,
+          "latencyMs": {
+            "p50": 937.8741000000009,
+            "p95": 1194.8571999999986,
+            "p99": 1235.5547000000079
+          },
+          "sqlStatements": {
+            "total": 178,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 178
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 50,
+          "requests": 176,
+          "errors": 0,
+          "elapsedSeconds": 30.613900899999994,
+          "throughputPerSecond": 5.749022333837895,
+          "latencyMs": {
+            "p50": 963.7599999999948,
+            "p95": 1164.0455000000075,
+            "p99": 1234.3350999999966
+          },
+          "sqlStatements": {
+            "total": 1760,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 176
+          }
+        }
+      ],
+      "deepSeek": {
+        "cursorAvailable": false,
+        "note": "The dataset fits on one page; this operation repeats the first page."
+      },
+      "correctnessProbes": {
+        "operations": [
+          "userFirst",
+          "userDeepSeek",
+          "userExactLookup",
+          "sessionValidation",
+          "sessionList",
+          "applicationList",
+          "applicationOrigin",
+          "atomicRateLimit",
+          "refreshProtocol"
+        ],
+        "passed": true
+      },
+      "stages": [
+        {
+          "concurrency": 1,
+          "elapsedSeconds": 30.0100273,
+          "requests": 1521,
+          "errors": 0,
+          "throughputPerSecond": 50.68305952524075
+        },
+        {
+          "concurrency": 10,
+          "elapsedSeconds": 30.05395640000001,
+          "requests": 1494,
+          "errors": 0,
+          "throughputPerSecond": 49.71059317834106
+        },
+        {
+          "concurrency": 50,
+          "elapsedSeconds": 30.613900899999994,
+          "requests": 1602,
+          "errors": 0,
+          "throughputPerSecond": 52.329169197774476
+        }
+      ],
+      "maintenance": {
+        "batches": 7,
+        "deleted": {
+          "rateLimit": 0,
+          "emailChallenge": 0,
+          "verification": 0,
+          "oauthAccessToken": 0,
+          "oauthRefreshToken": 4,
+          "session": 1
+        },
+        "deferred": 0,
+        "budgetExhausted": false,
+        "liveSessionAndGrantPreserved": true
+      },
+      "restore": {
+        "integrity": "ok",
+        "users": 10,
+        "foreignKeys": 0,
+        "secretMatched": true,
+        "restoredAuth": true,
+        "refreshRotated": true
+      },
+      "databaseBytesAfter": 2338816
+    },
+    {
+      "users": 100000,
+      "fixture": {
+        "counts": {
+          "user": 100000,
+          "userEmail": 125000,
+          "account": 100000,
+          "session": 25101,
+          "oauthClient": 1000,
+          "oauthGrantPolicy": 5000,
+          "oauthAccessToken": 5000,
+          "oauthRefreshToken": 25000
+        },
+        "plans": {
+          "userFirst": [
+            {
+              "id": 4,
+              "parent": 0,
+              "notused": 210,
+              "detail": "SCAN user USING COVERING INDEX user_createdAt_id_idx"
+            }
+          ],
+          "userSeek": [
+            {
+              "id": 4,
+              "parent": 0,
+              "notused": 190,
+              "detail": "SEARCH user USING COVERING INDEX user_createdAt_id_idx ((createdAt,id)<(?,?))"
+            }
+          ],
+          "userLookup": [
+            {
+              "id": 3,
+              "parent": 0,
+              "notused": 39,
+              "detail": "SEARCH user USING INDEX sqlite_autoindex_user_2 (email=?)"
+            }
+          ],
+          "session": [
+            {
+              "id": 3,
+              "parent": 0,
+              "notused": 39,
+              "detail": "SEARCH session USING INDEX sqlite_autoindex_session_2 (token=?)"
+            }
+          ],
+          "origin": [
+            {
+              "id": 5,
+              "parent": 0,
+              "notused": 56,
+              "detail": "SEARCH u USING COVERING INDEX sqlite_autoindex_oauthClientUri_1 (kind=? AND value=?)"
+            },
+            {
+              "id": 10,
+              "parent": 0,
+              "notused": 46,
+              "detail": "SEARCH c USING INDEX sqlite_autoindex_oauthClient_2 (clientId=?)"
+            }
+          ]
+        },
+        "elapsedSeconds": 18.45164529999999,
+        "nativeDates": "ISO UTC milliseconds",
+        "sharedPasswordHash": true
+      },
+      "databaseBytes": 125870080,
+      "operations": [
+        {
+          "operation": "userFirst",
+          "concurrency": 1,
+          "requests": 176,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.865666570516393,
+          "latencyMs": {
+            "p50": 17.848999999987427,
+            "p95": 24.668299999990268,
+            "p99": 29.88430000000517
+          },
+          "sqlStatements": {
+            "total": 704,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 176
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 1,
+          "requests": 176,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.865666570516393,
+          "latencyMs": {
+            "p50": 17.843699999997625,
+            "p95": 22.580900000000838,
+            "p99": 30.17290000000503
+          },
+          "sqlStatements": {
+            "total": 704,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 176
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 1,
+          "requests": 175,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.83233891954755,
+          "latencyMs": {
+            "p50": 17.582300000009127,
+            "p95": 26.410900000002584,
+            "p99": 31.25920000000042
+          },
+          "sqlStatements": {
+            "total": 700,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 175
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 1,
+          "requests": 175,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.83233891954755,
+          "latencyMs": {
+            "p50": 21.99049999998533,
+            "p95": 29.510800000003655,
+            "p99": 42.28659999999218
+          },
+          "sqlStatements": {
+            "total": 875,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 175
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 1,
+          "requests": 175,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.83233891954755,
+          "latencyMs": {
+            "p50": 20.43069999999716,
+            "p95": 29.298399999999674,
+            "p99": 41.65730000002077
+          },
+          "sqlStatements": {
+            "total": 875,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 175
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 1,
+          "requests": 175,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.83233891954755,
+          "latencyMs": {
+            "p50": 18.044800000003306,
+            "p95": 25.848999999987427,
+            "p99": 33.233600000006845
+          },
+          "sqlStatements": {
+            "total": 700,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 175
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 1,
+          "requests": 175,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.83233891954755,
+          "latencyMs": {
+            "p50": 4.574999999982538,
+            "p95": 6.211899999994785,
+            "p99": 6.781199999997625
+          },
+          "sqlStatements": {
+            "total": 175,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 175
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 1,
+          "requests": 175,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.83233891954755,
+          "latencyMs": {
+            "p50": 5.163100000005215,
+            "p95": 7.345100000005914,
+            "p99": 11.575400000001537
+          },
+          "sqlStatements": {
+            "total": 175,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 175
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 1,
+          "requests": 175,
+          "errors": 0,
+          "elapsedSeconds": 30.005115000000004,
+          "throughputPerSecond": 5.83233891954755,
+          "latencyMs": {
+            "p50": 41.04550000000745,
+            "p95": 53.6872999999905,
+            "p99": 62.34429999999702
+          },
+          "sqlStatements": {
+            "total": 1750,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 175
+          }
+        },
+        {
+          "operation": "userFirst",
+          "concurrency": 10,
+          "requests": 189,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.270132017131993,
+          "latencyMs": {
+            "p50": 174.5750999999873,
+            "p95": 214.57519999999204,
+            "p99": 270.43069999999716
+          },
+          "sqlStatements": {
+            "total": 756,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 189
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 10,
+          "requests": 189,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.270132017131993,
+          "latencyMs": {
+            "p50": 175.5731000000087,
+            "p95": 220.3116999999911,
+            "p99": 268.3691000000108
+          },
+          "sqlStatements": {
+            "total": 756,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 189
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 10,
+          "requests": 189,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.270132017131993,
+          "latencyMs": {
+            "p50": 172.2832000000053,
+            "p95": 219.64360000001034,
+            "p99": 270.12269999997807
+          },
+          "sqlStatements": {
+            "total": 756,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 189
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 10,
+          "requests": 189,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.270132017131993,
+          "latencyMs": {
+            "p50": 168.74700000000303,
+            "p95": 221.6009999999951,
+            "p99": 270.293800000014
+          },
+          "sqlStatements": {
+            "total": 945,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 189
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 10,
+          "requests": 189,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.270132017131993,
+          "latencyMs": {
+            "p50": 173.06059999999707,
+            "p95": 223.3300000000163,
+            "p99": 268.320699999982
+          },
+          "sqlStatements": {
+            "total": 945,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 189
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 10,
+          "requests": 188,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.236956715454046,
+          "latencyMs": {
+            "p50": 172.15069999999832,
+            "p95": 218.4036999999953,
+            "p99": 268.41089999998803
+          },
+          "sqlStatements": {
+            "total": 752,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 188
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 10,
+          "requests": 188,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.236956715454046,
+          "latencyMs": {
+            "p50": 169.25450000001,
+            "p95": 215.61699999999837,
+            "p99": 264.59699999997974
+          },
+          "sqlStatements": {
+            "total": 188,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 188
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 10,
+          "requests": 188,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.236956715454046,
+          "latencyMs": {
+            "p50": 176.00810000000638,
+            "p95": 224.15849999999045,
+            "p99": 273.05729999998584
+          },
+          "sqlStatements": {
+            "total": 188,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 188
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 10,
+          "requests": 188,
+          "errors": 0,
+          "elapsedSeconds": 30.14290599999999,
+          "throughputPerSecond": 6.236956715454046,
+          "latencyMs": {
+            "p50": 177.43149999997695,
+            "p95": 219.99189999999362,
+            "p99": 271.29649999999674
+          },
+          "sqlStatements": {
+            "total": 1880,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 188
+          }
+        },
+        {
+          "operation": "userFirst",
+          "concurrency": 50,
+          "requests": 206,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.722961197316572,
+          "latencyMs": {
+            "p50": 812.1316999999981,
+            "p95": 920.4615999999805,
+            "p99": 938.5546999999788
+          },
+          "sqlStatements": {
+            "total": 824,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 206
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 50,
+          "requests": 209,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.820868399219241,
+          "latencyMs": {
+            "p50": 815.2630000000063,
+            "p95": 905.9968000000226,
+            "p99": 931.9532999999938
+          },
+          "sqlStatements": {
+            "total": 836,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 209
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 50,
+          "requests": 213,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.951411335089466,
+          "latencyMs": {
+            "p50": 835.1575000000012,
+            "p95": 917.449799999973,
+            "p99": 933.2060000000056
+          },
+          "sqlStatements": {
+            "total": 852,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 213
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 50,
+          "requests": 206,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.722961197316572,
+          "latencyMs": {
+            "p50": 837.3475000000035,
+            "p95": 1050.2686000000103,
+            "p99": 1120.9136999999755
+          },
+          "sqlStatements": {
+            "total": 1030,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 206
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 50,
+          "requests": 206,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.722961197316572,
+          "latencyMs": {
+            "p50": 845.695000000007,
+            "p95": 1075.5701000000117,
+            "p99": 1120.9395000000077
+          },
+          "sqlStatements": {
+            "total": 1030,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 206
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 50,
+          "requests": 205,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.690325463349016,
+          "latencyMs": {
+            "p50": 837.9231000000145,
+            "p95": 1045.6224999999977,
+            "p99": 1112.538900000014
+          },
+          "sqlStatements": {
+            "total": 820,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 205
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 50,
+          "requests": 204,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.65768972938146,
+          "latencyMs": {
+            "p50": 768.2288000000117,
+            "p95": 878.6986000000034,
+            "p99": 892.7368000000133
+          },
+          "sqlStatements": {
+            "total": 204,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 204
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 50,
+          "requests": 205,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.690325463349016,
+          "latencyMs": {
+            "p50": 812.3183999999892,
+            "p95": 937.8715000000084,
+            "p99": 1073.1162000000186
+          },
+          "sqlStatements": {
+            "total": 205,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 205
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 50,
+          "requests": 205,
+          "errors": 0,
+          "elapsedSeconds": 30.641259699999996,
+          "throughputPerSecond": 6.690325463349016,
+          "latencyMs": {
+            "p50": 846.3217000000004,
+            "p95": 1051.9034999999858,
+            "p99": 1117.3156000000017
+          },
+          "sqlStatements": {
+            "total": 2050,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 205
+          }
+        }
+      ],
+      "deepSeek": {
+        "cursorAvailable": true,
+        "note": "Signed seek cursor prepared near the 75% fixture boundary; no OFFSET query or HTTP page walk."
+      },
+      "correctnessProbes": {
+        "operations": [
+          "userFirst",
+          "userDeepSeek",
+          "userExactLookup",
+          "sessionValidation",
+          "sessionList",
+          "applicationList",
+          "applicationOrigin",
+          "atomicRateLimit",
+          "refreshProtocol"
+        ],
+        "passed": true
+      },
+      "stages": [
+        {
+          "concurrency": 1,
+          "elapsedSeconds": 30.005115000000004,
+          "requests": 1577,
+          "errors": 0,
+          "throughputPerSecond": 52.55770557786563
+        },
+        {
+          "concurrency": 10,
+          "elapsedSeconds": 30.14290599999999,
+          "requests": 1697,
+          "errors": 0,
+          "throughputPerSecond": 56.29848694747615
+        },
+        {
+          "concurrency": 50,
+          "elapsedSeconds": 30.641259699999996,
+          "requests": 1859,
+          "errors": 0,
+          "throughputPerSecond": 60.66982944568693
+        }
+      ],
+      "maintenance": {
+        "batches": 20,
+        "deleted": {
+          "rateLimit": 0,
+          "emailChallenge": 0,
+          "verification": 0,
+          "oauthAccessToken": 0,
+          "oauthRefreshToken": 1500,
+          "session": 1500
+        },
+        "deferred": 0,
+        "budgetExhausted": true,
+        "liveSessionAndGrantPreserved": true
+      },
+      "restore": {
+        "integrity": "ok",
+        "users": 100000,
+        "foreignKeys": 0,
+        "secretMatched": true,
+        "restoredAuth": true,
+        "refreshRotated": true
+      },
+      "databaseBytesAfter": 128188416
+    },
+    {
+      "users": 1000000,
+      "fixture": {
+        "counts": {
+          "user": 1000000,
+          "userEmail": 1250000,
+          "account": 1000000,
+          "session": 250251,
+          "oauthClient": 10000,
+          "oauthGrantPolicy": 50000,
+          "oauthAccessToken": 50000,
+          "oauthRefreshToken": 250000
+        },
+        "plans": {
+          "userFirst": [
+            {
+              "id": 4,
+              "parent": 0,
+              "notused": 210,
+              "detail": "SCAN user USING COVERING INDEX user_createdAt_id_idx"
+            }
+          ],
+          "userSeek": [
+            {
+              "id": 4,
+              "parent": 0,
+              "notused": 190,
+              "detail": "SEARCH user USING COVERING INDEX user_createdAt_id_idx ((createdAt,id)<(?,?))"
+            }
+          ],
+          "userLookup": [
+            {
+              "id": 3,
+              "parent": 0,
+              "notused": 39,
+              "detail": "SEARCH user USING INDEX sqlite_autoindex_user_2 (email=?)"
+            }
+          ],
+          "session": [
+            {
+              "id": 3,
+              "parent": 0,
+              "notused": 39,
+              "detail": "SEARCH session USING INDEX sqlite_autoindex_session_2 (token=?)"
+            }
+          ],
+          "origin": [
+            {
+              "id": 5,
+              "parent": 0,
+              "notused": 56,
+              "detail": "SEARCH u USING COVERING INDEX sqlite_autoindex_oauthClientUri_1 (kind=? AND value=?)"
+            },
+            {
+              "id": 10,
+              "parent": 0,
+              "notused": 46,
+              "detail": "SEARCH c USING INDEX sqlite_autoindex_oauthClient_2 (clientId=?)"
+            }
+          ]
+        },
+        "elapsedSeconds": 204.2412965,
+        "nativeDates": "ISO UTC milliseconds",
+        "sharedPasswordHash": true
+      },
+      "databaseBytes": 1267646464,
+      "operations": [
+        {
+          "operation": "userFirst",
+          "concurrency": 1,
+          "requests": 148,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.931339280544057,
+          "latencyMs": {
+            "p50": 18.606199999980163,
+            "p95": 61.50130000000354,
+            "p99": 71.14620000001742
+          },
+          "sqlStatements": {
+            "total": 592,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 148
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 1,
+          "requests": 148,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.931339280544057,
+          "latencyMs": {
+            "p50": 19.054100000008475,
+            "p95": 52.38949999999022,
+            "p99": 68.94099999999162
+          },
+          "sqlStatements": {
+            "total": 592,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 148
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 1,
+          "requests": 148,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.931339280544057,
+          "latencyMs": {
+            "p50": 17.942600000009406,
+            "p95": 57.375,
+            "p99": 68.3634000000311
+          },
+          "sqlStatements": {
+            "total": 592,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 148
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 1,
+          "requests": 148,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.931339280544057,
+          "latencyMs": {
+            "p50": 22.073800000012852,
+            "p95": 69.30030000000261,
+            "p99": 76.07400000002235
+          },
+          "sqlStatements": {
+            "total": 740,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 148
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 1,
+          "requests": 148,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.931339280544057,
+          "latencyMs": {
+            "p50": 21.525599999993574,
+            "p95": 66.75680000003194,
+            "p99": 74.54139999998733
+          },
+          "sqlStatements": {
+            "total": 740,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 148
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 1,
+          "requests": 148,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.931339280544057,
+          "latencyMs": {
+            "p50": 17.494499999971595,
+            "p95": 48.300800000026356,
+            "p99": 64.68310000002384
+          },
+          "sqlStatements": {
+            "total": 592,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 148
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 1,
+          "requests": 147,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.898019420540381,
+          "latencyMs": {
+            "p50": 4.532000000006519,
+            "p95": 6.801100000040606,
+            "p99": 8.150099999969825
+          },
+          "sqlStatements": {
+            "total": 147,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 147
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 1,
+          "requests": 147,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.898019420540381,
+          "latencyMs": {
+            "p50": 4.918100000009872,
+            "p95": 7.566799999971408,
+            "p99": 43.80839999997988
+          },
+          "sqlStatements": {
+            "total": 147,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 147
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 1,
+          "requests": 147,
+          "errors": 0,
+          "elapsedSeconds": 30.01213089999999,
+          "throughputPerSecond": 4.898019420540381,
+          "latencyMs": {
+            "p50": 43.1697999999742,
+            "p95": 89.38750000001164,
+            "p99": 102.81219999998575
+          },
+          "sqlStatements": {
+            "total": 1470,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 147
+          }
+        },
+        {
+          "operation": "userFirst",
+          "concurrency": 10,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.589639641951897,
+          "latencyMs": {
+            "p50": 189.1868999999715,
+            "p95": 282.67619999998715,
+            "p99": 302.63589999999385
+          },
+          "sqlStatements": {
+            "total": 676,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 10,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.589639641951897,
+          "latencyMs": {
+            "p50": 192.91619999997783,
+            "p95": 274.3998000000138,
+            "p99": 312.82539999997243
+          },
+          "sqlStatements": {
+            "total": 676,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 10,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.589639641951897,
+          "latencyMs": {
+            "p50": 182.35129999998026,
+            "p95": 273.4638000000268,
+            "p99": 295.8803000000189
+          },
+          "sqlStatements": {
+            "total": 676,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 10,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.589639641951897,
+          "latencyMs": {
+            "p50": 194.84899999998743,
+            "p95": 294.6351999999606,
+            "p99": 400.3291999999783
+          },
+          "sqlStatements": {
+            "total": 845,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 10,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.589639641951897,
+          "latencyMs": {
+            "p50": 189.29349999997066,
+            "p95": 286.2417000000132,
+            "p99": 312.7118999999948
+          },
+          "sqlStatements": {
+            "total": 845,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 10,
+          "requests": 168,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.5565648511711165,
+          "latencyMs": {
+            "p50": 192.33850000001257,
+            "p95": 276.1905999999726,
+            "p99": 345.561699999962
+          },
+          "sqlStatements": {
+            "total": 672,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 168
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 10,
+          "requests": 168,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.5565648511711165,
+          "latencyMs": {
+            "p50": 174.6242000000202,
+            "p95": 266.7148000000161,
+            "p99": 298.63730000000214
+          },
+          "sqlStatements": {
+            "total": 168,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 168
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 10,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.589639641951897,
+          "latencyMs": {
+            "p50": 184.77189999999246,
+            "p95": 276.500400000019,
+            "p99": 303.2445000000298
+          },
+          "sqlStatements": {
+            "total": 169,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 10,
+          "requests": 169,
+          "errors": 0,
+          "elapsedSeconds": 30.234507199999992,
+          "throughputPerSecond": 5.589639641951897,
+          "latencyMs": {
+            "p50": 200.2275999999838,
+            "p95": 296.0365999999922,
+            "p99": 342.7853999999934
+          },
+          "sqlStatements": {
+            "total": 1690,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 169
+          }
+        },
+        {
+          "operation": "userFirst",
+          "concurrency": 50,
+          "requests": 201,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.54093286335419,
+          "latencyMs": {
+            "p50": 860.5943999999436,
+            "p95": 984.3317000000388,
+            "p99": 1057.1613999999827
+          },
+          "sqlStatements": {
+            "total": 804,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 201
+          }
+        },
+        {
+          "operation": "userDeepSeek",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 853.8931999999913,
+            "p95": 976.5801999999676,
+            "p99": 1049.9237999999896
+          },
+          "sqlStatements": {
+            "total": 800,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 200
+          }
+        },
+        {
+          "operation": "userExactLookup",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 851.7479000000167,
+            "p95": 984.155999999959,
+            "p99": 1045.6639999999898
+          },
+          "sqlStatements": {
+            "total": 800,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 200
+          }
+        },
+        {
+          "operation": "sessionValidation",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 857.9760000000242,
+            "p95": 982.6333999999915,
+            "p99": 1051.086500000034
+          },
+          "sqlStatements": {
+            "total": 1000,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 200
+          }
+        },
+        {
+          "operation": "sessionList",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 858.837200000009,
+            "p95": 980.4658000000054,
+            "p99": 1049.88890000002
+          },
+          "sqlStatements": {
+            "total": 1000,
+            "perRequest": 5
+          },
+          "statuses": {
+            "200": 200
+          }
+        },
+        {
+          "operation": "applicationList",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 848.3414000000339,
+            "p95": 979.7383999999729,
+            "p99": 1043.5803000000305
+          },
+          "sqlStatements": {
+            "total": 800,
+            "perRequest": 4
+          },
+          "statuses": {
+            "200": 200
+          }
+        },
+        {
+          "operation": "applicationOrigin",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 804.735400000005,
+            "p95": 916.9312999999966,
+            "p99": 1023.2153999999864
+          },
+          "sqlStatements": {
+            "total": 200,
+            "perRequest": 1
+          },
+          "statuses": {
+            "204": 200
+          }
+        },
+        {
+          "operation": "atomicRateLimit",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 852.2070999999996,
+            "p95": 976.6699999999837,
+            "p99": 1109.171800000011
+          },
+          "sqlStatements": {
+            "total": 200,
+            "perRequest": 1
+          },
+          "statuses": {
+            "200": 200
+          }
+        },
+        {
+          "operation": "refreshProtocol",
+          "concurrency": 50,
+          "requests": 200,
+          "errors": 0,
+          "elapsedSeconds": 30.729561699999962,
+          "throughputPerSecond": 6.5083909088101395,
+          "latencyMs": {
+            "p50": 857.9324999999953,
+            "p95": 1005.8213000000105,
+            "p99": 1046.8742000000202
+          },
+          "sqlStatements": {
+            "total": 2000,
+            "perRequest": 10
+          },
+          "statuses": {
+            "200": 200
+          }
+        }
+      ],
+      "deepSeek": {
+        "cursorAvailable": true,
+        "note": "Signed seek cursor prepared near the 75% fixture boundary; no OFFSET query or HTTP page walk."
+      },
+      "correctnessProbes": {
+        "operations": [
+          "userFirst",
+          "userDeepSeek",
+          "userExactLookup",
+          "sessionValidation",
+          "sessionList",
+          "applicationList",
+          "applicationOrigin",
+          "atomicRateLimit",
+          "refreshProtocol"
+        ],
+        "passed": true
+      },
+      "stages": [
+        {
+          "concurrency": 1,
+          "elapsedSeconds": 30.01213089999999,
+          "requests": 1329,
+          "errors": 0,
+          "throughputPerSecond": 44.28209394488548
+        },
+        {
+          "concurrency": 10,
+          "elapsedSeconds": 30.234507199999992,
+          "requests": 1519,
+          "errors": 0,
+          "throughputPerSecond": 50.240607196005506
+        },
+        {
+          "concurrency": 50,
+          "elapsedSeconds": 30.729561699999962,
+          "requests": 1801,
+          "errors": 0,
+          "throughputPerSecond": 58.6080601338353
+        }
+      ],
+      "maintenance": {
+        "batches": 20,
+        "deleted": {
+          "rateLimit": 0,
+          "emailChallenge": 0,
+          "verification": 0,
+          "oauthAccessToken": 0,
+          "oauthRefreshToken": 1500,
+          "session": 1500
+        },
+        "deferred": 0,
+        "budgetExhausted": true,
+        "liveSessionAndGrantPreserved": true
+      },
+      "restore": {
+        "integrity": "ok",
+        "users": 1000000,
+        "foreignKeys": 0,
+        "secretMatched": true,
+        "restoredAuth": true,
+        "refreshRotated": true
+      },
+      "databaseBytesAfter": 1269805056
+    }
+  ],
+  "outbound": {
+    "captchaStubbed": 3,
+    "blocked": 0
+  },
+  "completedAt": "2026-10-28T19:47:23.153Z"
+}

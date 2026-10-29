@@ -19,6 +19,8 @@ This iteration does not provide client credentials, native/mobile clients, devic
 
 The management console is administrator-only. Applications belong to the Loginflare instance and are shared between its administrators. The console creates and edits names, exact callback URLs, exact post-logout URLs, and permitted scopes; it disables/restores applications and rotates server client secrets. Client type is fixed at creation. Secret plaintext is shown once after creation or rotation, never returned in an application list.
 
+`GET /api/admin/applications` is a bounded management list, separate from the OAuth protocol. It accepts signed cursor pagination and an exact client-ID or complete-name lookup and returns only summary fields, ISO UTC creation times, page cursors, and the issuer. The console preserves its cursor and search in the URL and reports only the current page's size. Configuration details and mutations retain the provider's management APIs. Indexed callback-Origin and post-logout URI projections avoid enumerating the client registry during protocol checks; native exact redirect validation remains authoritative. See [Scaling](scaling.md) for the management API contract and local validation boundaries.
+
 Every application requires consent on first use. Expanded permissions require consent again. There is no trusted-application switch to skip consent.
 
 Register exact HTTPS callback and post-logout URLs. Wildcards, fragments, embedded credentials, plain HTTP, and literal loopback hosts are rejected by the web-client policy. The provider distinguishes client authentication from URI application type: both Loginflare types use `application_type: web`. Local examples use HTTPS subdomains such as `web.localhost` without changing this policy or relabeling browser clients as native applications.
@@ -92,6 +94,8 @@ Ordinary logout and an explicit security revocation have different meanings. Log
 | Restore account | Allows new sign-in and authorization; previously revoked grants remain revoked |
 
 The small `oauthGrantPolicy` table records each native grant's original session across refresh rotations and normal logout. Supported Better Auth lifecycle hooks first mark `session.oauthRevokedAt`; a D1 trigger revokes its existing grants in the same statement, and insertion guards reject a first grant during the gap before native session deletion. D1 constraints also prevent a concurrent refresh from inserting a usable successor after revocation. The provider's claims extension checks current email verification and suspension state during issuance and UserInfo. This policy does not replace authorization-code processing, refresh rotation, or token signatures.
+
+Expiry collection runs separately in bounded scheduled batches. It does not delete a referenced session or refresh token while retained credentials still depend on it, and it retains grant policy until the related credential lifetimes and references allow collection. Ordinary offline refresh and security revocation therefore do not depend on whether cleanup has already run.
 
 An external application may keep a separate session or a previously verified ID Token. Those local artifacts do not disappear automatically when Loginflare revokes credentials. Applications must choose their own session expiry and revalidation behavior; this release does not implement coordinated global logout.
 

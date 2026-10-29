@@ -23,8 +23,10 @@ const allowedScopes = new Set(['openid', 'profile', 'email', 'offline_access']);
 export const oauth = new Hono<{ Bindings: Env }>();
 
 async function allowedBrowserOrigin(env: Env, origin: string): Promise<boolean> {
-    const clients = await env.DB.prepare('SELECT "redirectUris" FROM "oauthClient" WHERE "tokenEndpointAuthMethod" = ? AND COALESCE("disabled", 0) = 0').bind('none').all<{ redirectUris: string }>();
-    return clients.results.some((client) => (JSON.parse(client.redirectUris) as string[]).some((uri) => new URL(uri).origin === origin));
+    const match = await env.DB.prepare(`SELECT 1 FROM "oauthClientUri" u JOIN "oauthClient" c ON c."clientId" = u."clientId"
+        WHERE u."kind" = 'redirect-origin' AND u."value" = ? AND c."referenceId" = 'loginflare'
+        AND c."tokenEndpointAuthMethod" = 'none' AND COALESCE(c."disabled", 0) = 0 LIMIT 1`).bind(origin).first();
+    return !!match;
 }
 
 oauth.all('*', async (c) => {
@@ -80,9 +82,10 @@ oauth.all('*', async (c) => {
     if (path === '/oauth2/end-session' && response.ok && response.headers.get('content-type')?.includes('text/html')) {
         const redirect = form.get('post_logout_redirect_uri') ?? query.get('post_logout_redirect_uri');
         if (redirect) {
-            const clients = await c.env.DB.prepare('SELECT "postLogoutRedirectUris" FROM "oauthClient" WHERE COALESCE("disabled", 0) = 0')
-                .all<{ postLogoutRedirectUris: string | null }>();
-            if (clients.results.some((client) => (JSON.parse(client.postLogoutRedirectUris ?? '[]') as string[]).includes(redirect))) {
+            const match = await c.env.DB.prepare(`SELECT 1 FROM "oauthClientUri" u JOIN "oauthClient" c ON c."clientId" = u."clientId"
+                WHERE u."kind" = 'post-logout-uri' AND u."value" = ? AND c."referenceId" = 'loginflare'
+                AND COALESCE(c."disabled", 0) = 0 LIMIT 1`).bind(redirect).first();
+            if (match) {
                 // Chromium applies form-action to the redirect following POST.
                 // The provider still validates the client-specific URI and signed confirmation cookie.
                 response.headers.set('Content-Security-Policy', `default-src 'none'; form-action 'self' ${new URL(redirect).origin}; base-uri 'none'; frame-ancestors 'none'`);

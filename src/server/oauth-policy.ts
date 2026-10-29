@@ -1,10 +1,11 @@
 import type { BetterAuthPlugin } from 'better-auth';
-import { APIError, createAuthMiddleware, isAPIError } from 'better-auth/api';
+import { APIError, createAuthEndpoint, createAuthMiddleware, isAPIError, sensitiveSessionMiddleware } from 'better-auth/api';
 import type { OAuthProviderExtension } from '@better-auth/oauth-provider';
 import type { Env } from './config';
 
 /** Loginflare account policy, composed through Better Auth's supported lifecycle hooks. */
 export function createOAuthPolicy(env: Env) {
+    const marked = new WeakSet<object>();
     async function revokeUser(userId: string, exceptSessionId?: string) {
         // The migration's trigger revokes native token rows in the same D1 statement.
         await env.DB.prepare(`UPDATE "oauthGrantPolicy" SET "revokedAt" = ?
@@ -19,6 +20,20 @@ export function createOAuthPolicy(env: Env) {
         await env.DB.prepare(`UPDATE "session" SET "oauthRevokedAt" = ?
             WHERE "id" = ? AND "oauthRevokedAt" IS NULL`)
             .bind(new Date().toISOString(), sessionId).run();
+    }
+
+    async function revokeAll(userId: string, exceptSessionId?: string, remove = false) {
+        const now = new Date().toISOString();
+        const sessions = `"userId" = ?${exceptSessionId ? ' AND "id" <> ?' : ''}`;
+        const grants = `"userId" = ?${exceptSessionId ? ' AND "originalSessionId" <> ?' : ''}`;
+        await env.DB.batch([
+            env.DB.prepare(`UPDATE "session" SET "oauthRevokedAt" = ? WHERE ${sessions} AND "oauthRevokedAt" IS NULL`)
+                .bind(now, userId, ...(exceptSessionId ? [exceptSessionId] : [])),
+            env.DB.prepare(`UPDATE "oauthGrantPolicy" SET "revokedAt" = ? WHERE ${grants} AND "revokedAt" IS NULL`)
+                .bind(now, userId, ...(exceptSessionId ? [exceptSessionId] : [])),
+            ...(remove ? [env.DB.prepare(`DELETE FROM "session" WHERE ${sessions}`)
+                .bind(userId, ...(exceptSessionId ? [exceptSessionId] : []))] : []),
+        ]);
     }
 
     async function requireEligibleUser(userId: string | undefined, usingToken = false) {
@@ -58,9 +73,15 @@ export function createOAuthPolicy(env: Env) {
                     async before(session, ctx) {
                         if (!ctx) return;
                         const path = ctx.path;
-                        if (path === '/revoke-session' || path === '/revoke-other-sessions'
-                            || path === '/admin/revoke-user-sessions' || path === '/reset-password'
-                            || (path === '/change-password' && session.id !== ctx.context.session?.session.id)) {
+                        if (['/admin/revoke-user-sessions', '/admin/ban-user', '/reset-password', '/change-password'].includes(path ?? '')) {
+                            // Native deleteMany enumerates only one adapter page for hooks.
+                            // Mark the complete set before its first deletion, once per call.
+                            if (!marked.has(ctx)) {
+                                const except = path === '/change-password' ? ctx.context.session?.session.id : undefined;
+                                await revokeAll(session.userId, except);
+                                marked.add(ctx);
+                            }
+                        } else if (path === '/revoke-session') {
                             // Ordinary /sign-out and RP-initiated logout deliberately leave offline grants intact.
                             await revokeSession(session.id);
                         }
@@ -68,13 +89,23 @@ export function createOAuthPolicy(env: Env) {
                 } },
             } } };
         },
+        endpoints: {
+            revokeOtherSessions: createAuthEndpoint('/revoke-other-sessions', {
+                method: 'POST', requireHeaders: true, use: [sensitiveSessionMiddleware],
+            }, async (ctx) => {
+                const identity = ctx.context.session;
+                if (identity.user.banned || !identity.user.emailVerified) throw new APIError('FORBIDDEN', { code: 'FORBIDDEN' });
+                await revokeAll(identity.user.id, identity.session.id, true);
+                return ctx.json({ status: true });
+            }),
+        },
         hooks: { after: [{
-            matcher: (ctx) => ['/revoke-other-sessions', '/admin/revoke-user-sessions', '/change-password'].includes(ctx.path ?? ''),
+            matcher: (ctx) => ['/admin/revoke-user-sessions', '/change-password'].includes(ctx.path ?? ''),
             handler: createAuthMiddleware(async (ctx) => {
                 const result = ctx.context.returned;
                 if (isAPIError(result) || (result instanceof Response && !result.ok)) return;
                 if (ctx.path === '/admin/revoke-user-sessions') {
-                    if (typeof ctx.body?.userId === 'string') await revokeUser(ctx.body.userId);
+                    if (typeof ctx.body?.userId === 'string') await revokeAll(ctx.body.userId, undefined, true);
                     return;
                 }
                 const identity = ctx.context.session;
@@ -91,7 +122,7 @@ export function createOAuthPolicy(env: Env) {
         extension,
         async onPasswordReset({ user }: { user: { id: string } }) {
             // Reset must also revoke offline grants when the user has no remaining browser sessions.
-            await revokeUser(user.id);
+            await revokeAll(user.id, undefined, true);
         },
     };
 }

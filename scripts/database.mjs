@@ -3,12 +3,17 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { prepareDatabase, checkDatabase } from './database-schema.mjs';
+import { snapshotLocal } from './local-snapshot.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const localState = resolve(process.env.LOGINFLARE_LOCAL_STATE ?? resolve(projectRoot, '.cloudflare/state'));
 const usage = [
     'Usage:',
     '  node scripts/database.mjs migrate --local',
     '  node scripts/database.mjs migrate --env staging|production',
+    '  node scripts/database.mjs check --local',
+    '  node scripts/database.mjs check --env staging|production',
     '  node scripts/database.mjs promote --email user@example.com --local',
     '  node scripts/database.mjs promote --email user@example.com --env staging|production',
 ].join('\n');
@@ -17,7 +22,7 @@ export function parseArguments(input) {
     const args = input.filter((argument) => argument !== '--');
     if (args.length === 0 || args.includes('--help') || args.includes('-h')) return { help: true };
     const action = args.shift();
-    if (action !== 'migrate' && action !== 'promote') throw new Error('Choose migrate or promote.');
+    if (!['migrate', 'promote', 'check'].includes(action)) throw new Error('Choose migrate or promote, or check.');
     const options = { action, local: false, environment: undefined, email: undefined };
     const seen = new Set();
     while (args.length > 0) {
@@ -44,7 +49,7 @@ export function parseArguments(input) {
     if (action === 'promote' && (!options.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(options.email))) {
         throw new Error('Promotion requires a valid --email address.');
     }
-    if (action === 'migrate' && options.email) throw new Error('--email is only valid for promotion.');
+    if (action !== 'promote' && options.email) throw new Error('--email is only valid for promotion.');
     return options;
 }
 
@@ -80,10 +85,11 @@ function runTool(packageName, arguments_, captureOutput = false) {
     const executable = resolve(dirname(packagePath), packageMetadata.bin[packageName]);
     const environment = { ...process.env };
     if (arguments_.includes('--local')) {
-        environment.XDG_CONFIG_HOME = resolve(projectRoot, '.cloudflare/tool-config');
-        environment.MINIFLARE_REGISTRY_PATH = resolve(projectRoot, '.cloudflare/tool-config/registry');
-        environment.WRANGLER_REGISTRY_PATH = resolve(projectRoot, '.cloudflare/tool-config/registry');
-        environment.WRANGLER_LOG_PATH = resolve(projectRoot, '.cloudflare/tool-config/wrangler.log');
+        const toolConfig = process.env.LOGINFLARE_LOCAL_STATE ? resolve(localState, '../tool-config') : resolve(projectRoot, '.cloudflare/tool-config');
+        environment.XDG_CONFIG_HOME = toolConfig;
+        environment.MINIFLARE_REGISTRY_PATH = resolve(toolConfig, 'registry');
+        environment.WRANGLER_REGISTRY_PATH = resolve(toolConfig, 'registry');
+        environment.WRANGLER_LOG_PATH = resolve(toolConfig, 'wrangler.log');
     }
     const result = spawnSync(process.execPath, [executable, ...arguments_], {
         cwd: projectRoot,
@@ -110,7 +116,7 @@ export function queryRows(output) {
     return statements.flatMap((statement) => statement.results ?? []);
 }
 
-export function main(input) {
+export async function main(input) {
     const options = parseArguments(input);
     if (options.help) {
         console.log(usage);
@@ -119,11 +125,23 @@ export function main(input) {
     const config = JSON.parse(readFileSync(resolve(projectRoot, 'wrangler.jsonc'), 'utf8'));
     const databaseId = resolveDatabase(config, options);
     const targetArguments = options.local
-        ? ['--local', '--persist-to', resolve(projectRoot, '.cloudflare/state')]
+        ? ['--local', '--persist-to', localState]
         : ['--mode', options.environment];
     console.log(`Target: ${options.local ? 'local' : options.environment}; D1 database: ${databaseId}`);
+    const query = (sql) => queryRows(options.local
+        ? runTool('wrangler', ['d1', 'execute', 'DB', '--local', '--persist-to', localState, '--command', sql, '--json'], true)
+        : runTool('cf', ['d1', 'query', databaseId, '--body', JSON.stringify({ sql }), ...targetArguments], true));
+    if (options.action === 'check') {
+        console.log(JSON.stringify({ schema: 'ok', ...checkDatabase(projectRoot, query) }));
+        return;
+    }
     if (options.action === 'migrate') {
+        if (options.local) console.log(JSON.stringify({ backup: await snapshotLocal(projectRoot, undefined, localState) }));
+        const tables = query("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'd1_migrations'");
+        const prepared = tables.length && query("SELECT name FROM d1_migrations WHERE name = '0006_management.sql'").length;
+        if (!prepared) prepareDatabase(projectRoot, query);
         runTool('cf', ['d1', 'migrations', 'apply', databaseId, '--dir', resolve(projectRoot, 'migrations'), ...targetArguments]);
+        console.log(JSON.stringify({ schema: 'ok', ...checkDatabase(projectRoot, query) }));
         return;
     }
     let output;
@@ -131,7 +149,7 @@ export function main(input) {
         // cf 1.0.0-beta.22 has no local D1 query implementation. Wrangler's
         // official local D1 command shares the Vite plugin's persistence format.
         const sql = promotionSql.replace('?', `'${options.email.replaceAll("'", "''")}'`);
-        output = runTool('wrangler', ['d1', 'execute', 'DB', '--local', '--persist-to', resolve(projectRoot, '.cloudflare/state'), '--command', sql, '--json'], true);
+        output = runTool('wrangler', ['d1', 'execute', 'DB', '--local', '--persist-to', localState, '--command', sql, '--json'], true);
     } else {
         const body = JSON.stringify({ sql: promotionSql, params: [options.email] });
         output = runTool('cf', ['d1', 'query', databaseId, '--body', body, ...targetArguments], true);
@@ -145,7 +163,7 @@ export function main(input) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
     try {
-        main(process.argv.slice(2));
+        await main(process.argv.slice(2));
     } catch (error) {
         console.error(error instanceof Error ? error.message : 'Database operation failed.');
         process.exitCode = 1;
