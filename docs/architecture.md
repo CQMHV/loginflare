@@ -42,7 +42,7 @@ Material Web is bundled into the client build and uses system fonts; UI componen
 
 ## HTTP surface
 
-Page paths are localized under `/en-us/` and `/zh-cn/`. Language identifiers inside the program remain `en-US` and `zh-CN`. Explicit URL language takes precedence over saved preferences.
+Page paths are localized under `/en-us/` and `/zh-cn/`. Language identifiers inside the program remain `en-US` and `zh-CN`. Explicit URL language takes precedence over saved preferences. At the root, a shared client resolver chooses the saved browser preference, then the signed-in account locale, then the first supported browser language, with English as the final fallback. English and Chinese regional/script variants use the available `en-US` and `zh-CN` translations. Both initial i18next/HTML language and React routing use this resolver. Root and localized entry navigation replaces browser history, preserves raw query/fragment values, and selects account or sign-in according to session state. Browser detection does not change the stored account/email locale; only the existing explicit preference updates do.
 
 API routes are not localized. `/api/auth/*` reaches the selected Better Auth endpoints through Hono's route/method boundary. `/api/health` only reports service health. Unknown API routes return JSON errors, never the SPA HTML entrypoint.
 

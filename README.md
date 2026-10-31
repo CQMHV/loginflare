@@ -59,7 +59,7 @@ pnpm db:check
 pnpm dev
 ```
 
-Open `http://localhost:5173` (the configured authentication origin). A fresh browser opens English by default. The development email binding simulates delivery locally: inspect its output for registration-verification links and email-management/recovery codes. Local development does not need to send real email or create Cloudflare resources. Never use the Turnstile test configuration for a production deployment.
+Open `http://localhost:5173` (the configured authentication origin). The root entry automatically selects a supported browser language for a fresh visitor. The development email binding simulates delivery locally: inspect its output for registration-verification links and email-management/recovery codes. Local development does not need to send real email or create Cloudflare resources. Never use the Turnstile test configuration for a production deployment.
 
 Development and the operator commands share `.cloudflare/state`. Local CLI configuration/registry files are kept in `.cloudflare/tool-config`; both directories are ignored. The resource commands prefer `cf`. This version uses stable Vite/Wrangler for development, build, generated Worker types and deployment because the pinned `cf` development/build path requires the beta Vite plugin. Local administrator promotion also uses Wrangler because this `cf` version has no local D1 query implementation. Remote D1 operations continue to use `cf`.
 
@@ -126,7 +126,7 @@ Ordinary central logout retains native `offline_access` refresh authorization. A
 
 The program, translation resources, stored preferences, and HTML `lang` use `en-US` / `zh-CN`; URL segments use `en-us` / `zh-cn`. An explicit page URL determines its language. Switching language keeps the current page and query parameters, including case-sensitive tokens.
 
-The root entry uses the saved preference, or `en-US` when none exists. Browser language is not used to choose Chinese automatically. Unsupported or incorrectly cased language segments return 404. API routes remain under `/api/*`, without language prefixes. Transactional email follows the account's language preference and returns the user to the matching localized result page.
+The root entry chooses the saved browser preference, then the signed-in account's preference, then the first supported language in the browser's ordered language list, and finally `en-US`. English variants use `en-US`; Chinese variants use the available simplified Chinese translation, `zh-CN`. Both the root and localized entry paths preserve query strings and fragments and open the account center when signed in, or sign-in when anonymous. Initial translations and HTML `lang` use the same language decision before React renders. Unsupported or incorrectly cased language segments return 404. API routes remain under `/api/*`, without language prefixes. Transactional email follows the account's language preference and returns the user to the matching localized result page.
 
 ## Deployment
 

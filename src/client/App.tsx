@@ -4,7 +4,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
+import { defaultLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
 import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, LanguageSelect, List, ListItem, NavigationLink, Progress, Select, TextField, ThemeMenu } from './material';
@@ -14,7 +14,7 @@ import { EmailsPage } from './Emails';
 import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
 
-const preferenceKey = 'loginflare.locale';
+import { resolveLocale, savePreference } from './locale';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -26,23 +26,6 @@ const AppContext = createContext<AppContextValue>({ identity: undefined, refresh
 
 function useApp() {
     return useContext(AppContext);
-}
-
-function readPreference(): Locale | undefined {
-    try {
-        const value = localStorage.getItem(preferenceKey);
-        return isLocale(value) ? value : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-function savePreference(locale: Locale) {
-    try {
-        localStorage.setItem(preferenceKey, locale);
-    } catch {
-        // Private browsing may disable local storage. The URL still controls language.
-    }
 }
 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
@@ -695,13 +678,13 @@ function StatePage({ forbidden = false }: { forbidden?: boolean }) {
 }
 
 function LocaleRoutes() {
-    const { pathname } = useLocation();
-    const { locale, refresh } = useApp();
+    const { pathname, search, hash } = useLocation();
+    const { identity, locale, refresh } = useApp();
     const segment = pathname.split('/')[1] ?? '';
     if (!pathToLocale[segment] || pathname !== pathname.toLowerCase()) return <StatePage />;
     return <Routes>
         <Route path="/:language">
-            <Route index element={<Navigate to="account" replace />} />
+            <Route index element={identity === undefined ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search, hash }} replace />} />
             <Route path="login" element={<AuthPage mode="login" />} />
             <Route path="signup" element={<AuthPage mode="signup" />} />
             <Route path="verify-email" element={<AuthPage mode="verify-email" />} />
@@ -735,9 +718,9 @@ function LocaleRoutes() {
 
 export default function App() {
     const location = useLocation();
-    const locale = pathToLocale[location.pathname.split('/')[1] ?? ''] ?? defaultLocale;
     const [identity, setIdentity] = useState<Identity | null>();
     const [loadError, setLoadError] = useState<string>();
+    const locale = resolveLocale(location.pathname, identity?.user.locale);
     const refresh = useCallback(async () => {
         try {
             setIdentity(await request<Identity | null>('/get-session'));
@@ -764,8 +747,7 @@ export default function App() {
     const context = { identity, refresh, locale };
     if (location.pathname === '/') {
         if (identity === undefined && !loadError) return <Busy />;
-        const preferred = readPreference() ?? (isLocale(identity?.user.locale) ? identity.user.locale : defaultLocale);
-        return <AppContext.Provider value={context}><Navigate to={localizedPath(preferred)} replace /></AppContext.Provider>;
+        return <AppContext.Provider value={context}><Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search: location.search, hash: location.hash }} replace /></AppContext.Provider>;
     }
 
     return <AppContext.Provider value={context}>

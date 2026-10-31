@@ -141,7 +141,7 @@ Use addresses and accounts controlled by the operator. A real email delivery che
 
 Verify the following before promoting a build to production:
 
-1. Both lowercase localized URL prefixes load, and a fresh visitor defaults to `/en-us/`.
+1. Both lowercase localized URL prefixes load. Root entry honors saved/account preferences, detects supported browser languages, and falls back to English; explicit language URLs stay unchanged and query/fragment values survive redirects.
 2. Registration, email verification, login, password recovery, and localized mail links work.
 3. A normal account cannot access management endpoints or change protected user fields.
 4. Suspending an ordinary account invalidates its old sessions; restoration requires a new login.

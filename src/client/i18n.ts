@@ -2,6 +2,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { oauthEn, oauthZh } from './oauth-translations';
 import { emailEn, emailZh } from './email-translations';
+import { resolveLocale } from './locale';
 
 const enUS = {
     oauth: oauthEn,
@@ -415,9 +416,12 @@ const zhCN: typeof enUS = {
     },
 };
 
+const initialLocale = resolveLocale(window.location.pathname);
+document.documentElement.lang = initialLocale;
+
 void i18n.use(initReactI18next).init({
     resources: { 'en-US': { translation: enUS }, 'zh-CN': { translation: zhCN } },
-    lng: 'en-US',
+    lng: initialLocale,
     fallbackLng: 'en-US',
     supportedLngs: ['en-US', 'zh-CN'],
     load: 'currentOnly',

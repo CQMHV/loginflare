@@ -1,21 +1,73 @@
 import { expect, test } from './fixtures';
 import { renderedTextContrast } from './contrast';
 
-test('defaults to English regardless of browser locale', async ({ page }) => {
+test('uses the browser language on a first visit to the root', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/');
-    await expect(page).toHaveURL('/en-us/login');
-    await expect(page.locator('html')).toHaveAttribute('lang', 'en-US');
-    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-    await expect(page.getByLabel('Email or username', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+    await expect(page).toHaveURL('/zh-cn/login');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+    await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
+    await expect(page.getByLabel('邮箱或用户名', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('loginflare.locale'))).toBeNull();
     expect(errors).toEqual([]);
     await page.screenshot({ path: test.info().outputPath('login-desktop.png'), fullPage: true });
 });
 
+for (const { languages, saved, expected } of [
+    { languages: ['en-US'], expected: 'en-US' },
+    { languages: ['en-GB', 'zh-CN'], expected: 'en-US' },
+    { languages: ['fr-FR', 'zh-Hans-SG', 'en-US'], expected: 'zh-CN' },
+    { languages: ['zh-TW', 'en-US'], expected: 'zh-CN' },
+    { languages: ['fr-FR', 'ja-JP'], expected: 'en-US' },
+    { languages: ['not_a_tag', 'zh'], expected: 'zh-CN' },
+    { languages: [], expected: 'zh-CN' },
+    { languages: ['zh-CN'], saved: 'unsupported', expected: 'zh-CN' },
+    { languages: ['zh-CN'], saved: 'en-US', expected: 'en-US' },
+]) {
+    test(`resolves root language ${JSON.stringify({ languages, saved })} to ${expected}`, async ({ page }) => {
+        await page.addInitScript(({ languages, saved }) => {
+            Object.defineProperty(navigator, 'languages', { get: () => languages });
+            if (saved) localStorage.setItem('loginflare.locale', saved);
+        }, { languages, saved });
+        await page.goto('/');
+        await expect(page).toHaveURL(`/${expected.toLowerCase()}/login`);
+        await expect(page.locator('html')).toHaveAttribute('lang', expected);
+        await expect(page.getByRole('heading', { name: expected === 'zh-CN' ? '欢迎回来' : 'Welcome back' })).toBeVisible();
+    });
+}
+
+test('keeps root query strings, fragments, and replacement history intact', async ({ page }) => {
+    const suffix = '?token=AaBbZ%2FCase%2BKeep%3D&source=RootLink#Keep%2FFragment';
+    await page.goto('/en-us/login');
+    await page.goto(`/${suffix}`);
+    await expect(page).toHaveURL(`/zh-cn/login${suffix}`);
+    await page.goBack();
+    await expect(page).toHaveURL('/en-us/login');
+    await page.goto(`/en-us/${suffix}`);
+    await expect(page).toHaveURL(`/en-us/login${suffix}`);
+});
+
+test('detects and switches languages when browser storage is unavailable', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.addInitScript(() => {
+        Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Storage blocked', 'SecurityError'); } });
+    });
+    await page.goto('/');
+    await expect(page).toHaveURL('/zh-cn/login');
+    await page.getByRole('combobox', { name: '语言', exact: true }).click();
+    await page.getByRole('option', { name: 'English', exact: true }).click();
+    await expect(page).toHaveURL('/en-us/login');
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+    await page.goto('/');
+    await expect(page).toHaveURL('/zh-cn/login');
+    expect(errors).toEqual([]);
+});
+
 test('language switching preserves opaque query values and persists the root preference', async ({ page }) => {
-    const query = '?token=AaBbZ%2FCase%2BKeep%3D&source=EmailLink';
+    const query = '?token=AaBbZ%2FCase%2BKeep%3D&source=EmailLink#KeepFragment';
     await page.goto(`/en-us/reset-password${query}`);
     await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
     await page.getByRole('combobox', { name: 'Language', exact: true }).click();
