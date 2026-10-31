@@ -4,6 +4,8 @@ import { readExampleTls } from '../setup-tls.mjs';
 
 export default defineConfig(({ command }) => ({
     root: fileURLToPath(new URL('.', import.meta.url)),
+    // Both apps share package.json; keep their optimized dependencies separate.
+    cacheDir: fileURLToPath(new URL('../../node_modules/.vite/spa-example', import.meta.url)),
     server: {
         host: '127.0.0.1', port: 5182, strictPort: true,
         allowedHosts: ['spa.localhost'],
