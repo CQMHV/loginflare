@@ -40,6 +40,29 @@ Brand emphasis uses `--loginflare-brand` (`#F38020`) with dark `--loginflare-on-
 
 Material Web is bundled into the client build and uses system fonts; UI components and fonts are not loaded from an external CDN. Its Apache-2.0 license and dependency notices are included in the generated third-party notices. The upstream project is in [maintenance mode](https://github.com/material-components/material-web/discussions/5642); the dependency version is explicitly pinned.
 
+## Browser data and navigation
+
+TanStack Query owns browser server-state fetching, sharing, cancellation, freshness and inactive-result collection. A single client lives in each document's memory. Native authentication mutations and OAuth SDK requests retain their protocol behavior; there is no blanket HTTP cache or global fetch override. Account and administration pages use these policies:
+
+| Resource | Freshness | Invalidation |
+| --- | --- | --- |
+| Current identity/profile | 15 seconds, bounded by session expiry | Document reload, stale visibility/reconnect events, profile changes |
+| Email registry | 60 seconds | Add/remove/verification/primary changes; primary changes also update identity and user views |
+| Personal session pages | 15 seconds | Revocation and password changes invalidate cached session pages |
+| User/application lists and details | 60 seconds | Related mutations invalidate details and all list/filter/cursor variants |
+| Public CAPTCHA configuration | 5 minutes | Shared between widgets; fetched when needed after expiry |
+| Signed OAuth consent context | No reusable freshness or inactive retention | Bound to actor and signed request; no focus/reconnect refresh or automatic retry |
+
+Expiry makes data eligible for revalidation; it does not start polling or erase results. Fresh results are reused across route and language changes. The profile page observes the shared identity query so returning to it revalidates an expired result without duplicating a fresh read. Stale results stay visible during background refresh, which is announced to assistive technology without adding a toolbar or moving page content. Initial reads show loading feedback; failures show an error, retained-data notice where applicable, and a retry action. There is no persistent refresh button; a document reload fetches current data. Only network/5xx query failures retry once. Automatic mount/focus/reconnect reattempts have an error cooldown and honor `Retry-After`; other 4xx errors and writes do not automatically retry. Hidden pages defer cross-tab-triggered reads until visible. BFCache restoration rechecks identity and then active private data.
+
+Private keys include account ID, session ID, role, resource and full query parameters. Identity-boundary changes cancel and remove obsolete queries. Private unauthorized/banned responses end cached identity; forbidden responses refresh authoritative identity. Known session expiry clears private data. Server authorization and immediate credential revocation remain authoritative on every API request, independently of display freshness. Private results and draft caches are never persisted to browser storage.
+
+Inactive queries are collected after five minutes, with at most 50 settled inactive private results retained. Account/role-scoped ordinary drafts and scroll positions have separate memory stores bounded to 30 and 50 entries. Submitted filters/cursors remain in URLs. Profile/application edits and unfinished searches survive SPA navigation; pristine fields follow refreshed data, while unsaved edits survive background reads and late save responses. Drafts can be discarded. Same-account session rotation clears obsolete queries and sensitive inputs while retaining ordinary page state and security-action acknowledgements.
+
+F5 creates a new client, revalidates identity/current-page data, and restores URL state. Passwords, codes, recovery/verification workflows and newly generated client secrets stay component-local and clear on route departure or `pagehide`; delayed mutation results cannot restore secrets after that boundary. Sign-out/account/role changes reset private page state. `BroadcastChannel` exchanges only event names, resource groups and an account ID; other tabs refresh or clear their own state without transferring query contents or credentials. Language/theme persistence remains independent.
+
+Browser regression tests cover resource reuse, filter/cursor separation, cache bounds, F5/error retry, visibility/reconnect/BFCache signals, stable layout during background reads, stale failures, draft/scroll restoration, mutation invalidation, cross-tab changes, permission loss and late responses after account changes. Fixtures remain local. This frontend policy adds no Worker bypass, binding or schema migration.
+
 ## HTTP surface
 
 Page paths are localized under `/en-us/` and `/zh-cn/`. Language identifiers inside the program remain `en-US` and `zh-CN`. Explicit URL language takes precedence over saved preferences. At the root, a shared client resolver chooses the saved browser preference, then the signed-in account locale, then the first supported browser language, with English as the final fallback. English and Chinese regional/script variants use the available `en-US` and `zh-CN` translations. Both initial i18next/HTML language and React routing use this resolver. Root and localized entry navigation replaces browser history, preserves raw query/fragment values, and selects account or sign-in according to session state. Browser detection does not change the stored account/email locale; only the existing explicit preference updates do.

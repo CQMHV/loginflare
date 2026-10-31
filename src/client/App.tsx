@@ -1,11 +1,11 @@
 import {
-    createContext, Fragment, useCallback, useContext, useEffect, useRef, useState,
+    createContext, Fragment, useContext, useEffect, useRef, useState,
     type FormEvent, type PropsWithChildren,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { defaultLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
-import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
+import { ApiError, captchaRequest, errorCode, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, LanguageSelect, List, ListItem, NavigationLink, Progress, Select, TextField, ThemeMenu } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
@@ -13,8 +13,9 @@ import { ApplicationEditor, ApplicationsPage } from './Applications';
 import { EmailsPage } from './Emails';
 import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
-
 import { resolveLocale, savePreference } from './locale';
+import { ConnectionNotice, DataScope, ResourceFeedback, useConfiguration, useDataActions, useIdentity, useResource } from './data';
+import { PageStateProvider, useClearSecrets, usePageDraft } from './page-state';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -58,11 +59,12 @@ function Brand({ destination }: { destination?: string }) {
 }
 
 function LanguageSwitcher() {
-    const { locale, identity, refresh } = useApp();
+    const { locale, identity } = useApp();
     const location = useLocation();
     const navigate = useNavigate();
     const { t } = useTranslation();
     const [error, setError] = useState<string>();
+    const dataActions = useDataActions();
 
     async function changeLanguage(next: Locale) {
         savePreference(next);
@@ -73,9 +75,9 @@ function LanguageSwitcher() {
         if (identity) {
             try {
                 await request('/update-user', { locale: next });
-                await refresh();
+                await dataActions.invalidate('profile', 'user', 'users');
             } catch (cause) {
-                setError(errorCode(cause));
+                setError(dataActions.fail(cause));
             }
         }
     }
@@ -170,13 +172,14 @@ function Captcha({ onToken, resetKey }: { onToken: (token: string) => void; rese
     const { t } = useTranslation();
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
     const [retry, setRetry] = useState(0);
+    const configuration = useConfiguration();
 
     useEffect(() => {
         let disposed = false;
         let widget: string | undefined;
         onToken('');
         setStatus('loading');
-        void Promise.all([fetchJson<{ turnstileSiteKey: string }>('/api/config'), loadTurnstile()]).then(([config]) => {
+        void Promise.all([configuration(), loadTurnstile()]).then(([config]) => {
             if (disposed || !container.current) return;
             if (!config.turnstileSiteKey || !window.turnstile) throw new Error('configuration');
             widget = window.turnstile.render(container.current, {
@@ -194,7 +197,7 @@ function Captcha({ onToken, resetKey }: { onToken: (token: string) => void; rese
             disposed = true;
             if (widget && window.turnstile) window.turnstile.remove(widget);
         };
-    }, [locale, theme, resetKey, retry, onToken]);
+    }, [locale, theme, resetKey, retry, onToken, configuration]);
 
     return <div className="captcha-area">
         <div ref={container} />
@@ -224,6 +227,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const [rememberMe, setRememberMe] = useState(true);
     const [recoveryChallenge, setRecoveryChallenge] = useState<string>();
     const [recoveryCode, setRecoveryCode] = useState('');
+    const captureSecrets = useClearSecrets(() => { setPassword(''); setConfirmPassword(''); setRecoveryCode(''); setRecoveryChallenge(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1); }, mode);
     const token = new URLSearchParams(location.search).get('token');
     const urlError = new URLSearchParams(location.search).get('error');
     const needsCaptcha = ['login', 'signup', 'verify-email'].includes(mode) || (mode === 'forgot-password' && !recoveryChallenge);
@@ -253,6 +257,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
 
     async function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        const secretsCurrent = captureSecrets();
         setError(undefined);
         setSuccess(undefined);
         if (needsCaptcha && !captchaToken) {
@@ -294,10 +299,10 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                 case 'forgot-password':
                     if (recoveryChallenge) {
                         const result = await request<{ token: string }>('/emails/recovery/verify', { challengeId: recoveryChallenge, code: recoveryCode.trim() });
-                        navigate(authPath('reset-password', { token: result.token }));
+                        if (secretsCurrent()) navigate(authPath('reset-password', { token: result.token }));
                     } else {
                         const result = await captchaRequest<{ challengeId: string }>('/emails/recovery/start', { identifier: loginIdentifier.trim(), email: email.trim() }, captchaToken);
-                        setRecoveryChallenge(result.challengeId);
+                        if (secretsCurrent()) setRecoveryChallenge(result.challengeId);
                         setSuccess('emails.recoveryRequested');
                     }
                     break;
@@ -358,19 +363,12 @@ function ConsentPage() {
     const { locale, identity } = useApp();
     const { t } = useTranslation();
     const location = useLocation();
-    const [consent, setConsent] = useState<{ client: { clientId: string; name: string }; scopes: string[] }>();
     const [error, setError] = useState<string>();
     const [busy, setBusy] = useState(false);
     const query = oauthSearch(location.search);
-    useEffect(() => {
-        if (!identity || !query) return;
-        let current = true;
-        setError(undefined); setConsent(undefined);
-        void fetchJson<{ client: { clientId: string; name: string }; scopes: string[] }>(`/api/oauth/consent?${new URLSearchParams({ oauth_query: query })}`).then((data) => {
-            if (current) setConsent(data);
-        }).catch((cause) => { if (current) setError(errorCode(cause)); });
-        return () => { current = false; };
-    }, [query, identity]);
+    const consentQuery = useResource<{ client: { clientId: string; name: string }; scopes: string[] }>('consent', `/api/oauth/consent?${new URLSearchParams({ oauth_query: query })}`, query, !!query);
+    const consent = consentQuery.data;
+    const consentError = error ?? (consentQuery.error ? errorCode(consentQuery.error) : undefined);
     async function decide(accept: boolean) {
         setBusy(true); setError(undefined);
         try {
@@ -385,8 +383,8 @@ function ConsentPage() {
     return <AuthLayout>
         <div className="auth-step-icon"><Icon name="shield" size={26} /></div>
         <h2>{t('oauth.consentTitle')}</h2>
-        <ErrorNotice code={error} />
-        {!consent && !error && <Busy />}
+        <ErrorNotice code={consentError} />
+        {!consent && !consentError && <Busy />}
         {consent && <>
             <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name })}</p>
             <p className="consent-account">{t('oauth.consentAccount', { email: identity.user.email })}</p>
@@ -395,7 +393,7 @@ function ConsentPage() {
             <p className="section-description">{t('oauth.consentNotice')}</p>
             <div className="action-row"><Button busy={busy} onClick={() => { void decide(true); }}>{t('oauth.allow')}</Button><Button className="secondary" disabled={busy} onClick={() => { void decide(false); }}>{t('oauth.deny')}</Button></div>
         </>}
-        {error && <p className="oauth-context">{t('oauth.restartAuthorization')}</p>}
+        {consentError && <p className="oauth-context">{t('oauth.restartAuthorization')}</p>}
     </AuthLayout>;
 }
 
@@ -417,20 +415,21 @@ interface AppFrameProps {
 }
 
 function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget }: AppFrameProps) {
-    const { identity, locale, refresh } = useApp();
+    const { identity, locale } = useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
+    const dataActions = useDataActions();
 
     async function signOut() {
         setBusy(true);
         try {
             await request('/sign-out', {});
-            await refresh();
+            dataActions.signOut();
             navigate(localizedPath(locale, 'login'), { replace: true });
         } catch (cause) {
-            setError(errorCode(cause));
+            setError(dataActions.fail(cause));
         } finally {
             setBusy(false);
         }
@@ -445,7 +444,7 @@ function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget
         <div className="app-content">
             <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><ThemeSwitcher /><LanguageSwitcher /><span className="header-separator" /><span className="user-avatar" aria-label={identity?.user.name}>{identity?.user.name.slice(0, 1).toUpperCase()}</span><Button className="icon-button" busy={busy} onClick={() => { void signOut(); }} aria-label={t('signout')} title={t('signout')}><Icon name="logout" /></Button></div></header>
             <div className="workspace-bar"><span className="workspace-title"><Icon name={area === 'admin' ? 'shield' : 'profile'} />{title}</span>{switchTarget && <Link className="workspace-switch" to={switchTarget.to}><Icon name={switchTarget.icon} size={18} />{switchTarget.label}<Icon name="arrow" size={16} /></Link>}</div>
-            <main className="page-content"><ErrorNotice code={error} /><Outlet /></main>
+            <main className="page-content"><ConnectionNotice /><ErrorNotice code={error} /><Outlet /></main>
             <footer className="app-footer">Loginflare <span>·</span> {t('openSource')}</footer>
         </div>
     </div>;
@@ -478,31 +477,34 @@ function PageHeading({ title, description, children }: PropsWithChildren<{ title
 }
 
 function ProfilePage() {
-    const { identity, locale, refresh } = useApp();
+    const { identity, locale } = useApp();
+    const identityQuery = useIdentity();
     const { t } = useTranslation();
-    const [name, setName] = useState(identity?.user.name ?? '');
-    const [username, setUsername] = useState(identity?.user.username ?? '');
+    const [draft, setDraft, clearDraft] = usePageDraft<{ name?: string; username?: string }>('profile');
+    const name = draft?.name ?? identity?.user.name ?? '';
+    const username = draft?.username ?? identity?.user.username ?? '';
+    const dataActions = useDataActions();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
     const [saved, setSaved] = useState(false);
-    useEffect(() => { setUsername(identity?.user.username ?? ''); }, [identity?.user.username]);
     async function save(event: FormEvent) {
         event.preventDefault();
         setBusy(true); setError(undefined); setSaved(false);
         try {
             await request('/update-user', { name, ...(username.trim() ? { username: username.trim() } : {}) });
-            await refresh(); setSaved(true);
-        } catch (cause) { setError(errorCode(cause)); }
+            await dataActions.invalidate('profile', 'user', 'users'); clearDraft(draft); setSaved(true);
+        } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
     return <>
         <PageHeading title={t('profileTitle')} description={t('profileDescription')} />
+        <ResourceFeedback query={{ ...identityQuery, error: null }} />
         <div className="profile-overview"><span className="profile-avatar">{identity?.user.name.slice(0, 1).toUpperCase()}</span><div><h2>{identity?.user.name}</h2></div></div>
         <section className="card"><div className="card-heading"><h2>{t('accountDetails')}</h2><p>{t('accountDetailsDescription')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
             <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
-            <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={setName} maxLength={100} required />
-            <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
-            <div className="form-footer"><Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
+            <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={(name) => setDraft({ ...draft, name })} maxLength={100} required />
+            <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={(username) => setDraft({ ...draft, username })} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
+            <div className="form-footer">{draft && <Button className="text-button" onClick={() => setDraft(undefined)}>{t('discardDraft')}</Button>}<Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
         </form></section>
         <section className="card"><div className="card-heading"><h2>{t('preferences')}</h2><p>{t('preferencesDescription')}</p></div><List className="preference-list" label={t('preferences')}><ListItem headline={t('language')} end={<LanguageSwitcher />} /></List></section>
         <div className="account-metadata"><span>{t('memberSince')} {formatDate(identity?.user.createdAt, locale)}</span><span>{t('accountId')}: <code>{identity?.user.id}</code></span></div>
@@ -512,12 +514,14 @@ function ProfilePage() {
 function SecurityPage() {
     const { t } = useTranslation();
     const { refresh } = useApp();
+    const dataActions = useDataActions();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmation, setConfirmation] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
     const [success, setSuccess] = useState(false);
+    useClearSecrets(() => { setCurrentPassword(''); setNewPassword(''); setConfirmation(''); });
     async function submit(event: FormEvent) {
         event.preventDefault();
         setSuccess(false); setError(undefined);
@@ -525,9 +529,10 @@ function SecurityPage() {
         setBusy(true);
         try {
             await request('/change-password', { currentPassword, newPassword, revokeOtherSessions: true });
+            await dataActions.invalidate('sessions');
             setCurrentPassword(''); setNewPassword(''); setConfirmation(''); setSuccess(true);
             await refresh();
-        } catch (cause) { setError(errorCode(cause)); }
+        } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
     return <><PageHeading title={t('securityTitle')} description={t('securityDescription')} /><section className="card"><div className="card-heading"><h2>{t('changePassword')}</h2><p>{t('changePasswordDescription')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void submit(event); }}>
@@ -560,19 +565,12 @@ function SessionsPage() {
     const [parameters, setParameters] = useSearchParams();
     const cursor = parameters.get('cursor');
     const query = pageParameters(parameters.toString());
-    const [data, setData] = useState<CursorPage<Session> & { hasOtherSessions: boolean }>();
-    const [revision, setRevision] = useState(0);
+    const sessionQuery = useResource<CursorPage<Session> & { hasOtherSessions: boolean }>('sessions', `/api/account/sessions?${query}`, query);
+    const data = sessionQuery.data;
+    const dataActions = useDataActions();
     const [error, setError] = useState<string>();
     const [success, setSuccess] = useState<string>();
     const [busy, setBusy] = useState(false);
-    useEffect(() => {
-        let current = true;
-        setData(undefined); setError(undefined);
-        void fetchJson<CursorPage<Session> & { hasOtherSessions: boolean }>(`/api/account/sessions?${query}`)
-            .then((result) => { if (current) setData(result); })
-            .catch((cause) => { if (current) setError(errorCode(cause)); });
-        return () => { current = false; };
-    }, [query, revision]);
     function navigatePage(nextCursor: string | null) {
         setParameters(nextCursor ? { cursor: nextCursor } : {});
     }
@@ -583,13 +581,12 @@ function SessionsPage() {
             else await request('/revoke-other-sessions', {});
             await refresh();
             if (!session) navigatePage(null);
-            setRevision((value) => value + 1);
+            await dataActions.invalidate('sessions');
             setSuccess(session ? 'sessionRevoked' : 'othersRevoked');
-        } catch (cause) { setError(errorCode(cause)); }
+        } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
-    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ErrorNotice code={error} />{error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<SuccessNotice message={success ? t(success) : undefined} /><section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!data?.hasOtherSessions} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
-        {!data && !error && <Busy />}
+    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ErrorNotice code={error} /><ResourceFeedback query={sessionQuery} />{(error || sessionQuery.error) && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<SuccessNotice message={success ? t(success) : undefined} /><section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!data?.hasOtherSessions} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
         {data?.items.length === 0 && <p className="empty-state">{t('sessionsEmpty')}</p>}
         {!!data?.items.length && <List className="session-list" label={t('activeSessions')}>{data.items.map((session, index) => <Fragment key={session.id}>
             {index > 0 && <Divider />}
@@ -615,26 +612,21 @@ function UsersPage() {
     const cursor = parameters.get('cursor');
     const lookupField = parameters.get('lookupField') ?? 'email';
     const lookupValue = parameters.get('lookupValue') ?? '';
-    const [query, setQuery] = useState(lookupValue);
-    const [field, setField] = useState(lookupField);
-    const [data, setData] = useState<CursorPage<User>>();
-    const [error, setError] = useState<string>();
     const requestQuery = pageParameters(location.search);
-    useEffect(() => { setQuery(lookupValue); setField(lookupField); }, [lookupValue, lookupField]);
-    useEffect(() => {
-        let current = true;
-        setError(undefined); setData(undefined);
-        void fetchJson<CursorPage<User>>(`/api/admin/users?${requestQuery}`).then((result) => { if (current) setData(result); }).catch((cause) => { if (current) setError(errorCode(cause)); });
-        return () => { current = false; };
-    }, [requestQuery]);
+    const [searchDraft, setSearchDraft] = usePageDraft<{ query?: string; field?: string }>(`users-search:${requestQuery}`);
+    const query = searchDraft?.query ?? lookupValue;
+    const field = searchDraft?.field ?? lookupField;
+    const setQuery = (query: string) => setSearchDraft({ ...searchDraft, query });
+    const setField = (field: string) => setSearchDraft({ ...searchDraft, field });
+    const userQuery = useResource<CursorPage<User>>('users', `/api/admin/users?${requestQuery}`, requestQuery);
+    const data = userQuery.data;
     function navigatePage(nextCursor: string | null) {
         const next = listParameters(location.search);
         if (nextCursor) next.set('cursor', nextCursor); else next.delete('cursor');
         setParameters(next);
     }
     const userPath = (id: string) => listPath(localizedPath(locale, 'admin/users/detail'), location.search, { id });
-    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')} /><ErrorNotice code={error} />{error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'email', label: t('email') }, { value: 'username', label: t('username') }, { value: 'id', label: t('accountId') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('searchUsers')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
-        {!data && !error && <Busy />}
+    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')} /><ResourceFeedback query={userQuery} />{userQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'email', label: t('email') }, { value: 'username', label: t('username') }, { value: 'id', label: t('accountId') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('searchUsers')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
         {data && <><div className="table-scroll"><table><thead><tr><th>{t('user')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.items.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><span className="table-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><ButtonLink variant="icon" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></ButtonLink></td></tr>)}</tbody></table>{data.items.length === 0 && <p className="empty-state">{t('usersEmpty')}</p>}</div><PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
     </section></>;
 }
@@ -644,16 +636,14 @@ function UserDetailPage() {
     const userId = new URLSearchParams(location.search).get('id') ?? '';
     const { locale } = useApp();
     const { t } = useTranslation();
-    const [user, setUser] = useState<User>();
-    const [reason, setReason] = useState('');
+    const userQuery = useResource<User>('user', `/api/auth/admin/get-user?${new URLSearchParams({ id: userId })}`, userId);
+    const user = userQuery.data;
+    const [reasonDraft, setReason, clearReason] = usePageDraft<string>(`user-reason:${userId}`);
+    const reason = reasonDraft ?? '';
+    const dataActions = useDataActions();
     const [error, setError] = useState<string>();
     const [success, setSuccess] = useState(false);
     const [busy, setBusy] = useState(false);
-    const load = useCallback(async () => {
-        try { setUser(await request<User>(`/admin/get-user?${new URLSearchParams({ id: userId ?? '' })}`)); }
-        catch (cause) { setError(errorCode(cause)); }
-    }, [userId]);
-    useEffect(() => { void load(); }, [load]);
     const [confirmation, setConfirmation] = useState<'ban-user' | 'revoke-user-sessions'>();
     async function action(kind: 'ban-user' | 'unban-user' | 'revoke-user-sessions', confirmed = false) {
         if (!user || user.role === 'admin') return;
@@ -661,11 +651,11 @@ function UserDetailPage() {
         setBusy(true); setError(undefined); setSuccess(false);
         try {
             await request(`/admin/${kind}`, { userId: user.id, ...(kind === 'ban-user' && reason.trim() ? { banReason: reason.trim() } : {}) });
-            await load(); setSuccess(true);
-        } catch (cause) { setError(errorCode(cause)); }
+            await dataActions.invalidate('user', 'users'); clearReason(reasonDraft); setSuccess(true);
+        } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
-    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void action(kind, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''} /><ErrorNotice code={error} /><SuccessNotice message={success ? t('userUpdated') : undefined} />{!user && !error && <Busy />}{user && <>
+    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void action(kind, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''} /><ErrorNotice code={error} /><SuccessNotice message={success ? t('userUpdated') : undefined} /><ResourceFeedback query={userQuery} />{user && <>
         <section className="card"><div className="card-body user-detail-grid"><div><small>{t('name')}</small><strong>{user.name}</strong></div><div><small>{t('email')}</small><strong>{user.email}</strong></div><div><small>{t('status')}</small><UserStatus user={user} /></div><div><small>{t('role')}</small><strong>{t(user.role === 'admin' ? 'admin' : 'user')}</strong></div><div><small>{t('joined')}</small><strong>{formatDate(user.createdAt, locale)}</strong></div><div><small>{t('emailVerification')}</small><strong>{t(user.emailVerified ? 'verified' : 'unverified')}</strong></div><div className="full-width"><small>{t('accountId')}</small><code>{user.id}</code></div>{user.banReason && <div className="full-width"><small>{t('reason')}</small><strong>{user.banReason}</strong></div>}</div></section>
         <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
     </>}</>;
@@ -679,7 +669,7 @@ function StatePage({ forbidden = false }: { forbidden?: boolean }) {
 
 function LocaleRoutes() {
     const { pathname, search, hash } = useLocation();
-    const { identity, locale, refresh } = useApp();
+    const { locale, identity } = useApp();
     const segment = pathname.split('/')[1] ?? '';
     if (!pathToLocale[segment] || pathname !== pathname.toLowerCase()) return <StatePage />;
     return <Routes>
@@ -695,7 +685,7 @@ function LocaleRoutes() {
             <Route element={<Protected />}>
                 <Route element={<AccountLayout />}>
                     <Route path="account" element={<ProfilePage />} />
-                    <Route path="account/emails" element={<EmailsPage refreshIdentity={refresh} />} />
+                    <Route path="account/emails" element={<EmailsPage />} />
                     <Route path="account/security" element={<SecurityPage />} />
                     <Route path="account/sessions" element={<SessionsPage />} />
                 </Route>
@@ -703,10 +693,10 @@ function LocaleRoutes() {
                     <Route element={<AdminLayout />}>
                         <Route path="admin" element={<Navigate to={localizedPath(locale, 'admin/users')} replace />} />
                         <Route path="admin/users" element={<UsersPage />} />
-                        <Route path="admin/users/detail" element={<UserDetailPage />} />
+                        <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
                         <Route path="admin/applications/new" element={<ApplicationEditor key="new" locale={locale} create />} />
-                        <Route path="admin/applications/detail" element={<ApplicationEditor key="detail" locale={locale} />} />
+                        <Route path="admin/applications/detail" element={<ApplicationEditor key={new URLSearchParams(search).get('clientId') ?? ''} locale={locale} />} />
                     </Route>
                 </Route>
             </Route>
@@ -718,25 +708,11 @@ function LocaleRoutes() {
 
 export default function App() {
     const location = useLocation();
-    const [identity, setIdentity] = useState<Identity | null>();
-    const [loadError, setLoadError] = useState<string>();
+    const identityQuery = useIdentity();
+    const identity = identityQuery.data === undefined && identityQuery.isError ? null : identityQuery.data;
     const locale = resolveLocale(location.pathname, identity?.user.locale);
-    const refresh = useCallback(async () => {
-        try {
-            setIdentity(await request<Identity | null>('/get-session'));
-            setLoadError(undefined);
-        } catch (cause) {
-            setLoadError(errorCode(cause));
-            setIdentity(null);
-        }
-    }, []);
-
-    useEffect(() => {
-        void refresh();
-        const focus = () => { void refresh(); };
-        window.addEventListener('focus', focus);
-        return () => window.removeEventListener('focus', focus);
-    }, [refresh]);
+    const loadError = identityQuery.error ? errorCode(identityQuery.error) : undefined;
+    const refresh = identityQuery.refresh;
 
     useEffect(() => {
         document.documentElement.lang = locale;
@@ -745,13 +721,8 @@ export default function App() {
     }, [locale]);
 
     const context = { identity, refresh, locale };
-    if (location.pathname === '/') {
-        if (identity === undefined && !loadError) return <Busy />;
-        return <AppContext.Provider value={context}><Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search: location.search, hash: location.hash }} replace /></AppContext.Provider>;
-    }
-
-    return <AppContext.Provider value={context}>
-        {loadError && <div className="global-error"><ErrorNotice code={loadError} /><Button type="button" className="text-button" onClick={() => { void refresh(); }}>{i18n.t('tryAgain')}</Button></div>}
-        <LocaleRoutes />
-    </AppContext.Provider>;
+    return <AppContext.Provider value={context}><DataScope identity={identity}><PageStateProvider key={identity ? `${identity.user.id}:${identity.user.role ?? 'user'}` : ''}>
+        {loadError && <div className="global-error"><ErrorNotice code={loadError} /><Button type="button" className="text-button" onClick={() => { void identityQuery.refetch(); }}>{i18n.t('tryAgain')}</Button></div>}
+        {location.pathname === '/' ? (identity === undefined && !loadError ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search: location.search, hash: location.hash }} replace />) : <LocaleRoutes />}
+    </PageStateProvider></DataScope></AppContext.Provider>;
 }

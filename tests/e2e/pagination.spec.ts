@@ -6,12 +6,21 @@ import { executeLocal, removeLocalApplications, removeLocalFixtures } from './da
 
 const fixtureEmails: string[] = [];
 const fixtureClients: string[] = [];
+const pageResponses = new Map<string, { items: { email?: string; name?: string }[] }>();
+
+function pageKey(endpoint: string, parameters: URLSearchParams) {
+    const query = new URLSearchParams(parameters);
+    query.set('limit', '20');
+    query.sort();
+    return `${endpoint}?${query}`;
+}
 
 test.afterEach(() => {
     removeLocalApplications(fixtureClients);
     removeLocalFixtures(fixtureEmails);
     fixtureClients.length = 0;
     fixtureEmails.length = 0;
+    pageResponses.clear();
 });
 
 async function selectLookup(page: Page, option: string) {
@@ -20,15 +29,14 @@ async function selectLookup(page: Page, option: string) {
 }
 
 async function changePage(page: Page, endpoint: string, name: 'Next' | 'Previous') {
-    const response = page.waitForResponse((value) => new URL(value.url()).pathname === endpoint && value.request().method() === 'GET');
+    const previous = page.url();
     await page.getByRole('button', { name, exact: true }).click();
-    const result = await response;
-    expect(result.status(), await result.text()).toBe(200);
-    const data = await result.json();
+    await expect(page).not.toHaveURL(previous);
+    const key = pageKey(endpoint, new URL(page.url()).searchParams);
+    await expect.poll(() => pageResponses.has(key)).toBe(true);
+    const data = pageResponses.get(key)!;
     expect(data.items.length).toBeLessThanOrEqual(20);
     expect(data).not.toHaveProperty('total');
-    expect(new URL(result.url()).searchParams.get('cursor')).toBeTruthy();
-    expect(new URL(result.url()).searchParams.get('limit')).toBe('20');
     return data;
 }
 
@@ -66,7 +74,17 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     page.on('request', (request) => {
         if (/\/api\/auth\/(?:admin\/list-users|list-sessions)(?:\?|$)/.test(request.url())) legacyRequests.push(request.url());
     });
-    await page.route(`${testOrigin}/api/**`, (route) => route.continue({ headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.72' } }));
+    await page.route(`${testOrigin}/api/**`, async (route) => {
+        const url = new URL(route.request().url());
+        const headers = { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.72' };
+        if (!['/api/admin/users', '/api/admin/applications', '/api/account/sessions'].includes(url.pathname)) return route.continue({ headers });
+        const response = await route.fetch({ headers, maxRedirects: 0 });
+        if (response.ok()) {
+            expect(url.searchParams.get('limit')).toBe('20');
+            pageResponses.set(pageKey(url.pathname, url.searchParams), await response.json());
+        }
+        await route.fulfill({ response });
+    });
     await page.goto('/en-us/login');
     await page.getByLabel('Email or username', { exact: true }).fill(administrator.username);
     await page.getByLabel('Password', { exact: true }).fill(password);
@@ -79,19 +97,19 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     await expect(page.getByRole('button', { name: 'Return to latest', exact: true })).toBeDisabled();
     const firstUsers = await page.locator('tbody tr').allTextContents();
     const secondUsers = await changePage(page, '/api/admin/users', 'Next');
-    await expect(page.locator('tbody tr').first()).toContainText(secondUsers.items[0].email);
+    await expect(page.locator('tbody tr').first()).toContainText(String(secondUsers.items[0].email));
     expect(await page.locator('tbody tr').allTextContents()).not.toEqual(firstUsers);
     await page.reload();
-    await expect(page.locator('tbody tr').first()).toContainText(secondUsers.items[0].email);
+    await expect(page.locator('tbody tr').first()).toContainText(String(secondUsers.items[0].email));
     await changePage(page, '/api/admin/users', 'Next');
     const restoredUsers = await changePage(page, '/api/admin/users', 'Previous');
-    await expect(page.locator('tbody tr').first()).toContainText(restoredUsers.items[0].email);
+    await expect(page.locator('tbody tr').first()).toContainText(String(restoredUsers.items[0].email));
     const userListUrl = page.url();
     await page.locator('.table-user').first().click();
     await expect(page.getByRole('heading', { name: 'User details', exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Back to users', exact: true }).click();
     await expect(page).toHaveURL(userListUrl);
-    await expect(page.locator('tbody tr').first()).toContainText(restoredUsers.items[0].email);
+    await expect(page.locator('tbody tr').first()).toContainText(String(restoredUsers.items[0].email));
     await selectLookup(page, 'Username');
     await page.getByLabel('Find a user', { exact: true }).fill(users[8].username.toUpperCase());
     await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -119,13 +137,13 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     await page.getByRole('link', { name: 'Applications', exact: true }).click();
     await expect(page.locator('tbody tr')).toHaveCount(20);
     const secondApplications = await changePage(page, '/api/admin/applications', 'Next');
-    await expect(page.locator('tbody tr').first()).toContainText(secondApplications.items[0].name);
+    await expect(page.locator('tbody tr').first()).toContainText(String(secondApplications.items[0].name));
     const applicationListUrl = page.url();
     await page.locator('.application-name').first().click();
     await expect(page.getByRole('heading', { name: 'Application details', exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Back to applications', exact: true }).click();
     await expect(page).toHaveURL(applicationListUrl);
-    await expect(page.locator('tbody tr').first()).toContainText(secondApplications.items[0].name);
+    await expect(page.locator('tbody tr').first()).toContainText(String(secondApplications.items[0].name));
     await selectLookup(page, 'Application name');
     await page.getByLabel('Find an application', { exact: true }).fill(applications[3].name);
     await page.getByRole('button', { name: 'Search', exact: true }).click();

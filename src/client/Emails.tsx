@@ -1,8 +1,10 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { errorCode, request } from './api';
+import { request } from './api';
 import i18n from './i18n';
-import { Button, Divider, List, ListItem, Progress, TextField } from './material';
+import { Button, Divider, List, ListItem, TextField } from './material';
+import { ResourceFeedback, useDataActions, useResource } from './data';
+import { useClearSecrets } from './page-state';
 
 interface EmailAddress {
     id: string;
@@ -14,9 +16,11 @@ interface EmailAddress {
 type Action = { kind: 'add' } | { kind: 'resend' | 'set-primary' | 'remove'; address: EmailAddress };
 interface Verification { emailId: string; email: string; challengeId: string }
 
-export function EmailsPage({ refreshIdentity }: { refreshIdentity: () => Promise<void> }) {
+export function EmailsPage() {
     const { t } = useTranslation();
-    const [emails, setEmails] = useState<EmailAddress[]>();
+    const emailQuery = useResource<{ emails: EmailAddress[] }>('emails', '/api/auth/emails');
+    const emails = emailQuery.data?.emails;
+    const dataActions = useDataActions();
     const [action, setAction] = useState<Action>();
     const [verification, setVerification] = useState<Verification>();
     const [email, setEmail] = useState('');
@@ -27,17 +31,7 @@ export function EmailsPage({ refreshIdentity }: { refreshIdentity: () => Promise
     const [success, setSuccess] = useState<string>();
     const actionSection = useRef<HTMLElement>(null);
     const codeSection = useRef<HTMLElement>(null);
-    const load = useCallback(async () => {
-        const result = await request<{ emails: EmailAddress[] }>('/emails');
-        setEmails(result.emails);
-    }, []);
-    useEffect(() => {
-        let active = true;
-        void request<{ emails: EmailAddress[] }>('/emails').then((result) => {
-            if (active) setEmails(result.emails);
-        }).catch((cause) => { if (active) setError(errorCode(cause)); });
-        return () => { active = false; };
-    }, []);
+    const captureSecrets = useClearSecrets(() => { setPassword(''); setCode(''); setVerification(undefined); setAction(undefined); });
     useEffect(() => {
         const section = action ? actionSection.current : verification ? codeSection.current : null;
         section?.querySelector<HTMLElement>('md-outlined-text-field')?.focus();
@@ -52,29 +46,29 @@ export function EmailsPage({ refreshIdentity }: { refreshIdentity: () => Promise
     async function submit(event: FormEvent) {
         event.preventDefault();
         if (!action || busy) return;
+        const secretsCurrent = captureSecrets();
         setBusy(true); setError(undefined); setSuccess(undefined);
         try {
             if (action.kind === 'add') {
                 const address = email.trim().toLowerCase();
                 const result = await request<{ emailId: string; challengeId: string }>('/emails/add', { email: address, password });
-                setVerification({ ...result, email: address });
+                if (secretsCurrent()) setVerification({ ...result, email: address });
                 setAction(undefined);
             } else if (action.kind === 'resend') {
                 const result = await request<{ challengeId: string }>('/emails/resend', { emailId: action.address.id, password });
-                setVerification({ ...result, emailId: action.address.id, email: action.address.email });
+                if (secretsCurrent()) setVerification({ ...result, emailId: action.address.id, email: action.address.email });
                 setCode(''); setAction(undefined);
             } else {
                 await request(`/emails/${action.kind}`, { emailId: action.address.id, password });
                 setSuccess(action.kind === 'remove' ? 'emails.removeDone' : 'emails.primaryDone');
                 setAction(undefined);
-                await refreshIdentity();
             }
-            await load();
+            await dataActions.invalidate('emails', ...(action.kind === 'set-primary' ? ['profile', 'user', 'users'] as const : []));
         } catch (cause) {
-            setError(errorCode(cause));
+            setError(dataActions.fail(cause));
             // An address may already be pending when delivery fails. Keep its
             // resend/remove controls available instead of hiding that state.
-            await load().catch(() => {});
+            await dataActions.invalidate('emails');
         } finally { setPassword(''); setBusy(false); }
     }
 
@@ -85,8 +79,8 @@ export function EmailsPage({ refreshIdentity }: { refreshIdentity: () => Promise
         try {
             await request('/emails/verify', { challengeId: verification.challengeId, code: code.trim() });
             setVerification(undefined); setCode(''); setSuccess('emails.verifiedDone');
-            await load(); await refreshIdentity();
-        } catch (cause) { setError(errorCode(cause)); }
+            await dataActions.invalidate('emails', 'profile', 'user', 'users');
+        } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
 
@@ -96,8 +90,7 @@ export function EmailsPage({ refreshIdentity }: { refreshIdentity: () => Promise
         <div className="page-heading"><div><h1>{t('emails.title')}</h1><p>{t('emails.description')}</p></div><Button disabled={busy || !emails || emails.length >= 10} onClick={() => choose({ kind: 'add' })}>{t('emails.add')}</Button></div>
         {error && <div className="notice error" role="alert">{i18n.exists(`errors.${error}`) ? t(`errors.${error}`) : t('errors.UNKNOWN_ERROR')}</div>}
         {success && <div className="notice success" role="status">{t(success)}</div>}
-        {!emails && !error && <div className="loading-state" role="status"><Progress />{t('loading')}</div>}
-        {!emails && error && <Button className="secondary" onClick={() => { setError(undefined); void load().catch((cause) => setError(errorCode(cause))); }}>{t('tryAgain')}</Button>}
+        <ResourceFeedback query={emailQuery} />
         {emails && emails.length >= 10 && <p className="email-limit muted">{t('emails.limitHint')}</p>}
         {action && <section ref={actionSection} className="card email-action" aria-labelledby="email-action-title">
             <div className="card-heading"><h2 id="email-action-title">{t(actionTitle)}</h2><p>{t(actionDescription, { email: action.kind === 'add' ? '' : action.address.email })}</p></div>

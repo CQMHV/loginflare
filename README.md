@@ -124,6 +124,10 @@ See the [integration guide](docs/oauth.md) for callbacks, token lifetimes, secur
 
 Ordinary central logout retains native `offline_access` refresh authorization. Applications own their local sessions; logging out of Loginflare does not sign every application out. Security actions such as password recovery and account suspension have separate credential-invalidation rules described in the integration guide.
 
+## Browser data and navigation
+
+Account and administration data share an in-memory TanStack Query cache. Ordinary reads stay fresh for 60 seconds, identity/session views for 15 seconds; stale data remains visible during background updates. Writes invalidate related views and synchronize invalidation across tabs. Inactive private results, ordinary drafts and scroll positions are bounded. SPA navigation preserves useful state; F5 fetches identity and current-page data again. Passwords, verification codes and one-time client secrets are not cached or persisted. See the [browser data contract](docs/architecture.md#browser-data-and-navigation) for navigation, error and security boundaries.
+
 ## Languages and URLs
 
 The program, translation resources, stored preferences, and HTML `lang` use `en-US` / `zh-CN`; URL segments use `en-us` / `zh-cn`. An explicit page URL determines its language. Switching language keeps the current page and query parameters, including case-sensitive tokens.

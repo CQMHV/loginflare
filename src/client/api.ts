@@ -29,16 +29,16 @@ export interface Identity {
 }
 
 export class ApiError extends Error {
-    constructor(public code: string, public status: number) {
+    constructor(public code: string, public status: number, public retryAfterMs = 0) {
         super(code);
     }
 }
 
-export async function request<T>(path: string, body?: unknown): Promise<T> {
-    return fetchJson<T>(`/api/auth${path}`, body);
+export async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+    return fetchJson<T>(`/api/auth${path}`, body, undefined, undefined, signal);
 }
 
-export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH'): Promise<T> {
+export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH', signal?: AbortSignal): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (captchaToken) headers['x-captcha-response'] = captchaToken;
@@ -50,8 +50,10 @@ export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: 
             credentials: 'same-origin',
             headers,
             body: body === undefined ? undefined : JSON.stringify(body),
+            signal,
         });
-    } catch {
+    } catch (cause) {
+        if (signal?.aborted) throw cause;
         throw new ApiError('NETWORK_ERROR', 0);
     }
 
@@ -62,7 +64,10 @@ export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: 
             : response.status === 429 ? 'TOO_MANY_REQUESTS'
             : response.status === 401 ? 'UNAUTHORIZED'
             : response.status === 403 ? 'FORBIDDEN' : 'UNKNOWN_ERROR';
-        throw new ApiError(code, response.status);
+        const retryAfter = response.headers.get('retry-after');
+        const seconds = retryAfter === null ? NaN : Number(retryAfter);
+        const retryAfterMs = Number.isFinite(seconds) ? seconds * 1000 : retryAfter ? Date.parse(retryAfter) - Date.now() : 0;
+        throw new ApiError(code, response.status, Math.max(0, retryAfterMs || 0));
     }
     return payload as T;
 }

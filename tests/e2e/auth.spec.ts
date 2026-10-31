@@ -125,6 +125,20 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByRole('heading', { name: '个人资料', exact: true })).toBeVisible();
     const identity = await page.request.get('/api/auth/get-session');
     expect((await identity.json()).user.locale).toBe('zh-CN');
+    await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US'] });
+    });
+    await page.evaluate(() => localStorage.removeItem('loginflare.locale'));
+    await page.goto('/');
+    await expect(page).toHaveURL('/zh-cn/account');
+    await expect(page.getByRole('heading', { name: '个人资料', exact: true })).toBeVisible();
+    await page.evaluate(() => localStorage.setItem('loginflare.locale', 'en-US'));
+    const rootSuffix = '?source=RootAccount#KeepFragment';
+    await page.goto(`/${rootSuffix}`);
+    await expect(page).toHaveURL(`/en-us/account${rootSuffix}`);
+    await expect(page.getByRole('heading', { name: 'Your profile', exact: true })).toBeVisible();
+    await page.goto('/zh-cn/account');
+    await expect(page.getByRole('heading', { name: '个人资料', exact: true })).toBeVisible();
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true }).getByRole('link')).toHaveCount(4);
     await expect(page.getByRole('navigation', { name: '管理导航', exact: true })).toHaveCount(0);

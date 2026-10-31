@@ -1,11 +1,13 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
-import { errorCode, fetchJson } from './api';
-import { Button, ButtonLink, Checkbox, ConfirmationDialog, Progress, Select, TextField } from './material';
+import { fetchJson } from './api';
+import { Button, ButtonLink, Checkbox, ConfirmationDialog, Select, TextField } from './material';
 import i18n from './i18n';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
+import { ResourceFeedback, useDataActions, useResource } from './data';
+import { useClearSecrets, usePageDraft } from './page-state';
 
 export interface Application {
     clientId: string;
@@ -63,20 +65,14 @@ export function ApplicationsPage({ locale }: { locale: Locale }) {
     const cursor = parameters.get('cursor');
     const lookupField = parameters.get('lookupField') ?? 'clientId';
     const lookupValue = parameters.get('lookupValue') ?? '';
-    const [field, setField] = useState(lookupField);
-    const [query, setQuery] = useState(lookupValue);
-    const [data, setData] = useState<CursorPage<ApplicationItem> & { issuer: string }>();
-    const [error, setError] = useState<string>();
     const requestQuery = pageParameters(location.search);
-    useEffect(() => { setField(lookupField); setQuery(lookupValue); }, [lookupField, lookupValue]);
-    useEffect(() => {
-        let current = true;
-        setData(undefined); setError(undefined);
-        void fetchJson<CursorPage<ApplicationItem> & { issuer: string }>(`/api/admin/applications?${requestQuery}`).then((result) => {
-            if (current) setData(result);
-        }).catch((cause) => { if (current) setError(errorCode(cause)); });
-        return () => { current = false; };
-    }, [requestQuery]);
+    const [searchDraft, setSearchDraft] = usePageDraft<{ field?: string; query?: string }>(`applications-search:${requestQuery}`);
+    const field = searchDraft?.field ?? lookupField;
+    const query = searchDraft?.query ?? lookupValue;
+    const setField = (field: string) => setSearchDraft({ ...searchDraft, field });
+    const setQuery = (query: string) => setSearchDraft({ ...searchDraft, query });
+    const applicationQuery = useResource<CursorPage<ApplicationItem> & { issuer: string }>('applications', `/api/admin/applications?${requestQuery}`, requestQuery);
+    const data = applicationQuery.data;
     function navigatePage(nextCursor: string | null) {
         const next = listParameters(location.search);
         if (nextCursor) next.set('cursor', nextCursor); else next.delete('cursor');
@@ -84,10 +80,9 @@ export function ApplicationsPage({ locale }: { locale: Locale }) {
     }
     return <>
         <div className="page-heading"><div><h1>{t('oauth.applicationsTitle')}</h1><p>{t('oauth.applicationsDescription')}</p></div><ButtonLink to={listPath(localizedPath(locale, 'admin/applications/new'), location.search)}>{t('oauth.createApplication')}</ButtonLink></div>
-        <ErrorNotice code={error} />
-        {error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}
-        <section className="card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'clientId', label: t('oauth.clientId') }, { value: 'name', label: t('oauth.applicationName') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('oauth.searchApplications')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
-        {!data && !error && <div className="loading-state" role="status"><Progress />{t('loading')}</div>}
+        <ResourceFeedback query={applicationQuery} />
+        {applicationQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}
+        <section className="card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'clientId', label: t('oauth.clientId') }, { value: 'name', label: t('oauth.applicationName') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('oauth.searchApplications')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
         {data && <><div className="table-scroll"><table>
             <thead><tr><th>{t('oauth.applicationName')}</th><th>{t('oauth.applicationType')}</th><th>{t('status')}</th><th>{t('created')}</th></tr></thead>
             <tbody>{data.items.map((application) => <tr key={application.clientId}>
@@ -103,42 +98,34 @@ export function ApplicationEditor({ locale, create = false }: { locale: Locale; 
     const { t } = useTranslation();
     const location = useLocation();
     const clientId = new URLSearchParams(location.search).get('clientId') ?? '';
-    const [application, setApplication] = useState<Application>();
-    const [issuer, setIssuer] = useState('');
-    const [name, setName] = useState('');
-    const [type, setType] = useState<'web' | 'spa'>('web');
-    const [redirectUris, setRedirectUris] = useState('');
-    const [postLogoutRedirectUris, setPostLogoutRedirectUris] = useState('');
-    const [scopes, setScopes] = useState<string[]>(['openid', 'profile', 'email', 'offline_access']);
+    const applicationQuery = useResource<ApplicationResponse>('application', `/api/admin/applications/${encodeURIComponent(clientId)}`, clientId, !create);
+    const [createdData, setCreatedData] = useState<Pick<ApplicationResponse, 'application' | 'issuer'>>();
+    const application = createdData?.application ?? applicationQuery.data?.application;
+    const issuer = createdData?.issuer ?? applicationQuery.data?.issuer ?? '';
+    type FormValues = { name: string; type: 'web' | 'spa'; redirectUris: string; postLogoutRedirectUris: string; scopes: string[] };
+    const [draft, setDraft, clearDraft] = usePageDraft<FormValues>(`application:${create ? 'new' : clientId}`);
+    const form: FormValues = draft ?? {
+        name: application?.name ?? '', type: application?.type ?? 'web', redirectUris: application?.redirectUris.join('\n') ?? '',
+        postLogoutRedirectUris: application?.postLogoutRedirectUris.join('\n') ?? '', scopes: application?.scopes ?? ['openid', 'profile', 'email', 'offline_access'],
+    };
+    const { name, type, redirectUris, postLogoutRedirectUris, scopes } = form;
+    const setName = (name: string) => setDraft({ ...form, name });
+    const setType = (type: 'web' | 'spa') => setDraft({ ...form, type });
+    const setRedirectUris = (redirectUris: string) => setDraft({ ...form, redirectUris });
+    const setPostLogoutRedirectUris = (postLogoutRedirectUris: string) => setDraft({ ...form, postLogoutRedirectUris });
+    const setScopes = (update: (current: string[]) => string[]) => setDraft({ ...form, scopes: update(scopes) });
+    const dataActions = useDataActions();
     const [secret, setSecret] = useState<string>();
+    const captureSecrets = useClearSecrets(() => setSecret(undefined));
     const [error, setError] = useState<string>();
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     const [confirmation, setConfirmation] = useState<'disable' | 'rotate'>();
     const created = create && !!application;
 
-    function applyResult(data: ApplicationResponse) {
-        setApplication(data.application);
-        setIssuer(data.issuer);
-        setName(data.application.name);
-        setType(data.application.type);
-        setRedirectUris(data.application.redirectUris.join('\n'));
-        setPostLogoutRedirectUris(data.application.postLogoutRedirectUris.join('\n'));
-        setScopes(data.application.scopes);
-    }
-
-    useEffect(() => {
-        if (create) return;
-        let current = true;
-        setApplication(undefined); setError(undefined); setSaved(false); setSecret(undefined);
-        void fetchJson<ApplicationResponse>(`/api/admin/applications/${encodeURIComponent(clientId)}`).then((data) => {
-            if (current) applyResult(data);
-        }).catch((cause) => { if (current) setError(errorCode(cause)); });
-        return () => { current = false; };
-    }, [clientId, create]);
-
     async function save(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        const secretsCurrent = captureSecrets();
         setBusy(true); setError(undefined); setSaved(false);
         const lines = (value: string) => value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         try {
@@ -146,24 +133,27 @@ export function ApplicationEditor({ locale, create = false }: { locale: Locale; 
                 name: name.trim(), ...(create ? { type } : {}),
                 redirectUris: lines(redirectUris), postLogoutRedirectUris: lines(postLogoutRedirectUris), scopes,
             }, undefined, create ? 'POST' : 'PATCH');
-            applyResult(data); setSecret(data.clientSecret); setSaved(true);
-        } catch (cause) { setError(errorCode(cause)); }
+            if (create) setCreatedData({ application: data.application, issuer: data.issuer });
+            if (secretsCurrent()) setSecret(data.clientSecret);
+            await dataActions.invalidate('application', 'applications'); clearDraft(draft); setSaved(true);
+        } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
 
     async function control(kind: 'disable' | 'enable' | 'rotate') {
         if (!application) return;
+        const secretsCurrent = captureSecrets();
         setBusy(true); setError(undefined); setSaved(false);
         const path = `/api/admin/applications/${encodeURIComponent(application.clientId)}`;
         try {
             if (kind === 'rotate') {
                 const data = await fetchJson<{ clientSecret: string }>(`${path}/rotate-secret`, {});
-                setSecret(data.clientSecret);
+                if (secretsCurrent()) setSecret(data.clientSecret);
             } else {
-                applyResult(await fetchJson<ApplicationResponse>(path, { disabled: kind === 'disable' }, undefined, 'PATCH'));
+                await fetchJson<ApplicationResponse>(path, { disabled: kind === 'disable' }, undefined, 'PATCH');
             }
-            setSaved(true);
-        } catch (cause) { setError(errorCode(cause)); }
+            await dataActions.invalidate('application', 'applications'); setSaved(true);
+        } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
 
@@ -174,7 +164,7 @@ export function ApplicationEditor({ locale, create = false }: { locale: Locale; 
         <ErrorNotice code={error} />
         {saved && <div className="notice success" role="status">{t(created ? 'oauth.applicationCreated' : 'oauth.applicationSaved')}</div>}
         <SecretNotice secret={secret} onDismiss={() => setSecret(undefined)} />
-        {!create && !application && !error && <div className="loading-state" role="status"><Progress />{t('loading')}</div>}
+        {!create && <ResourceFeedback query={applicationQuery} />}
         {created ? <ButtonLink to={listPath(localizedPath(locale, 'admin/applications/detail'), location.search, { clientId: application.clientId })}>{t('oauth.applicationDetails')}</ButtonLink> : (create || application) && <section className="card"><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
             <TextField label={t('oauth.applicationName')} value={name} onValueChange={setName} maxLength={100} required supportingText={t('oauth.applicationNameHint')} />
             {create ? <Select label={t('oauth.applicationType')} value={type} options={[{ value: 'web', label: t('oauth.typeWeb') }, { value: 'spa', label: t('oauth.typeSpa') }]} onChange={(value) => setType(value === 'spa' ? 'spa' : 'web')} /> : <TextField label={t('oauth.applicationType')} value={t(type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')} readOnly supportingText={t('oauth.typeFixed')} />}
@@ -182,7 +172,7 @@ export function ApplicationEditor({ locale, create = false }: { locale: Locale; 
             <TextField label={t('oauth.redirectUris')} type="textarea" value={redirectUris} onValueChange={setRedirectUris} required maxLength={8192} supportingText={t('oauth.redirectUrisHint')} />
             <TextField label={t('oauth.postLogoutRedirectUris')} type="textarea" value={postLogoutRedirectUris} onValueChange={setPostLogoutRedirectUris} required maxLength={8192} supportingText={t('oauth.postLogoutRedirectUrisHint')} />
             <fieldset className="scope-options"><legend>{t('oauth.allowedScopes')}</legend><p className="muted">{t('oauth.scopesHint')}</p><p className="muted">{t('oauth.openidRequired')}</p>{['profile', 'email', 'offline_access'].map((scope) => <Checkbox key={scope} label={t(`oauth.scope_${scope}`)} checked={scopes.includes(scope)} onCheckedChange={(checked) => setScopes((current) => checked ? [...current, scope] : current.filter((value) => value !== scope))} />)}</fieldset>
-            <div className="form-footer"><Button type="submit" busy={busy}>{t(create ? 'oauth.createApplication' : 'save')}</Button></div>
+            <div className="form-footer">{draft && <Button className="text-button" disabled={busy} onClick={() => setDraft(undefined)}>{t('discardDraft')}</Button>}<Button type="submit" busy={busy}>{t(create ? 'oauth.createApplication' : 'save')}</Button></div>
         </form></section>}
         {application && <ConnectionDetails application={application} issuer={issuer} />}
         {application && !create && <section className="card"><div className="card-heading"><h2>{t('oauth.applicationControls')}</h2><p>{t('oauth.controlsDescription')}</p></div><div className="card-body action-row">
