@@ -4,10 +4,10 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { defaultLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
+import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
 import { ApiError, captchaRequest, errorCode, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
-import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, LanguageSelect, List, ListItem, NavigationLink, Progress, Select, TextField, ThemeMenu } from './material';
+import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, List, ListItem, MenuButton, NavigationLink, Progress, Select, TextField } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
 import { ApplicationEditor, ApplicationsPage } from './Applications';
 import { EmailsPage } from './Emails';
@@ -17,6 +17,7 @@ import { resolveLocale, savePreference } from './locale';
 import { ConnectionNotice, DataScope, ResourceFeedback, useConfiguration, useDataActions, useIdentity, useResource } from './data';
 import { PageStateProvider, useClearSecrets, usePageDraft } from './page-state';
 import { Avatar, AvatarControls } from './Avatar';
+import { ToolbarIcon } from './ToolbarIcon';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -59,7 +60,7 @@ function Brand({ destination }: { destination?: string }) {
     </Link>;
 }
 
-function LanguageSwitcher() {
+function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
     const { locale, identity } = useApp();
     const location = useLocation();
     const navigate = useNavigate();
@@ -67,7 +68,8 @@ function LanguageSwitcher() {
     const [error, setError] = useState<string>();
     const dataActions = useDataActions();
 
-    async function changeLanguage(next: Locale) {
+    async function changeLanguage(next: string) {
+        if (!isLocale(next)) return;
         savePreference(next);
         const segments = location.pathname.split('/');
         segments[1] = localeToPath[next];
@@ -83,9 +85,11 @@ function LanguageSwitcher() {
         }
     }
 
+    const options = [{ value: 'en-US', label: 'English' }, { value: 'zh-CN', label: '简体中文' }];
     return <div className="language-control">
-        <Icon name="globe" size={16} />
-        <LanguageSelect label={t('language')} value={locale} onChange={(next) => { void changeLanguage(next); }} />
+        {compact
+            ? <MenuButton label={t('language')} icon={<ToolbarIcon name="translate" />} options={options.map((option) => ({ ...option, selected: option.value === locale }))} onSelect={(next) => { void changeLanguage(next); }} />
+            : <Select label={t('language')} value={locale} options={options} onChange={(next) => { void changeLanguage(next); }} />}
         {error && <ErrorNotice code={error} />}
     </div>;
 }
@@ -93,7 +97,26 @@ function LanguageSwitcher() {
 function ThemeSwitcher() {
     const { t } = useTranslation();
     const { preference } = useTheme();
-    return <ThemeMenu label={t('theme')} currentLabel={t(`theme_${preference}`)} icon={<Icon name={preference} />} options={(['light', 'dark', 'system'] as ThemePreference[]).map((value) => ({ value, label: t(`theme_${value}`), selected: value === preference, icon: <Icon name={value} /> }))} onChange={setThemePreference} />;
+    const options = (['light', 'dark', 'system'] as ThemePreference[]).map((value) => ({ value, label: t(`theme_${value}`), selected: value === preference, icon: <Icon name={value} size={24} /> }));
+    return <MenuButton className="theme-control" label={t('theme')} icon={<ToolbarIcon name="contrast" />} options={options} onSelect={(value) => { const option = options.find((option) => option.value === value); if (option) setThemePreference(option.value); }} />;
+}
+
+function AccountMenu({ busy, onSignOut }: { busy: boolean; onSignOut: () => void }) {
+    const { identity, locale } = useApp();
+    const { t } = useTranslation();
+    const navigate = useNavigate();
+    return <MenuButton className="account-menu" label={t('accountMenu')} description={identity?.user.name} busy={busy}
+        icon={<Avatar name={identity?.user.name ?? ''} image={identity?.user.image} className="user-avatar" fallback={<ToolbarIcon name="person" />} />}
+        options={[
+            { value: 'profile', label: t('profile'), icon: <Icon name="profile" size={24} /> },
+            ...(identity?.user.role === 'admin' ? [{ value: 'admin', label: t('adminConsole'), icon: <Icon name="shield" size={24} /> }] : []),
+            { value: 'signout', label: t('signout'), icon: <Icon name="logout" size={24} /> },
+        ]}
+        onSelect={(value) => {
+            if (value === 'signout') onSignOut();
+            else if (value === 'profile') navigate(localizedPath(locale, 'account'));
+            else if (value === 'admin' && identity?.user.role === 'admin') navigate(localizedPath(locale, 'admin/users'));
+        }} />;
 }
 
 function ErrorNotice({ code }: { code?: string }) {
@@ -133,7 +156,7 @@ function AuthLayout({ children }: PropsWithChildren) {
             <p className="story-footer">{t('openSource')}</p>
         </aside>
         <main className="auth-main">
-            <div className="auth-top"><div className="mobile-brand"><Brand /></div><div className="display-controls"><ThemeSwitcher /><LanguageSwitcher /></div></div>
+            <div className="auth-top"><div className="mobile-brand"><Brand /></div><div className="display-controls"><LanguageSwitcher compact /><ThemeSwitcher /></div></div>
             <div className="auth-form-container">{children}</div>
             <footer className="auth-footer">Loginflare <span>·</span> {t('tagline')}</footer>
         </main>
@@ -443,7 +466,7 @@ function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget
             <div className="sidebar-bottom"><span className="small-cloud">☁</span><p>{t('tagline')}</p><small>Cloudflare Workers + D1</small></div>
         </aside>
         <div className="app-content">
-            <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><ThemeSwitcher /><LanguageSwitcher /><span className="header-separator" /><NavigationLink end className="avatar-link" to={localizedPath(locale, 'account')} aria-label={`${t('profile')}: ${identity?.user.name ?? ''}`} title={t('profile')}><Avatar name={identity?.user.name ?? ''} image={identity?.user.image} className="user-avatar" /></NavigationLink><Button className="icon-button" busy={busy} onClick={() => { void signOut(); }} aria-label={t('signout')} title={t('signout')}><Icon name="logout" /></Button></div></header>
+            <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><LanguageSwitcher compact /><ThemeSwitcher /><AccountMenu busy={busy} onSignOut={() => { void signOut(); }} /></div></header>
             <div className="workspace-bar"><span className="workspace-title"><Icon name={area === 'admin' ? 'shield' : 'profile'} />{title}</span>{switchTarget && <Link className="workspace-switch" to={switchTarget.to}><Icon name={switchTarget.icon} size={18} />{switchTarget.label}<Icon name="arrow" size={16} /></Link>}</div>
             <main className="page-content"><ConnectionNotice /><ErrorNotice code={error} /><Outlet /></main>
             <footer className="app-footer">Loginflare <span>·</span> {t('openSource')}</footer>

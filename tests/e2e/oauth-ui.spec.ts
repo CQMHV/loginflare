@@ -133,8 +133,8 @@ test('manages applications, consent, and signed registration/recovery continuati
     await page.goto(authorize('openid profile email', 'ExpandedScope'));
     await expect(page.getByRole('heading', { name: 'Authorize application', exact: true })).toBeVisible();
     const signedQuery = new URL(page.url()).search;
-    await page.getByRole('combobox', { name: 'Language', exact: true }).click();
-    await page.getByRole('option', { name: '简体中文', exact: true }).click();
+    await page.getByRole('button', { name: 'Language', exact: true }).click();
+    await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
     await expect(page.getByRole('heading', { name: '授权应用', exact: true })).toBeVisible();
     expect(new URL(page.url()).search).toBe(signedQuery);
     await expect(page.getByText('读取你的邮箱地址与验证状态', { exact: true })).toBeVisible();

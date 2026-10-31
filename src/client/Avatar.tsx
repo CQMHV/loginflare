@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, useState } from 'react';
+import { createElement, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { MdDialog } from '@material/web/dialog/dialog.js';
 import { useTranslation } from 'react-i18next';
 import { ApiError, fetchJson, readResponse } from './api';
@@ -7,7 +7,7 @@ import { useDataActions } from './data';
 import { useClearSecrets } from './page-state';
 import { avatarIdPattern, avatarMimeType, avatarSize, inspectImage, maximumAvatarBytes, maximumSourceBytes } from '../shared/avatars';
 
-export function Avatar({ name, image, className }: { name: string; image?: string | null; className: string }) {
+export function Avatar({ name, image, className, fallback }: { name: string; image?: string | null; className: string; fallback?: ReactNode }) {
     const { t } = useTranslation();
     const [failed, setFailed] = useState<string>();
     let source: string | undefined;
@@ -18,7 +18,7 @@ export function Avatar({ name, image, className }: { name: string; image?: strin
         } catch { /* Invalid profile data uses the default avatar. */ }
     }
     return <span className={className} role="img" aria-label={t('avatar.label', { name })}>
-        {source ? <img src={source} alt="" decoding="async" loading={className === 'table-avatar' ? 'lazy' : undefined} referrerPolicy="no-referrer" onError={() => setFailed(source)} /> : name.trim().slice(0, 1).toUpperCase() || '?'}
+        {source ? <img src={source} alt="" decoding="async" loading={className === 'table-avatar' ? 'lazy' : undefined} referrerPolicy="no-referrer" onError={() => setFailed(source)} /> : fallback ?? (name.trim().slice(0, 1).toUpperCase() || '?')}
     </span>;
 }
 

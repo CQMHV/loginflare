@@ -57,8 +57,8 @@ test('detects and switches languages when browser storage is unavailable', async
     });
     await page.goto('/');
     await expect(page).toHaveURL('/zh-cn/login');
-    await page.getByRole('combobox', { name: '语言', exact: true }).click();
-    await page.getByRole('option', { name: 'English', exact: true }).click();
+    await page.getByRole('button', { name: '语言', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'English', exact: true }).click();
     await expect(page).toHaveURL('/en-us/login');
     await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
     await page.goto('/');
@@ -70,8 +70,8 @@ test('language switching preserves opaque query values and persists the root pre
     const query = '?token=AaBbZ%2FCase%2BKeep%3D&source=EmailLink#KeepFragment';
     await page.goto(`/en-us/reset-password${query}`);
     await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
-    await page.getByRole('combobox', { name: 'Language', exact: true }).click();
-    await page.getByRole('option', { name: '简体中文', exact: true }).click();
+    await page.getByRole('button', { name: 'Language', exact: true }).click();
+    await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
     await expect(page).toHaveURL(`/zh-cn/reset-password${query}`);
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await expect(page.getByRole('heading', { name: '设置新密码' })).toBeVisible();

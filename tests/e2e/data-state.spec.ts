@@ -75,6 +75,59 @@ async function visibility(page: Page, visible: boolean) {
     }, visible);
 }
 
+for (const [role, width] of [['admin', 1280], ['user', 320]] as const) {
+    test(`keeps the ${role} header menus accessible and bounded at ${width}px`, async ({ page, context }) => {
+        const server = await mockAccount(context);
+        server.state.actor = identity('alpha', role);
+        await page.setViewportSize({ width, height: 812 });
+        await page.goto('/zh-cn/account');
+        const header = page.locator('.header-actions');
+        const language = header.getByRole('button', { name: '语言', exact: true });
+        const theme = header.getByRole('button', { name: '主题', exact: true });
+        const account = header.getByRole('button', { name: '账号菜单', exact: true });
+        for (const control of [language, theme, account]) {
+            await expect(control).toBeVisible();
+            const bounds = await control.boundingBox();
+            expect(bounds!.x).toBeGreaterThanOrEqual(0);
+            expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await language.press('ArrowUp');
+        const selected = page.getByRole('menuitem', { name: '简体中文', exact: true });
+        await expect(selected).toBeFocused();
+        await expect(selected).toHaveAttribute('aria-selected', 'true');
+        await page.keyboard.press('Escape');
+        await expect(header.locator('.language-control md-menu .menu')).toBeHidden();
+        await expect(language).toBeFocused();
+        await expect(language).toHaveAttribute('aria-expanded', 'false');
+        await account.press('ArrowDown');
+        await expect(page.getByRole('menuitem', { name: '个人资料', exact: true })).toBeFocused();
+        await expect(page.getByRole('menuitem', { name: '管理后台', exact: true })).toHaveCount(role === 'admin' ? 1 : 0);
+        await page.screenshot({ path: test.info().outputPath(`header-${role}-${width}.png`), fullPage: true });
+        await page.keyboard.press('Escape');
+        await expect(header.locator('.account-menu md-menu .menu')).toBeHidden();
+        await expect(account).toBeFocused();
+        await language.press('ArrowDown');
+        await expect(page.getByRole('menuitem', { name: 'English', exact: true })).toBeFocused();
+        await page.route(`${testOrigin}/api/auth/update-user`, (route) => route.fulfill({ status: 503, json: { code: 'REQUEST_FAILED' } }));
+        await page.keyboard.press('Space');
+        await expect(page).toHaveURL('/en-us/account');
+        const failure = header.getByRole('alert');
+        await expect(failure).toBeVisible();
+        const failureBounds = await failure.boundingBox();
+        expect(failureBounds!.x).toBeGreaterThanOrEqual(0);
+        expect(failureBounds!.x + failureBounds!.width).toBeLessThanOrEqual(width);
+        await header.getByRole('button', { name: 'Account menu', exact: true }).press('ArrowUp');
+        await expect(page.getByRole('menuitem', { name: 'Sign out', exact: true })).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(header.locator('.account-menu md-menu .menu')).toBeHidden();
+        await header.getByRole('button', { name: 'Account menu', exact: true }).click();
+        await page.getByRole('menuitem', { name: role === 'admin' ? 'Administration' : 'Profile', exact: true }).click();
+        await expect(page).toHaveURL(role === 'admin' ? '/en-us/admin/users' : '/en-us/account');
+        await expect(page.getByRole('navigation', { name: role === 'admin' ? 'Administration navigation' : 'Account navigation', exact: true })).toBeVisible();
+    });
+}
+
 async function returnToStalePage(page: Page) {
     await page.clock.fastForward(61_000);
     await visibility(page, false);
@@ -218,7 +271,8 @@ test('clears private data across tabs and ignores a late response from the previ
     await expect(page.getByText('alpha-v1@loginflare.test', { exact: true })).toBeVisible();
     const peer = await context.newPage();
     await peer.goto('/en-us/account');
-    await peer.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await peer.getByRole('button', { name: 'Account menu', exact: true }).click();
+    await peer.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
     await expect(peer).toHaveURL('/en-us/login');
     await expect(page).toHaveURL('/en-us/login');
     await expect(page.getByText('alpha-v1@loginflare.test', { exact: true })).toHaveCount(0);
@@ -230,7 +284,8 @@ test('clears private data across tabs and ignores a late response from the previ
     server.state.emailGate = new Promise<void>((resolve) => { release = resolve; });
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await expect.poll(() => server.count(page, '/api/auth/emails')).toBe(2);
-    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await page.getByRole('button', { name: 'Account menu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
     await expect(page).toHaveURL('/en-us/login');
     server.state.emailGate = undefined;
     await page.getByLabel('Email or username', { exact: true }).fill('beta');

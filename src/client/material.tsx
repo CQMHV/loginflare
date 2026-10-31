@@ -1,9 +1,10 @@
-import { createElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type PropsWithChildren, type ReactNode } from 'react';
+import { createElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type PropsWithChildren, type ReactNode } from 'react';
 import { NavLink, useNavigate, type NavLinkProps } from 'react-router-dom';
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/iconbutton/icon-button.js';
+import '@material/web/iconbutton/filled-tonal-icon-button.js';
 import '@material/web/textfield/outlined-text-field.js';
 import '@material/web/checkbox/checkbox.js';
 import '@material/web/select/outlined-select.js';
@@ -19,8 +20,7 @@ import '@material/web/ripple/ripple.js';
 import '@material/web/focus/md-focus-ring.js';
 import type { MdDialog } from '@material/web/dialog/dialog.js';
 import type { MdMenu } from '@material/web/menu/menu.js';
-import type { Locale } from '../shared/locales';
-import type { ThemePreference } from './theme';
+import type { CloseMenuEvent } from '@material/web/menu/internal/controllers/shared.js';
 
 // React 19 assigns Web Component properties and subscribes to their native events.
 // Keep the adapter small; rendering, form association and validation belong to Material Web.
@@ -102,14 +102,6 @@ export function Checkbox({ label, checked, onCheckedChange }: { label: string; c
     })}<span>{label}</span></label>;
 }
 
-export function LanguageSelect({ label, value, onChange }: { label: string; value: Locale; onChange: (locale: Locale) => void }) {
-    return createElement('md-outlined-select', {
-        value, className: 'language-select', 'aria-label': label,
-        onChange: (event: Event) => onChange((event.currentTarget as HTMLElement & { value: Locale }).value),
-    }, ...([{ value: 'en-US', label: 'English' }, { value: 'zh-CN', label: '简体中文' }]).map((option) =>
-        createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
-}
-
 export function Select({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
     return createElement('md-outlined-select', {
         value, label, 'aria-label': label,
@@ -117,21 +109,63 @@ export function Select({ label, value, options, onChange }: { label: string; val
     }, ...options.map((option) => createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
 }
 
-export function ThemeMenu({ label, currentLabel, icon, options, onChange }: {
-    label: string; currentLabel: string; icon: ReactNode;
-    options: { value: ThemePreference; label: string; selected: boolean; icon: ReactNode }[];
-    onChange: (value: ThemePreference) => void;
+export function MenuButton({ label, description, icon, options, onSelect, className = '', busy = false }: {
+    label: string; description?: string; icon: ReactNode; className?: string; busy?: boolean;
+    options: { value: string; label: string; selected?: boolean; icon?: ReactNode }[];
+    onSelect: (value: string) => void;
 }) {
     const id = useId();
+    const menuId = `${id}-menu`;
     const menu = useRef<MdMenu>(null);
+    const selection = useRef<string | undefined>(undefined);
     const [open, setOpen] = useState(false);
-    return <div className="theme-control">
-        <Button id={id} className="icon-button" aria-label={label} title={`${label}: ${currentLabel}`} aria-haspopup="menu" aria-expanded={open ? 'true' : 'false'} onClick={() => { if (menu.current) menu.current.open = !menu.current.open; }}>{icon}</Button>
-        {createElement('md-menu', { ref: menu, anchor: id, 'aria-label': label, anchorCorner: 'end-end', menuCorner: 'start-end', onopening: () => setOpen(true), onclosing: () => setOpen(false) },
+    useEffect(() => {
+        const element = menu.current;
+        if (!element) return;
+        const opening = () => { selection.current = undefined; setOpen(true); };
+        const closing = () => setOpen(false);
+        const select = (event: Event) => {
+            const { reason, initiator } = (event as CloseMenuEvent).detail;
+            if (reason.kind === 'click-selection' || (reason.kind === 'keydown' && ['Enter', 'Space'].includes(reason.key))) {
+                selection.current = initiator.dataset.menuValue;
+            }
+        };
+        const closed = () => {
+            const value = selection.current;
+            selection.current = undefined;
+            if (value !== undefined) onSelect(value);
+        };
+        element.addEventListener('opening', opening);
+        element.addEventListener('closing', closing);
+        element.addEventListener('closed', closed);
+        element.addEventListener('close-menu', select, true);
+        return () => {
+            element.removeEventListener('opening', opening);
+            element.removeEventListener('closing', closing);
+            element.removeEventListener('closed', closed);
+            element.removeEventListener('close-menu', select, true);
+        };
+    }, [onSelect]);
+    function show(last = false) {
+        if (!menu.current) return;
+        menu.current.defaultFocus = last ? 'last-item' : 'first-item';
+        menu.current.show();
+    }
+    function keyDown(event: ReactKeyboardEvent<HTMLElement>) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            show(event.key === 'ArrowUp');
+        }
+    }
+    const currentLabel = description ?? options.find((option) => option.selected)?.label;
+    return <div className={`menu-control ${className}`}>
+        {createElement('md-filled-tonal-icon-button', { id, type: 'button', 'aria-label': label, 'aria-description': currentLabel, title: currentLabel ? `${label}: ${currentLabel}` : label, 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'aria-controls': menuId, disabled: busy, 'aria-busy': busy || undefined,
+            onClick: () => { if (menu.current?.open) menu.current.close(); else show(); }, onKeyDown: keyDown,
+        }, icon)}
+        {createElement('md-menu', { ref: menu, id: menuId, anchor: id, positioning: 'popover', 'aria-label': label, anchorCorner: 'end-end', menuCorner: 'start-end' },
             ...options.map((option) => createElement('md-menu-item', {
-                key: option.value, 'aria-current': option.selected ? 'true' : undefined,
-                onClick: () => onChange(option.value),
-            }, <div slot="headline">{option.label}</div>, <span slot="start">{option.icon}</span>, option.selected && <svg slot="end" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" /></svg>)),
+                key: option.value, type: 'button', 'data-menu-value': option.value, selected: Boolean(option.selected), 'aria-selected': option.selected ? 'true' : undefined,
+            }, <div slot="headline">{option.label}</div>, option.icon && <span slot="start">{option.icon}</span>, option.selected && <svg slot="end" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" /></svg>)),
         )}
     </div>;
 }

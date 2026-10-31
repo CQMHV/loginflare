@@ -75,8 +75,8 @@ test('persists a manual choice across navigation and reloads, then resumes live 
     await page.emulateMedia({ colorScheme: 'light' });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
-    await page.getByRole('combobox', { name: 'Language', exact: true }).click();
-    await page.getByRole('option', { name: '简体中文', exact: true }).click();
+    await page.getByRole('button', { name: 'Language', exact: true }).click();
+    await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
     await expect(page).toHaveURL(`/zh-cn/reset-password${query}`);
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -132,8 +132,8 @@ test('keeps the theme menu usable with a keyboard on a narrow localized page', a
     await expect(trigger).toBeFocused();
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await chooseTheme(page, '深色');
-    await page.getByRole('combobox', { name: '语言', exact: true }).click();
-    await page.getByRole('option', { name: 'English', exact: true }).click();
+    await page.getByRole('button', { name: '语言', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'English', exact: true }).click();
     await expect(page).toHaveURL(`/en-us/reset-password${query}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

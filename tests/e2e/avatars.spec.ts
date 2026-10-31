@@ -72,8 +72,18 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
     await expect(page.locator('.profile-avatar img')).toBeVisible();
     await expect.poll(() => page.locator('.profile-avatar img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(256);
     const first = await page.locator('.profile-avatar img').getAttribute('src');
+    const headerPhoto = page.locator('.account-menu .user-avatar img');
+    await expect(headerPhoto).toHaveAttribute('src', first!);
+    await expect.poll(() => headerPhoto.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(256);
+    expect(await headerPhoto.evaluate((image) => {
+        const photo = image.getBoundingClientRect();
+        const button = image.closest('md-filled-tonal-icon-button')!.getBoundingClientRect();
+        return { fillsButton: photo.width === button.width && photo.height === button.height, objectFit: getComputedStyle(image).objectFit };
+    })).toEqual({ fillsButton: true, objectFit: 'cover' });
+    await page.screenshot({ path: test.info().outputPath('header-profile-photo.png'), fullPage: false });
     await peer.bringToFront();
     await expect(peer.locator('.profile-avatar img')).toHaveAttribute('src', first!);
+    await expect(peer.locator('.account-menu .user-avatar img')).toHaveAttribute('src', first!);
     await expect(peer.getByLabel('Display name', { exact: true })).toHaveValue('Unsaved peer draft');
     await peer.close();
     await page.getByRole('link', { name: 'Administration', exact: true }).click();
@@ -116,6 +126,7 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
         expect(response.request().headers()['content-type']).toBe('image/webp');
         expect(inspectImage(response.request().postDataBuffer()!)).toMatchObject({ mime: 'image/webp', width: 256, height: 256 });
         await expect(page.locator('.profile-avatar img')).not.toHaveAttribute('src', before!);
+        await expect(headerPhoto).toHaveAttribute('src', (await page.locator('.profile-avatar img').getAttribute('src'))!);
     }
     let unexpectedUploads = 0;
     page.on('request', (request) => { if (request.url().endsWith('/api/account/avatar') && request.method() === 'POST') unexpectedUploads++; });
@@ -144,6 +155,7 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
     await page.getByRole('button', { name: '移除头像', exact: true }).click();
     await page.locator('md-dialog').getByRole('button', { name: '确认', exact: true }).click();
     await expect(page.locator('.profile-avatar img')).toHaveCount(0);
+    await expect(headerPhoto).toHaveCount(0);
     await page.reload();
     await expect(page.locator('.profile-avatar img')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Avatar Person', exact: true })).toBeVisible();

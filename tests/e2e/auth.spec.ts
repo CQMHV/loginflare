@@ -103,7 +103,8 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByLabel('Username', { exact: true })).toHaveValue(replacementUsername);
     await page.screenshot({ path: test.info().outputPath('profile-desktop.png'), fullPage: true });
 
-    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await page.getByRole('button', { name: 'Account menu', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
     await expect(page).toHaveURL('/en-us/login');
     await page.getByLabel('Email or username', { exact: true }).fill(username);
     await page.getByLabel('Password', { exact: true }).fill('Browser-test-password-917!');
@@ -118,8 +119,8 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByLabel('Username', { exact: true })).toHaveValue(replacementUsername);
 
     const preferenceResponse = page.waitForResponse((response) => response.url().endsWith('/api/auth/update-user') && response.request().postDataJSON()?.locale === 'zh-CN');
-    await page.getByRole('combobox', { name: 'Language', exact: true }).first().click();
-    await page.getByRole('option', { name: '简体中文', exact: true }).click();
+    await page.getByRole('button', { name: 'Language', exact: true }).click();
+    await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
     expect((await preferenceResponse).status()).toBe(200);
     await expect(page).toHaveURL('/zh-cn/account');
     await expect(page.getByRole('heading', { name: '个人资料', exact: true })).toBeVisible();
@@ -155,7 +156,8 @@ test('completes registration, recovery, account management, and administrator co
     await page.getByLabel('确认密码', { exact: true }).fill('Changed-browser-password-728!');
     await page.getByRole('button', { name: '修改密码', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('密码已修改，其他会话已退出。');
-    await page.getByRole('button', { name: '退出登录', exact: true }).click();
+    await page.getByRole('button', { name: '账号菜单', exact: true }).click();
+    await page.getByRole('menuitem', { name: '退出登录', exact: true }).click();
     await expect(page).toHaveURL('/zh-cn/login');
     await expect(page.getByLabel('邮箱或用户名', { exact: true })).toBeVisible();
 
@@ -213,8 +215,8 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page).toHaveURL('/en-us/admin/applications');
     await page.getByRole('link', { name: 'Loginflare', exact: true }).click();
     await expect(page).toHaveURL('/en-us/admin/users');
-    await page.getByRole('combobox', { name: 'Language', exact: true }).click();
-    await page.getByRole('option', { name: '简体中文', exact: true }).click();
+    await page.getByRole('button', { name: 'Language', exact: true }).click();
+    await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
     await expect(page).toHaveURL('/zh-cn/admin/users');
     await expect(page.locator('.workspace-title')).toHaveText('管理后台');
     await page.goto('/zh-cn/admin');

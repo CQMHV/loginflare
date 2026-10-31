@@ -70,8 +70,8 @@ test('manages email addresses and recovers the same account through a secondary 
     expect(switched.user.email).toBe(secondary);
     await expect(page.getByRole('button', { name: `Remove email: ${secondary}`, exact: true })).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('emails-desktop-light.png'), fullPage: true });
-    await page.getByRole('combobox', { name: 'Language', exact: true }).first().click();
-    await page.getByRole('option', { name: '简体中文', exact: true }).click();
+    await page.getByRole('button', { name: 'Language', exact: true }).click();
+    await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
     await expect(page).toHaveURL('/zh-cn/account/emails');
     await page.getByRole('button', { name: '主题', exact: true }).click();
     await page.getByRole('menuitem', { name: '深色', exact: true }).click();
@@ -80,7 +80,8 @@ test('manages email addresses and recovers the same account through a secondary 
     await page.setViewportSize({ width: 375, height: 812 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('emails-mobile-zh-dark.png'), fullPage: true });
-    await page.getByRole('button', { name: '退出登录', exact: true }).click();
+    await page.getByRole('button', { name: '账号菜单', exact: true }).click();
+    await page.getByRole('menuitem', { name: '退出登录', exact: true }).click();
     await page.setViewportSize({ width: 1280, height: 720 });
 
     await signIn(primary, password, 401);
