@@ -38,6 +38,8 @@ The interface follows Material Design 3 and uses **Material Web (`@material/web`
 
 The theme uses Cloudflare orange (`#F38020`) for brand accents and primary button fills, paired with dark labels. Deeper orange is used for links and focus indicators to preserve contrast on light surfaces.
 
+The logo combines an orange entrance and sign-in arrow with the Loginflare wordmark. The [SVG logo](public/assets/logo.svg) uses vector paths for both the symbol and lettering, without embedded images or font dependencies. The interface uses the same logo with theme-aware lettering, and the [favicon](public/favicon.svg) uses the symbol alone.
+
 Light and dark themes follow the system by default. The theme menu can select Light, Dark, or System; this browser preference persists across reloads and synchronizes between tabs. It is separate from the account's language preference. The initial theme is applied before React loads, and Turnstile follows the active theme.
 
 Desktop scrollbars use a thin, rounded thumb in the active theme's primary color with a transparent track. Touch devices keep their native scrollbar behavior.

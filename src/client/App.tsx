@@ -55,8 +55,8 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
 function Brand({ destination }: { destination?: string }) {
     const { locale } = useApp();
     return <Link className="brand" to={destination ?? localizedPath(locale)} aria-label="Loginflare">
-        <span className="brand-mark"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.5 2C14.5 7 8 7.5 8 12c0 1.8 1.5 3 3 3-1-3 3-4 3-6 4 3.5 5.5 5.4 5.5 8A7.5 7.5 0 0 1 4.5 17C4.5 10.5 12 8.5 13.5 2Z" fill="currentColor" /></svg></span>
-        Loginflare<span className="version-label">BETA</span>
+        <svg className="brand-logo" width="160" height="38" viewBox="96 104 2016 476" aria-hidden="true"><use href="/assets/logo.svg#logo" /></svg>
+        <span className="version-label">BETA</span>
     </Link>;
 }
 

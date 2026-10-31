@@ -153,9 +153,9 @@ md-filled-button:not(.danger-button) {
 .danger { --md-text-button-label-text-color: var(--md-sys-color-error); --md-text-button-hover-label-text-color: var(--md-sys-color-error); --md-text-button-focus-label-text-color: var(--md-sys-color-error); --md-text-button-pressed-label-text-color: var(--md-sys-color-error); }
 .progress-indicator { width: 20px; height: 20px; --md-circular-progress-size: 20px; --md-circular-progress-active-indicator-width: 10; vertical-align: middle; }
 [aria-busy='true'] .progress-indicator { margin-inline-end: 8px; --md-circular-progress-active-indicator-color: currentColor; }
-.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--md-sys-color-on-surface); font-size: 22px; font-weight: 500; letter-spacing: -.5px; width: fit-content; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--md-sys-color-on-surface); width: fit-content; }
 .brand:hover { text-decoration: none; }
-.brand-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 16px; background: var(--loginflare-brand); color: var(--loginflare-on-brand); }
+.brand-logo { display: block; width: 160px; height: auto; }
 .version-label { font-size: 10px; font-weight: 500; letter-spacing: .6px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; padding: 3px 6px; }
 .language-control { display: inline-flex; align-items: center; position: relative; flex-shrink: 0; }
 .language-control > md-outlined-select { width: 148px; min-width: 0; }
@@ -332,7 +332,8 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 @media (max-width: 1000px) {
     .auth-story { padding: 32px; }
     .sidebar { width: 224px; }
-    .sidebar > .brand { font-size: 20px; margin-left: 4px; }
+    .sidebar > .brand { margin-left: 4px; }
+    .sidebar > .brand .brand-logo { width: 132px; }
     .app-content { margin-left: 224px; }
     .app-header { padding: 16px 24px; }
     .page-content { padding: 24px; }
@@ -357,8 +358,8 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .page-content { order: 3; padding: 24px; flex: 1; }
     .app-footer { order: 4; }
     .header-actions { gap: 6px; }
-    .brand { font-size: 20px; gap: 8px; }
-    .brand-mark { width: 32px; height: 32px; border-radius: 12px; }
+    .brand { gap: 8px; }
+    .brand-logo { width: 150px; }
     .version-label { display: none; }
     .card-heading, .card-body { padding: 24px; }
     .preference-list, .session-list, .email-list { padding-inline: 8px; }
@@ -374,7 +375,7 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .app-header { padding: 16px; gap: 8px; }
     .workspace-bar { padding-right: 16px; padding-left: 16px; }
     .header-actions { gap: 0; }
-    .brand { font-size: 18px; gap: 6px; }
+    .brand { gap: 6px; }
     .page-content { padding: 24px 16px; }
     .card-heading, .card-body { padding: 20px; }
     .preference-list, .session-list, .email-list { padding-inline: 4px; }
