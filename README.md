@@ -61,6 +61,8 @@ pnpm dev
 
 Open `http://localhost:5173` (the configured authentication origin). The root entry automatically selects a supported browser language for a fresh visitor. The development email binding simulates delivery locally: inspect its output for registration-verification links and email-management/recovery codes. Local development does not need to send real email or create Cloudflare resources. Never use the Turnstile test configuration for a production deployment.
 
+`pnpm dev` adds a fixed 1,000 ms to each API GET request, in addition to its normal processing time, to make loading states visible while testing locally. `/api/health`, page/assets, and non-GET requests are unaffected. This middleware exists only in the Vite development server; production/staging builds and the isolated automated browser/scale suites have no artificial delay.
+
 Development and the operator commands share `.cloudflare/state`. Local CLI configuration/registry files are kept in `.cloudflare/tool-config`; both directories are ignored. The resource commands prefer `cf`. This version uses stable Vite/Wrangler for development, build, generated Worker types and deployment because the pinned `cf` development/build path requires the beta Vite plugin. Local administrator promotion also uses Wrangler because this `cf` version has no local D1 query implementation. Remote D1 operations continue to use `cf`.
 
 ### First administrator
