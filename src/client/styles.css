@@ -1,10 +1,13 @@
+@import '@fontsource-variable/roboto/index.css';
+@import '@fontsource-variable/noto-sans-sc/index.css';
+
 :root {
     color-scheme: light;
-    font-family: Roboto, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    font-family: var(--md-ref-typeface-plain);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
-    --md-ref-typeface-plain: Roboto, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    --md-ref-typeface-plain: 'Roboto Variable', 'Noto Sans SC Variable', 'Segoe UI', 'Microsoft YaHei', sans-serif;
     --md-ref-typeface-brand: var(--md-ref-typeface-plain);
     /* Brand emphasis and readable action colors have different contrast needs. */
     --loginflare-brand: #f38020;

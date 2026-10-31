@@ -21,6 +21,20 @@ export default defineConfig({
             });
         },
     }, react(), cloudflare({ persistState: { path: '.cloudflare/state' } })],
+    css: {
+        postcss: {
+            plugins: [{
+                postcssPlugin: 'loginflare-font-display',
+                AtRule: {
+                    'font-face'(rule) {
+                        // Keep Fontsource's subsets and URLs while applying one
+                        // loading policy in both development and production.
+                        rule.walkDecls('font-display', (declaration) => { declaration.value = 'optional'; });
+                    },
+                },
+            }],
+        },
+    },
     server: { host: 'localhost', port: 5173, strictPort: true },
     build: { target: 'es2022' },
 });

@@ -34,7 +34,7 @@ Loginflare 是完整可用的通用账号与身份管理平台，面向从小团
 
 账号中心和管理后台使用独立布局与导航。个人资料、邮箱、安全和登录会话位于账号中心，用户与应用管理位于管理后台。管理员通过明确入口切换区域，普通用户不能进入后台。
 
-页面采用 Material Design 3 风格，在 React 19 中使用 **Material Web（`@material/web` 2.5.0）** Web Components。认证页面、个人中心和管理后台通过共享的 MD3 设计令牌统一颜色、排版、形状和交互样式。组件随应用打包，界面采用系统字体，不通过外部 CDN 加载 UI 组件或字体。
+页面采用 Material Design 3 风格，在 React 19 中使用 **Material Web（`@material/web` 2.5.0）** Web Components。认证页面、个人中心和管理后台通过共享的 MD3 设计令牌统一颜色、排版、形状和交互样式。Roboto 和 Noto Sans SC 可变字体通过锁定版本的 Fontsource 包随应用打包，由本站提供，包含 Material 使用的 400/500/700 字重。WOFF2 字体按字符范围分片，采用 `font-display: optional`，并预加载常用的 Roboto 拉丁字集。字体未及时就绪时，当页保持系统回退字体，不再替换已经显示的文字。组件与字体均不依赖外部 CDN。
 
 主题以 Cloudflare 橙色（`#F38020`）作为品牌强调色和主按钮底色，搭配深色文字；链接与焦点指示采用深橙，以确保在浅色背景上的对比度。
 

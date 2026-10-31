@@ -34,7 +34,7 @@ Profile photos use a private R2 bucket and Better Auth's existing `user.image` f
 
 The account center and administrator console have separate layouts and navigation. Personal profile, emails, security and sessions stay in the account center; user and application management stay in the administrator console. Administrators switch areas explicitly, and ordinary users cannot enter the console.
 
-The interface follows Material Design 3 and uses **Material Web (`@material/web` 2.5.0)** Web Components inside React 19. Shared MD3 design tokens define the color, typography, shape, and interaction styles across authentication, account, and administrator pages. Components are bundled with the application; the interface uses system fonts and does not load UI components or fonts from an external CDN.
+The interface follows Material Design 3 and uses **Material Web (`@material/web` 2.5.0)** Web Components inside React 19. Shared MD3 design tokens define the color, typography, shape, and interaction styles across authentication, account, and administrator pages. Roboto and Noto Sans SC variable fonts are bundled through pinned Fontsource packages and served from the instance, including the 400/500/700 weights used by Material. Character-range WOFF2 subsets use `font-display: optional`, with the common Roboto Latin subset preloaded. Fonts that arrive too late keep the current page on its system fallback instead of changing already visible text. Components and fonts do not depend on an external CDN.
 
 The theme uses Cloudflare orange (`#F38020`) for brand accents and primary button fills, paired with dark labels. Deeper orange is used for links and focus indicators to preserve contrast on light surfaces.
 
