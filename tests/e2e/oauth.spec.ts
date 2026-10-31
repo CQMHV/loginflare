@@ -74,10 +74,6 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
         probe.once('error', () => rejectPort(new Error(`Local example port ${port} is occupied; refusing to reuse another process.`)));
         probe.listen(port, '127.0.0.1', () => probe.close(() => resolvePort()));
     });
-    // Keep this local fixture's password sign-ins separate from other browser journeys.
-    await page.route(`${testOrigin}/api/auth/sign-in/email`, (route) => route.continue({
-        headers: { ...route.request().headers(), 'cf-connecting-ip': '192.0.2.21' },
-    }));
     prepareExampleTls();
     const email = `ui-${randomUUID()}@loginflare.test`;
     emails.push(email);
