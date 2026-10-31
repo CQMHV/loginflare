@@ -64,10 +64,18 @@ function ScrollRestoration() {
         const previous = history.scrollRestoration;
         history.scrollRestoration = 'manual';
         let restoring = true;
+        let settledFrame = 0;
         const restore = () => {
             if (!restoring) return;
             window.scrollTo(position.x, position.y);
-            if (document.documentElement.scrollHeight >= position.y + window.innerHeight) restoring = false;
+            cancelAnimationFrame(settledFrame);
+            if (document.documentElement.scrollHeight >= position.y + window.innerHeight) {
+                // Custom elements can change layout after React mounts. Keep
+                // restoration active through their first rendering frames.
+                settledFrame = requestAnimationFrame(() => {
+                    settledFrame = requestAnimationFrame(() => { restoring = false; });
+                });
+            }
         };
         const observer = new ResizeObserver(restore);
         observer.observe(document.body);
@@ -78,17 +86,19 @@ function ScrollRestoration() {
             store.positions.set(key, { x: window.scrollX, y: window.scrollY });
             while (store.positions.size > 50) store.positions.delete(store.positions.keys().next().value!);
         };
-        const stop = () => { restoring = false; };
+        const stop = () => { restoring = false; cancelAnimationFrame(settledFrame); };
+        const click = () => { stop(); record(); };
         window.addEventListener('scroll', record, { passive: true });
-        window.addEventListener('click', record, true);
+        window.addEventListener('click', click, true);
         window.addEventListener('wheel', stop, { passive: true });
         window.addEventListener('touchstart', stop, { passive: true });
         window.addEventListener('keydown', stop);
         return () => {
+            cancelAnimationFrame(settledFrame);
             observer.disconnect();
             history.scrollRestoration = previous;
             window.removeEventListener('wheel', stop); window.removeEventListener('touchstart', stop); window.removeEventListener('keydown', stop);
-            window.removeEventListener('scroll', record); window.removeEventListener('click', record, true);
+            window.removeEventListener('scroll', record); window.removeEventListener('click', click, true);
         };
     }, [store, key]);
     return null;
