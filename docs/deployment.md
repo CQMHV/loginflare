@@ -10,7 +10,7 @@ Deploy only after local tests and a production build succeed. Review the target 
 - A domain using Cloudflare DNS, onboarded to Cloudflare Email Sending.
 - The required sending-domain SPF/DKIM and bounce DNS records.
 - A Turnstile widget configured for the deployed hostnames, with production keys.
-- Separate D1 databases, Worker secrets, and public URLs for staging and production.
+- Separate D1 databases, private R2 avatar buckets, Worker secrets, and public URLs for staging and production.
 - An installed, authenticated Cloudflare CLI (`cf`) with access to the intended account.
 
 Email Sending is currently Beta. Check the current [Email Service documentation](https://developers.cloudflare.com/email-service/) before production rollout. Email Routing alone is not arbitrary-recipient transactional sending.
@@ -34,11 +34,14 @@ Keep the `global_fetch_strictly_public` compatibility flag enabled alongside `no
 | `BETTER_AUTH_SECRET` | Worker secret | Random authentication secret, at least 32 characters |
 | `TURNSTILE_SECRET_KEY` | Worker secret | Secret matching the production Turnstile site key |
 | `DB` | Environment's D1 binding | Its independent database ID and migration directory |
+| `AVATARS` | Environment's R2 binding | Private bucket for that environment's profile photos |
 | `EMAIL` | Environment's `send_email` binding | Cloudflare Email Service sender |
 
 The trusted origin is taken from `AUTH_URL` and must match the public origin. Missing mandatory configuration is an error, not a reason to disable verification or CAPTCHA. Test Turnstile keys are rejected outside development.
 
 Use Cloudflare's local bindings by default when developing. A remote email binding sends real messages and is not needed for the local test suite.
+
+Create the intended private avatar bucket before remote deployment, and set its `bucket_name` in that environment's `r2_buckets`. The staging declaration names `loginflare-staging-avatars`; the production name is a placeholder. These declarations do not provision a bucket. Keep public bucket access disabled: the Worker serves the controlled `/avatars/:id` image route. Local R2 bindings have `remote: false` and use `.cloudflare/state`; browser/scale suites use their own isolated directories. The deployment account must be able to bind the intended bucket. No remote bucket is created by local development/tests.
 
 ## Cloudflare CLI
 
@@ -129,11 +132,11 @@ For a local snapshot:
 pnpm db:backup
 ```
 
-An optional output directory can be passed as the next argument. The default is a new timestamped directory under `work/backups/`. Node's SQLite backup API produces consistent snapshots while local development is running. The manifest records database files under `d1/` and the saved local configuration and managed test credentials, including `.dev.vars` when present. Keep the backup private and outside Git; it contains authentication material. This command never contacts a remote D1 database.
+An optional output directory can be passed as the next argument. The default is a new timestamped directory under `work/backups/`. Stop the development server before a combined avatar/database snapshot. Node's SQLite backup API snapshots D1 and R2 metadata; the manifest also records R2 blobs under `r2/` and the saved local configuration and managed test credentials, including `.dev.vars` when present. Keep the backup private and outside Git; it contains authentication material and user files. This command never contacts remote storage.
 
-To restore, stop the development server, keep the existing state aside, and restore the manifest's `d1/` files to `.cloudflare/state/v3/d1` together with each configuration and credential file at its original relative path. Preserve the matching authentication secret and origin: signing keys are encrypted and existing credentials belong to that instance. Check the restored schema with `pnpm db:check` before opening it. Perform restore drills in an isolated directory so verification does not overwrite the active development database.
+To restore, stop the development server, keep the existing state aside, and restore the manifest's `d1/` and `r2/` files to `.cloudflare/state/v3/d1` and `.cloudflare/state/v3/r2` together with each configuration and credential file at its original relative path. Preserve the matching authentication secret and origin: signing keys are encrypted and existing credentials belong to that instance. Check the restored schema with `pnpm db:check` before opening it. Perform restore drills in an isolated directory so verification does not overwrite the active development database.
 
-For staging or production, record and validate a recovery point using D1's supported recovery facilities before migration. Confirm the selected database and restore point before an actual remote restore. A local SQLite snapshot is not a remote D1 backup, and a Worker rollback does not reverse schema or data changes.
+For staging or production, record and validate a recovery point using D1's supported recovery facilities before migration. Back up the matching R2 objects separately and retain them across the intended database recovery window: restoring an earlier image reference cannot recreate an object already removed by maintenance. Coordinate writes and collection when taking or restoring a combined recovery point. Confirm the selected database, bucket and restore point before an actual remote restore. A local SQLite snapshot is not a remote D1/R2 backup, and a Worker rollback does not reverse schema, data or file changes.
 
 ## Staging acceptance
 
@@ -152,6 +155,7 @@ Verify the following before promoting a build to production:
 9. Password reset, explicit session revocation, and suspension invalidate the appropriate OAuth grants; restoration does not resurrect them. Ordinary central logout preserves native offline refresh semantics.
 10. Signing keys survive a routine redeployment; OAuth codes, client secrets, and tokens are absent from logs.
 11. The migration/schema gate passes, cursor pages and exact lookups work, and the scheduled handler reports bounded maintenance without removing live credentials.
+12. Photo upload/crop/replacement/removal work, UserInfo exposes `picture` only with `profile`, images render in external applications, and obsolete files are collected without deleting the current avatar.
 
 ## Updates and troubleshooting
 

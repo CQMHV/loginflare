@@ -4,7 +4,7 @@ An open-source account and identity management system built for Cloudflare.
 
 [简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Application integration](docs/oauth.md) · [Architecture](docs/architecture.md) · [Scaling](docs/scaling.md)
 
-Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, Email Service, Turnstile, and Workers Static Assets.
+Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, R2, Email Service, Turnstile, and Workers Static Assets.
 
 The maintainer currently runs a personal test instance for functional checks; this does not limit how independent deployments may be used. Its management console requires administrator access. Other users fork this repository, configure their own resources, and deploy their own instances. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
 
@@ -14,7 +14,7 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 
 - Register, verify email, resend verification, sign in with an email address or username, and sign out.
 - Recover a forgotten password and change a known password.
-- Update a display name and username, and manage active sessions.
+- Update a display name and username, upload/crop/remove a profile photo, and manage active sessions.
 - Manage primary and secondary email addresses on a dedicated page, verify new addresses with codes, and choose the primary sign-in email.
 - Find users by exact ID, username, or primary email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
 - Register server Web and SPA clients through the administrator console, with exact redirects, consent, and client-secret rotation.
@@ -29,6 +29,8 @@ Usernames are separate from display names. The registration form asks for a uniq
 The **Email addresses** page manages one primary email and additional secondary emails. Every address is unique across all accounts, regardless of its role. Adding an address requires the current password and verification of a code sent to that address. A verified secondary email can become primary after password confirmation; the previous primary remains secondary. The primary address must be replaced before it can be removed. Password recovery starts with the username or primary email and sends a code to a specified verified primary or secondary address belonging to that account. Secondary emails never identify an account for sign-in.
 
 ## Interface
+
+Profile photos use a private R2 bucket and Better Auth's existing `user.image` field. Choose a static JPG, PNG or WebP image up to 20 MiB and crop it in the account center. The browser creates a 256-pixel square and encodes it as WebP before upload; the Worker accepts only WebP, checks its dimensions and size and strips metadata. Header/profile photos, user management and OIDC `picture` claims share that address. Photo changes invalidate the existing account/admin caches across tabs. See [avatar storage and lifecycle](docs/architecture.md#avatars) and the [deployment prerequisites](docs/deployment.md).
 
 The account center and administrator console have separate layouts and navigation. Personal profile, emails, security and sessions stay in the account center; user and application management stay in the administrator console. Administrators switch areas explicitly, and ordinary users cannot enter the console.
 
@@ -81,7 +83,7 @@ User, application, and active-session lists use signed cursor pagination over in
 
 D1 is the only implemented database backend. A million registered accounts describes stored data volume, not simultaneous users or an assured request rate. Validate the intended traffic, database size, email load, and Cloudflare plan limits before a public rollout. Hyperdrive or an external SQL backend would be a separate future integration, not an existing deployment option.
 
-Database migrations prepare native dates as ISO UTC text, populate indexed callback-origin metadata, and verify the resulting schema against the committed migrations. Back up existing data before applying migrations and keep the issuer and authentication secret with the database. Expired records are collected by a bounded scheduled handler on the same Worker and D1; no KV, Queue, Durable Object, or additional Cloudflare resource is required.
+Database migrations prepare native dates as ISO UTC text, populate indexed callback-origin metadata, and verify the resulting schema against the committed migrations. Back up existing data before applying migrations and keep the issuer and authentication secret with the database. Expired records and obsolete avatar files are collected by a bounded scheduled handler sharing the Worker, D1 and avatar bucket.
 
 ## Validation
 

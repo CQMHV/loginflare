@@ -4,6 +4,7 @@ export interface User {
     id: string;
     name: string;
     username?: string | null;
+    image?: string | null;
     email: string;
     emailVerified: boolean;
     role?: string | null;
@@ -38,7 +39,7 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
     return fetchJson<T>(`/api/auth${path}`, body, undefined, undefined, signal);
 }
 
-export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH', signal?: AbortSignal): Promise<T> {
+export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (captchaToken) headers['x-captcha-response'] = captchaToken;
@@ -57,6 +58,10 @@ export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: 
         throw new ApiError('NETWORK_ERROR', 0);
     }
 
+    return readResponse<T>(response);
+}
+
+export async function readResponse<T>(response: Response): Promise<T> {
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
         const code = payload && typeof payload === 'object' && 'code' in payload

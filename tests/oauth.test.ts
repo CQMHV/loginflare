@@ -3,6 +3,7 @@ import { applyD1Migrations, createExecutionContext, reset, waitOnExecutionContex
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { addVerifiedEmail, cookies, harness, origin, password, recoveryToken, session } from './helpers';
+import { avatarWebp } from './fixtures/avatars';
 
 const issuer = `${origin}/api/auth`;
 const callback = 'https://client.example.test/callback';
@@ -181,6 +182,29 @@ async function userInfo(client: Harness, token: string) {
 }
 
 describe('OAuth/OIDC protocol in the Workers runtime', () => {
+    it('returns the current avatar only with profile scope while preserving the account subject', async () => {
+        const { client, registered, cookie } = await fixture();
+        const context = createExecutionContext();
+        const upload = await app.fetch(new Request(`${origin}/api/account/avatar`, {
+            method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'image/webp' },
+            body: Uint8Array.from(atob(avatarWebp), (value) => value.charCodeAt(0)).buffer,
+        }), client.bindings, context);
+        await waitOnExecutionContext(context);
+        expect(upload.status).toBe(200);
+        const { image } = await upload.json<{ image: string }>();
+        const tokens = await tokensFor(client, registered, cookie);
+        const claims = JSON.parse(new TextDecoder().decode(decodeBase64url(tokens.id_token.split('.')[1]))) as Record<string, unknown>;
+        expect(claims).not.toHaveProperty('picture');
+        expect(await (await userInfo(client, tokens.access_token)).json()).toMatchObject({ sub: claims.sub, picture: image });
+        const limited = await authorize(client, registered, cookie, { scope: 'openid' });
+        const limitedTokens = await (await exchange(client, registered, limited.code, limited.verifier)).json<Tokens>();
+        expect(await (await userInfo(client, limitedTokens.access_token)).json()).not.toHaveProperty('picture');
+        const remove = await app.fetch(new Request(`${origin}/api/account/avatar`, { method: 'DELETE', headers: { Cookie: cookie, Origin: origin } }), client.bindings, createExecutionContext());
+        expect(remove.status).toBe(200);
+        const profile = await (await userInfo(client, tokens.access_token)).json();
+        expect(profile).toMatchObject({ sub: claims.sub });
+        expect(profile).not.toHaveProperty('picture');
+    });
     it.each(['web', 'spa'] as const)('completes %s PKCE login and verifies an RS256 ID token against discovery/JWKS', async (type) => {
         const { client, registered, cookie } = await fixture(type);
         const discoveryResponse = await protocol(client, '/api/auth/.well-known/openid-configuration');

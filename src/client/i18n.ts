@@ -7,6 +7,7 @@ import { resolveLocale } from './locale';
 const enUS = {
     oauth: oauthEn,
     emails: emailEn,
+    avatar: { label: '{{name}}’s avatar', file: 'Choose an avatar image', change: 'Change photo', remove: 'Remove photo', removeConfirm: 'Remove your photo and use the default avatar?', crop: 'Adjust your photo', preview: 'Avatar preview', hint: 'Use a static JPG, PNG or WebP image up to 20 MiB. Adjust the crop before saving.', zoom: 'Zoom', horizontal: 'Horizontal position', vertical: 'Vertical position', save: 'Save photo' },
     brand: 'Loginflare',
     tagline: 'Your identity. Your cloud.',
     platform: 'CLOUDFLARE-NATIVE IDENTITY',
@@ -158,6 +159,10 @@ const enUS = {
     passwordMismatch: 'Your passwords do not match.',
     errors: {
         UNKNOWN_ERROR: 'We couldn’t complete this request. Please try again.',
+        AVATAR_INVALID_IMAGE: 'Choose a valid static JPG, PNG or WebP image, up to 16384 pixels per side and 100 megapixels.',
+        AVATAR_FILE_TOO_LARGE: 'Choose an image no larger than 20 MiB.',
+        AVATAR_WEBP_UNAVAILABLE: 'Your browser cannot create WebP images. Update your browser and try again.',
+        AVATAR_ENCODING_FAILED: 'Unable to process this photo. Try again or choose another image.',
         NETWORK_ERROR: 'Unable to connect. Check your connection and try again.',
         INVALID_EMAIL_OR_PASSWORD: 'The email address or password is incorrect.',
         INVALID_USERNAME_OR_PASSWORD: 'The username or password is incorrect.',
@@ -217,6 +222,7 @@ const enUS = {
 const zhCN: typeof enUS = {
     oauth: oauthZh,
     emails: emailZh,
+    avatar: { label: '{{name}}的头像', file: '选择头像图片', change: '修改头像', remove: '移除头像', removeConfirm: '移除当前照片并使用默认头像？', crop: '调整头像', preview: '头像预览', hint: '选择不超过 20 MiB 的静态 JPG、PNG 或 WebP 图片，调整裁剪范围后保存。', zoom: '缩放', horizontal: '水平位置', vertical: '垂直位置', save: '保存头像' },
     brand: 'Loginflare',
     tagline: '你的身份，你的云。',
     platform: 'CLOUDFLARE 原生身份平台',
@@ -368,6 +374,10 @@ const zhCN: typeof enUS = {
     passwordMismatch: '两次输入的密码不一致。',
     errors: {
         UNKNOWN_ERROR: '无法完成此请求，请重试。',
+        AVATAR_INVALID_IMAGE: '请选择有效的静态 JPG、PNG 或 WebP 图片，单边不超过 16384 像素、总像素不超过 1 亿。',
+        AVATAR_FILE_TOO_LARGE: '请选择不超过 20 MiB 的图片。',
+        AVATAR_WEBP_UNAVAILABLE: '当前浏览器无法生成 WebP 图片，请更新浏览器后重试。',
+        AVATAR_ENCODING_FAILED: '无法处理这张图片，请重试或选择其他图片。',
         NETWORK_ERROR: '无法连接，请检查网络后重试。',
         INVALID_EMAIL_OR_PASSWORD: '邮箱地址或密码不正确。',
         INVALID_USERNAME_OR_PASSWORD: '用户名或密码不正确。',

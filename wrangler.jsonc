@@ -31,6 +31,7 @@
         "remote": false
     }],
     "send_email": [{ "name": "EMAIL", "remote": false }],
+    "r2_buckets": [{ "binding": "AVATARS", "bucket_name": "loginflare-development-avatars", "remote": false }],
     "env": {
         "staging": {
             "triggers": { "crons": ["*/5 * * * *"] },
@@ -39,14 +40,16 @@
             "preview_urls": false,
             "vars": { "APP_ENV": "staging", "AUTH_URL": "https://loginflare-staging.cqmhv.workers.dev", "EMAIL_FROM": "no-reply@cqmhv.com", "TURNSTILE_SITE_KEY": "0x4AAAAAAFpRgigtHONTmoD_" },
             "d1_databases": [{ "binding": "DB", "database_name": "loginflare-staging", "database_id": "d5cc3bc9-28f5-4f17-9789-88b02530ada7", "migrations_dir": "migrations", "remote": false }],
-            "send_email": [{ "name": "EMAIL", "remote": false }]
+            "send_email": [{ "name": "EMAIL", "remote": false }],
+            "r2_buckets": [{ "binding": "AVATARS", "bucket_name": "loginflare-staging-avatars", "remote": false }]
         },
         "production": {
             "triggers": { "crons": ["*/5 * * * *"] },
             "name": "loginflare-production",
             "vars": { "APP_ENV": "production", "AUTH_URL": "", "EMAIL_FROM": "", "TURNSTILE_SITE_KEY": "" },
             "d1_databases": [{ "binding": "DB", "database_name": "loginflare-production", "database_id": "REPLACE_WITH_PRODUCTION_D1_ID", "migrations_dir": "migrations", "remote": false }],
-            "send_email": [{ "name": "EMAIL", "remote": false }]
+            "send_email": [{ "name": "EMAIL", "remote": false }],
+            "r2_buckets": [{ "binding": "AVATARS", "bucket_name": "replace-with-production-avatar-bucket", "remote": false }]
         }
     }
 }

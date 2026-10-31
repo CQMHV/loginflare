@@ -10,7 +10,7 @@
 - 由 Cloudflare DNS 管理且已接入 Cloudflare Email Sending 的域名。
 - 发信域名所需的 SPF、DKIM 和退信 DNS 记录。
 - 覆盖部署域名的正式 Turnstile 组件及密钥。
-- staging 与 production 分别使用独立 D1 数据库、Worker 密钥和公开地址。
+- staging 与 production 分别使用独立 D1 数据库、私有 R2 头像桶、Worker 密钥和公开地址。
 - 安装并登录 Cloudflare CLI（`cf`），具有目标账号的适当权限。
 
 Email Sending 当前为 Beta，生产上线前应核对最新的 [Email Service 官方说明](https://developers.cloudflare.com/email-service/)。仅配置 Email Routing 不等于可以向任意收件人发送事务邮件。
@@ -34,11 +34,14 @@ Email Sending 当前为 Beta，生产上线前应核对最新的 [Email Service 
 | `BETTER_AUTH_SECRET` | Worker Secret | 至少 32 字符的随机认证密钥 |
 | `TURNSTILE_SECRET_KEY` | Worker Secret | 与正式站点密钥配对的私密密钥 |
 | `DB` | 对应环境的 D1 绑定 | 独立数据库 ID 与迁移目录 |
+| `AVATARS` | 对应环境的 R2 绑定 | 该环境保存头像的私有存储桶 |
 | `EMAIL` | 对应环境的 `send_email` 绑定 | Cloudflare Email Service 发信能力 |
 
 可信 Origin 取自 `AUTH_URL`，应与公开 Origin 一致。必需配置缺失时明确报错，不跳过邮箱验证或防机器人校验。开发环境以外会拒绝 Turnstile 测试密钥。
 
 开发默认使用本地模拟绑定。远程邮件绑定会发送真实邮件，本地测试不需要启用。
+
+远程部署前先创建该环境的私有头像桶，并在 `r2_buckets` 填入 `bucket_name`。staging 声明使用 `loginflare-staging-avatars`，production 名称仍为占位值；声明本身不会创建存储桶。保持桶的公开访问关闭，由 Worker 的 `/avatars/:id` 路由返回头像。开发绑定使用 `remote: false` 和 `.cloudflare/state`，浏览器/规模测试使用各自的隔离目录。部署账号需能绑定目标桶。本次功能的本地开发和测试不会创建远程桶。
 
 ## Cloudflare CLI
 
@@ -129,11 +132,11 @@ pnpm admin:promote -- --email admin@example.com --env staging
 pnpm db:backup
 ```
 
-可在后面传入输出目录，默认创建 `work/backups/` 下的新时间戳目录。Node SQLite 备份 API 在本地开发运行时生成一致性快照；manifest 记录 `d1/` 中的数据库文件，以及保存的本地配置、托管测试凭据和存在时的 `.dev.vars`。备份包含认证材料，应私密保存并保持在 Git 之外。该命令不会访问远程 D1。
+可在后面传入输出目录，默认创建 `work/backups/` 下的新时间戳目录。头像和数据库联合备份前先停止开发服务。Node SQLite 备份 API 保存 D1 与 R2 元数据，manifest 同时记录 `r2/` 下的文件，以及本地配置、托管测试凭据和存在时的 `.dev.vars`。备份包含认证材料和用户文件，应私密保存并保持在 Git 之外。该命令不会访问远程存储。
 
-恢复时先停止开发服务，将现有状态移至旁边保留，再把 manifest 的 `d1/` 文件恢复到 `.cloudflare/state/v3/d1`，配置和凭据恢复到各自原相对路径。认证密钥和 Origin 应与数据库匹配，因为签名私钥经过加密，已有凭据属于该实例。使用 `pnpm db:check` 检查后再打开；恢复演练仅在隔离目录进行，不覆盖正在使用的开发数据库。
+恢复时先停止开发服务，将现有状态移至旁边保留，再把 manifest 的 `d1/`、`r2/` 文件分别恢复到 `.cloudflare/state/v3/d1`、`.cloudflare/state/v3/r2`，配置和凭据恢复到各自原相对路径。认证密钥和 Origin 应与数据库匹配，因为签名私钥经过加密，已有凭据属于该实例。使用 `pnpm db:check` 检查后再打开；恢复演练仅在隔离目录进行，不覆盖正在使用的开发数据库。
 
-staging 或 production 迁移前，通过 D1 支持的恢复机制记录并核实恢复点。实际远程恢复前核对数据库和恢复点。本地 SQLite 快照不等于远程 D1 备份，Worker 版本回滚也不会撤销数据库结构或数据变化。
+staging 或 production 迁移前，通过 D1 支持的恢复机制记录并核实恢复点。单独备份相匹配的 R2 对象，并覆盖计划保留的数据库恢复窗口：恢复旧头像引用不能重新生成已被维护任务删除的文件。联合备份与恢复时协调写入和清理任务。实际远程恢复前核对数据库、存储桶和恢复点。本地 SQLite 快照不等于远程 D1/R2 备份，Worker 版本回滚也不会撤销数据库结构、数据或文件变化。
 
 ## staging 验收
 
@@ -152,6 +155,7 @@ staging 或 production 迁移前，通过 D1 支持的恢复机制记录并核�
 9. 重置密码、主动撤销会话和停用账号使相应 OAuth 授权失效；恢复账号不会恢复旧授权。普通中心退出保留原生离线刷新语义。
 10. 常规部署后签名密钥仍可使用；日志不包含 OAuth 授权码、客户端密钥或令牌。
 11. 迁移与结构检查通过，游标翻页和精确检索可用，定时任务报告有界清理且不删除仍有效的凭据。
+12. 头像上传、裁剪、替换与移除可用，UserInfo 仅在 `profile` 范围返回 `picture`，外部应用可显示头像，旧文件清理不会删除当前头像。
 
 ## 更新与故障排查
 

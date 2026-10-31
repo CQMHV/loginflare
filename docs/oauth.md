@@ -51,6 +51,8 @@ The Loginflare sign-in page accepts either the primary email address or username
 
 ## Native lifetimes and lifecycle semantics
 
+With `profile` scope, UserInfo includes the current `user.image` as `picture` when a photo is set. Without `profile`, that claim is omitted. The URL is a public image address served by Loginflare, so applications can render it without account cookies. Photo changes appear in subsequent UserInfo reads; native ID Tokens retain their existing identity claims. Removing a photo omits `picture` from subsequent profiles while preserving `sub`.
+
 The exact pinned provider source uses the following defaults. These are upper token lifetimes, not a promise that a credential remains usable for that entire period.
 
 | Credential | Default |

@@ -9,6 +9,7 @@ export default defineConfig({
                 compatibilityDate: '2026-10-27',
                 compatibilityFlags: ['nodejs_compat'],
                 d1Databases: ['DB'],
+                r2Buckets: ['AVATARS'],
                 bindings: {
                     APP_ENV: 'development',
                     AUTH_URL: 'http://localhost:5173',

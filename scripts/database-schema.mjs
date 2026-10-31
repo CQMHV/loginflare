@@ -82,6 +82,9 @@ export function checkDatabase(root, query) {
         }
     }
     if (query('PRAGMA foreign_key_check').length) throw new Error('Database foreign-key validation failed.');
+    if (query(`SELECT 1 FROM "userAvatar" a LEFT JOIN "user" u ON u."id" = a."userId"
+        WHERE (a."deleteAfter" IS NULL AND (u."id" IS NULL OR u."image" IS NOT a."url"))
+        OR (u."image" = a."url" AND a."deleteAfter" IS NOT NULL) LIMIT 1`).length) throw new Error('Avatar lifecycle metadata does not match user.image.');
     const wrongDates = expected.columns.filter((column) => column.type.toLowerCase() === 'date').some((column) =>
         query(`SELECT 1 FROM "${column.tableName}" WHERE "${column.name}" IS NOT NULL AND (typeof("${column.name}") <> 'text'
             OR length("${column.name}") <> 24 OR strftime('%Y-%m-%dT%H:%M:%fZ', "${column.name}") IS NULL

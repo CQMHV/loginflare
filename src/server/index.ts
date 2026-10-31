@@ -8,6 +8,8 @@ import { applications } from './applications';
 import { consent, oauth, protocolRoutes } from './oauth';
 import { management } from './management';
 import { maintainDatabase } from './maintenance';
+import { avatars } from './avatars';
+import { maximumAvatarBytes } from '../shared/avatars';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -67,6 +69,7 @@ const app = new Hono<{ Bindings: Env }>();
 function logPath(path: string): string {
     if (path === '/api/health' || path === '/api/config') return path;
     if (path === '/api/admin/users' || path === '/api/account/sessions') return path;
+    if (path === '/api/account/avatar') return path;
     if (path === '/api/admin/applications') return path;
     if (/^\/api\/admin\/applications\/[^/]+\/rotate-secret$/.test(path)) return '/api/admin/applications/:clientId/rotate-secret';
     if (/^\/api\/admin\/applications\/[^/]+$/.test(path)) return '/api/admin/applications/:clientId';
@@ -93,6 +96,7 @@ const headers = {
     xFrameOptions: 'DENY',
 } as const;
 const productionHeaders = secureHeaders({ ...headers, contentSecurityPolicy });
+const avatarHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], sandbox: [] } });
 // Native logout uses a browser form and its own document CSP. Send only the
 // origin as Referer so a same-origin form keeps a usable Origin header.
 const logoutHeaders = secureHeaders({ ...headers, referrerPolicy: 'strict-origin' });
@@ -105,6 +109,7 @@ const developmentHeaders = secureHeaders({
     },
 });
 app.use('*', (c, next) => {
+    if (/^\/avatars\/[^/]+$/.test(c.req.path)) return avatarHeaders(c, next);
     if (c.req.path === '/api/auth/oauth2/end-session' || c.req.path === '/api/auth/oauth2/end-session/confirm') return logoutHeaders(c, next);
     return (c.env.APP_ENV === 'development' ? developmentHeaders : productionHeaders)(c, next);
 });
@@ -119,7 +124,10 @@ app.use('/api/*', async (c, next) => {
         console.log(JSON.stringify({ event: 'http_request', requestId, method: c.req.method, path: logPath(c.req.path), status: c.res.status, durationMs: Date.now() - started }));
     }
 });
-app.use('/api/*', bodyLimit({ maxSize: 16_384, onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE' }, 413) }));
+app.use('/api/*', (c, next) => bodyLimit({
+    maxSize: c.req.path === '/api/account/avatar' && c.req.method === 'POST' ? maximumAvatarBytes : 16_384,
+    onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE' }, 413),
+})(c, next));
 
 app.get('/api/health', (c) => c.json({ status: 'ok' }));
 app.get('/api/config', (c) => {
@@ -130,6 +138,7 @@ app.get('/api/config', (c) => {
 app.route('/api/admin/applications', applications);
 app.route('/api', management);
 app.route('/api/oauth', consent);
+app.route('/', avatars);
 app.all('/.well-known/oauth-authorization-server/api/auth', async (c) => {
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cache-Control', 'no-store');
@@ -228,6 +237,7 @@ app.all('*', async (c) => {
     return new Response(response.body, { status: response.status, headers });
 });
 app.onError((error, c) => {
+    c.header('Cache-Control', 'no-store');
     const configuration = error instanceof ConfigurationError;
     console.error(JSON.stringify({ event: configuration ? 'configuration_error' : 'request_failed', ...(configuration ? { reason: error.message } : {}), path: logPath(c.req.path) }));
     return c.json({ code: configuration ? 'CONFIGURATION_ERROR' : 'REQUEST_FAILED' }, 503);

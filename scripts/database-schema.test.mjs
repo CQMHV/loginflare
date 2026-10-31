@@ -75,8 +75,8 @@ test('all committed migrations produce a schema accepted by the same structural 
 test('missing columns, indexes, and triggers are rejected before normal use', async (t) => {
     await t.test('missing user column', (t) => {
         const { database, query } = fixture(t);
-        database.exec('ALTER TABLE "user" DROP COLUMN "image"');
-        assert.throws(() => checkDatabase(root, query), /column differs: user\.image|table differs.*user/);
+        database.exec('ALTER TABLE "user" DROP COLUMN "banReason"');
+        assert.throws(() => checkDatabase(root, query), /column differs: user\.banReason|table differs.*user/);
     });
     await t.test('missing list seek index', (t) => {
         const { database, query } = fixture(t);
@@ -221,6 +221,12 @@ test('an online WAL snapshot restores independently with complete rows, schema a
     mkdirSync(join(source, 'work'));
     writeFileSync(join(source, 'work/local-preview-accounts.json'), '{"accounts":[{"password":"test-only-preview-password"}]}');
     writeFileSync(join(source, 'work/local-expanded-preview-accounts.json'), '{"accounts":[{"password":"test-only-extra-password"}]}');
+    const objectRoot = join(source, '.cloudflare/state/v3/r2');
+    mkdirSync(join(objectRoot, 'bucket/blobs'), { recursive: true });
+    writeFileSync(join(objectRoot, 'bucket/blobs/avatar'), 'synthetic-avatar-file');
+    const objectMetadata = new DatabaseSync(join(objectRoot, 'bucket/metadata.sqlite'));
+    objectMetadata.exec('CREATE TABLE objects (key TEXT PRIMARY KEY); INSERT INTO objects VALUES (\'avatar\')');
+    objectMetadata.close();
     const destination = join(directory, 'snapshot');
     const report = await snapshotLocal(source, destination);
     assert.equal(report.integrity, 'ok');
@@ -229,13 +235,13 @@ test('an online WAL snapshot restores independently with complete rows, schema a
     assert.equal(readFileSync(join(destination, '.gitignore'), 'utf8'), '*\n');
     const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8'));
     assert.equal(manifest.databaseId, localId);
-    assert.equal(manifest.files.length, 4);
+    assert.equal(manifest.files.length, 6);
     assert.ok(manifest.files.includes(`d1/${relativeDatabase}`));
     assert.ok(!JSON.stringify(manifest).includes('test-only-local-secret'));
     addUser(database, 'created-after-snapshot');
     const restored = join(directory, 'isolated-restore');
     for (const file of manifest.files) {
-        const target = file.startsWith('d1/') ? join(restored, '.cloudflare/state/v3', file) : join(restored, file);
+        const target = /^(d1|r2)\//.test(file) ? join(restored, '.cloudflare/state/v3', file) : join(restored, file);
         mkdirSync(dirname(target), { recursive: true });
         copyFileSync(join(destination, file), target);
     }
@@ -248,6 +254,9 @@ test('an online WAL snapshot restores independently with complete rows, schema a
     assert.doesNotThrow(() => checkDatabase(root, (sql) => snapshot.prepare(sql).all()));
     assert.equal(readFileSync(join(restored, '.dev.vars'), 'utf8'), 'BETTER_AUTH_SECRET=test-only-local-secret\n');
     assert.equal(existsSync(join(restored, '.dev.vars.staging.json')), false);
+    assert.equal(readFileSync(join(restored, '.cloudflare/state/v3/r2/bucket/blobs/avatar'), 'utf8'), 'synthetic-avatar-file');
+    const restoredMetadata = new DatabaseSync(join(restored, '.cloudflare/state/v3/r2/bucket/metadata.sqlite'), { readOnly: true });
+    try { assert.equal(restoredMetadata.prepare('SELECT key FROM objects').get().key, 'avatar'); } finally { restoredMetadata.close(); }
     assert.equal(readFileSync(join(restored, 'work/local-preview-accounts.json'), 'utf8'), readFileSync(join(source, 'work/local-preview-accounts.json'), 'utf8'));
 });
 
@@ -259,6 +268,7 @@ test('snapshots refuse non-local bindings before creating output', async (t) => 
         { vars: { APP_ENV: 'development', AUTH_URL: 'https://production.example.test' } },
         { d1_databases: [{ binding: 'DB', database_id: localId, remote: true }] },
         { d1_databases: [] },
+        { r2_buckets: [{ binding: 'AVATARS', remote: true }] },
     ];
     for (const [index, configuration] of cases.entries()) {
         localConfiguration(source, configuration);

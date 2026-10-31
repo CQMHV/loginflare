@@ -21,5 +21,5 @@ export function validateConfig(env: Env): void {
     if (!local && origin.protocol !== 'https:') throw new ConfigurationError('HTTPS is required');
     if (!local && (/^[123]x0/.test(env.TURNSTILE_SITE_KEY) || /^[123]x0/.test(env.TURNSTILE_SECRET_KEY))) throw new ConfigurationError('Turnstile test keys are not allowed');
     if (!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(env.EMAIL_FROM)) throw new ConfigurationError('Invalid EMAIL_FROM');
-    if (!env.DB || !env.EMAIL) throw new ConfigurationError('Missing resource bindings');
+    if (!env.DB || !env.EMAIL || !env.AVATARS) throw new ConfigurationError('Missing resource bindings');
 }

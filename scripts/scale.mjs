@@ -89,7 +89,7 @@ function miniflare(state, authenticationSecret = secret) {
         name: 'loginflare-isolated-scale', modules: [{ type: 'ESModule', path: bridgeFile }, ...productionModules], modulesRoot: root,
         compatibilityDate: '2026-10-26', compatibilityFlags: ['nodejs_compat'],
         host: '127.0.0.1', port: 0, log: new Log(LogLevel.NONE),
-        d1Databases: { DB: databaseId }, resourcePersistencePath: state,
+        d1Databases: { DB: databaseId }, r2Buckets: { AVATARS: 'isolated-scale-avatars' }, resourcePersistencePath: state,
         bindings: { APP_ENV: 'development', AUTH_URL: origin, EMAIL_FROM: 'scale@example.test', TURNSTILE_SITE_KEY: '1x00000000000000000000AA', TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA', BETTER_AUTH_SECRET: authenticationSecret, SCALE_ACCESS_KEY: accessKey },
         outboundService: async (request) => {
             if (request.url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify' && request.method === 'POST') {

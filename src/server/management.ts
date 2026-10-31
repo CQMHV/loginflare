@@ -27,12 +27,12 @@ const authorize: MiddlewareHandler<ManagementEnv> = async (c, next) => {
 management.use('/admin/users', authorize);
 management.use('/account/sessions', authorize);
 
-interface UserRow { id: string; name: string; username: string | null; email: string; emailVerified: number; role: string | null; banned: number | null; createdAt: string }
+interface UserRow { id: string; name: string; username: string | null; image: string | null; email: string; emailVerified: number; role: string | null; banned: number | null; createdAt: string }
 management.get('/admin/users', async (c) => {
     const input = await readPageInput(new URL(c.req.url), c.env.BETTER_AUTH_SECRET, 'users', 'administrators', ['id', 'username', 'email']);
     const boundary = pageBoundary(input, 'id');
     const filter = input.lookupField ? ` WHERE "${input.lookupField}" = ?` : ' WHERE 1 = 1';
-    const result = await c.env.DB.prepare(`SELECT "id", "name", "username", "email", "emailVerified", "role", "banned", "createdAt" FROM "user"${filter}${boundary.sql} ORDER BY "createdAt" ${boundary.order}, "id" ${boundary.order} LIMIT ?`)
+    const result = await c.env.DB.prepare(`SELECT "id", "name", "username", "image", "email", "emailVerified", "role", "banned", "createdAt" FROM "user"${filter}${boundary.sql} ORDER BY "createdAt" ${boundary.order}, "id" ${boundary.order} LIMIT ?`)
         .bind(...(input.lookupValue ? [input.lookupValue] : []), ...boundary.values, input.limit + 1).all<UserRow>();
     const rows = result.results.map((user) => ({ ...user, emailVerified: !!user.emailVerified, banned: !!user.banned }));
     return c.json(await pageResult(rows, input, c.env.BETTER_AUTH_SECRET, (item) => ({ createdAt: item.createdAt, id: item.id })));

@@ -14,13 +14,14 @@ Browser: React 19 + Material Web + React Router + react-i18next
 Cloudflare Worker
     +-- Workers Static Assets: browser application
     +-- Hono: routing, request boundaries, authorization, safe errors
+         +-- R2: private avatar storage, public image responses and bounded lifecycle cleanup
          +-- Better Auth: email/password, username, sessions, admin, CAPTCHA, OAuth provider and JWT
               +-- D1: accounts, sessions, verification, rate limits, OAuth clients/tokens/consents, signing keys
               +-- Email Service binding: transactional delivery
               +-- Turnstile: server-side verification
 ```
 
-The application has one Worker and one D1 database per environment. Local, staging, and production data and secrets are isolated. It does not require KV, R2, Queues, Durable Objects, an external database, or an external email provider.
+The application has one Worker, one D1 database and one private R2 avatar bucket per environment. Local, staging, and production data, files and secrets are isolated. It does not require KV, Queues, Durable Objects, an external database, or an external email provider.
 
 D1 is the only implemented database backend. Registered-account volume and concurrent request capacity are separate dimensions. Large public deployments must be measured against their own traffic mix and current platform limits; a million stored accounts is not a claim of a million concurrent users. Hyperdrive and external SQL backends are future integrations, not supported configurations. See [Scaling and validation](scaling.md).
 
@@ -62,6 +63,16 @@ Inactive queries are collected after five minutes, with at most 50 settled inact
 F5 creates a new client, revalidates identity/current-page data, and restores URL state. Passwords, codes, recovery/verification workflows and newly generated client secrets stay component-local and clear on route departure or `pagehide`; delayed mutation results cannot restore secrets after that boundary. Sign-out/account/role changes reset private page state. `BroadcastChannel` exchanges only event names, resource groups and an account ID; other tabs refresh or clear their own state without transferring query contents or credentials. Language/theme persistence remains independent.
 
 Browser regression tests cover resource reuse, filter/cursor separation, cache bounds, F5/error retry, visibility/reconnect/BFCache signals, stable layout during background reads, stale failures, draft/scroll restoration, mutation invalidation, cross-tab changes, permission loss and late responses after account changes. Fixtures remain local. This frontend policy adds no Worker bypass, binding or schema migration.
+
+## Avatars
+
+Better Auth's native `user.image` remains the authoritative profile URL. `POST /api/account/avatar` accepts a cropped raster upload and `DELETE /api/account/avatar` removes the current image. Both require an eligible cookie session and the exact account Origin; clients cannot supply an owner or arbitrary image URL through the native signup/update routes. Uploads have atomic account/IP limits, and the final D1 write rechecks the current session, expiry, verification and suspension state after R2 completes.
+
+The browser accepts static JPG, PNG and WebP sources up to 20 MiB, 16384 pixels per side and 100 megapixels. It checks file size and container dimensions before decoding; decoding and cropping use the user's device, and the decoded bitmap is closed when selection is replaced or discarded. Its Canvas crop produces a 256-by-256 WebP image at an encoder quality of 0.86. The output MIME is checked before upload: browsers that cannot encode WebP show an explicit error, and encoding failures preserve the existing photo. There is no PNG/JPEG upload fallback. The Worker accepts only WebP at that exact size, at most 300 KiB, checks the actual bytes against `image/webp`, rejects animation, and strips EXIF/XMP/ICC metadata. This is bounded container validation, not a second image-decoding service. Original files, filenames, crop drafts and image pixels are not stored in D1 or browser persistent storage. Photo selection is discarded on page departure.
+
+R2 is private. The Worker exposes an opaque, immutable file address at `/avatars/:id` for profile images and OIDC `picture`. Anyone with that address can read it; no account cookies or D1 lookup are required. Public image responses have a five-minute browser cache, ETag/conditional GET/HEAD, a cross-origin resource policy for embedding in applications, and an image-only restrictive CSP. Replacements receive a new address. Removing a photo clears the profile reference. Old addresses remain readable until bounded maintenance removes their objects, and cached responses can outlive that removal by up to five minutes. No external image proxy or email-based avatar lookup is used.
+
+`userAvatar` stores file lifecycle metadata, not another user record. A pending row is inserted before R2 writes, with a one-hour expiry. Updating the native image and retiring the previous row happen atomically through D1 triggers, including concurrent replacements. Failed/uncertain uploads remain collectable; a successful native reference keeps its object. Scheduled maintenance seeks expired asset candidates using `(deleteAfter, id)`, removes at most 500 candidates per batch, checks owner references before R2 deletion, and shares the existing twenty-batch/twenty-second budget and five-minute safety buffer. It never enumerates the bucket or counts all users. R2 deletion failures leave rows/cursors for a later run. Deployment capacity and R2 operation/storage costs still require measurement for the intended traffic.
 
 ## HTTP surface
 
@@ -117,7 +128,7 @@ Rate-limit consumption is an atomic conditional D1 UPSERT, so concurrent request
 
 A five-minute Cron Trigger invokes expiry maintenance on the existing Worker. Each run has bounded batches and time, uses expiry indexes, and retains a safety buffer. It collects expired rate counters, email challenges, verification records, credentials, and eligible grant-policy records. References are checked before deleting sessions or refresh tokens so cleanup cannot change offline authorization semantics through foreign-key cascades. Grant policy outlives every credential that could still use it. Records remain invalid when expired even if cleanup has not run; cleanup is separate from authentication validity and request latency.
 
-Backups include a consistent SQLite snapshot for local D1 and the local configuration/credential files needed to reopen it. Database state, issuer, and authentication secret form one recovery unit, including encrypted signing keys. Remote updates use D1 recovery mechanisms against the reviewed environment. A Worker rollback alone does not restore database contents.
+Backups include SQLite snapshots for local D1 and R2 metadata, R2 blob files, and the local configuration/credentials needed to reopen the instance. Stop avatar writes before a combined file/database backup or restore. Database state, avatar files, issuer, and authentication secret form one recovery unit, including encrypted signing keys. Remote updates use D1 recovery mechanisms and a separately retained copy of the R2 objects against the reviewed environment. A Worker rollback alone does not restore database contents or uploaded files.
 
 ## Validation boundaries
 
