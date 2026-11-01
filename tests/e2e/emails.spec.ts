@@ -82,6 +82,7 @@ test('manages email addresses and recovers the same account through a secondary 
     await page.screenshot({ path: test.info().outputPath('emails-mobile-zh-dark.png'), fullPage: true });
     await page.getByRole('button', { name: '账号菜单', exact: true }).click();
     await page.getByRole('menuitem', { name: '退出登录', exact: true }).click();
+    await expect(page).toHaveURL('/zh-cn/login');
     await page.setViewportSize({ width: 1280, height: 720 });
 
     await signIn(primary, password, 401);
