@@ -261,12 +261,20 @@ md-filled-button:not(.danger-button) {
 .avatar-description p { max-width: 360px; margin-top: 6px; color: var(--md-sys-color-on-surface-variant); font-size: 13px; line-height: 1.6; }
 .avatar-description > md-text-button { margin-top: 4px; }
 .avatar-error { margin: 12px 0 0; }
-.avatar-dialog { width: min(440px, calc(100vw - 48px)); max-height: min(760px, calc(100dvh - 48px)); }
+.avatar-dialog { width: min(560px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); }
+.avatar-crop-headline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.avatar-crop-tools { display: flex; flex-shrink: 0; }
 .avatar-crop-content { display: flex; flex-direction: column; gap: 16px; }
-.avatar-crop-content > p { font-size: 14px; line-height: 1.6; }
-.avatar-crop-content canvas { display: block; width: 256px; max-width: 100%; height: auto; border-radius: 50%; margin: 0 auto; background: var(--md-sys-color-surface-container-high); }
-.avatar-slider { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
-.avatar-slider input { width: 100%; min-height: 32px; accent-color: var(--md-sys-color-primary); }
+.avatar-crop-content > p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
+.avatar-crop-stage { position: relative; width: 100%; height: min(360px, max(180px, calc(100dvh - 376px))); flex-shrink: 0; overflow: hidden; border-radius: 16px; background-color: #242424; background-image: conic-gradient(#303030 25%, transparent 0 50%, #303030 0 75%, transparent 0); background-size: 16px 16px; }
+.avatar-crop-stage > .progress-indicator { position: absolute; top: 50%; left: 50%; margin: -10px 0 0 -10px; }
+.avatar-crop-stage .reactEasyCrop_Container { cursor: grab; }
+.avatar-crop-stage .reactEasyCrop_Container:active { cursor: grabbing; }
+.avatar-crop-stage .reactEasyCrop_Container:focus-visible { outline: 3px solid var(--md-sys-color-primary); outline-offset: -3px; }
+.avatar-crop-stage .reactEasyCrop_CropArea { border: 2px solid white; color: rgb(0 0 0 / .5); }
+.avatar-crop-zoom { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.avatar-crop-zoom md-slider { flex: 1; min-width: 0; }
+.avatar-crop-zoom output { width: 44px; flex-shrink: 0; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--md-sys-color-on-surface-variant); }
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; white-space: nowrap; width: fit-content; }
 .badge.verified, .badge.active, .badge.current { color: var(--md-sys-color-on-tertiary-container); background: var(--md-sys-color-tertiary-container); }
 .badge.suspended { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }

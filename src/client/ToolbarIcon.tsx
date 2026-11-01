@@ -4,8 +4,12 @@ import translate from '@material-symbols/svg-500/rounded/translate.svg?raw';
 import contrast from '@material-symbols/svg-500/rounded/contrast.svg?raw';
 import edit from '@material-symbols/svg-500/rounded/edit.svg?raw';
 import person from '@material-symbols/svg-500/rounded/person.svg?raw';
+import add from '@material-symbols/svg-500/rounded/add.svg?raw';
+import remove from '@material-symbols/svg-500/rounded/remove.svg?raw';
+import rotate_right from '@material-symbols/svg-500/rounded/rotate_right.svg?raw';
+import restart_alt from '@material-symbols/svg-500/rounded/restart_alt.svg?raw';
 
-const symbols = { translate, contrast, edit, person };
+const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt };
 
 export function ToolbarIcon({ name }: { name: keyof typeof symbols }) {
     // Only fixed Material Symbols assets from the pinned package enter this markup.

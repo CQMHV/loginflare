@@ -64,7 +64,7 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
     await expect(page.getByRole('img', { name: 'Avatar preview', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save photo', exact: true })).toBeEnabled();
     await page.getByRole('slider', { name: 'Zoom', exact: true }).press('End');
-    await page.getByRole('slider', { name: 'Horizontal position', exact: true }).press('Home');
+    await page.getByRole('region', { name: 'Photo position', exact: true }).press('ArrowRight');
     const saved = page.waitForResponse((response) => response.url().endsWith('/api/account/avatar') && response.request().method() === 'POST');
     await page.getByRole('button', { name: 'Save photo', exact: true }).click();
     const uploaded = await saved;
