@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { dirname, extname, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 
 // Match the installed Wrangler runtime and its D1 persistence format.
 const require = createRequire(import.meta.url);
@@ -39,6 +40,7 @@ const workerRoot = resolve('dist/loginflare_local');
 const workerModules = (await readdir(workerRoot, { recursive: true })).filter((file) => file.endsWith('.js'))
     .map((file) => ({ type: 'ESModule', path: resolve(workerRoot, file) }));
 let ready = false;
+const socialKeys = await generateKeyPair('RS256', { extractable: true });
 const options = convertV4MiniflareOptions({
     host: '127.0.0.1', port: Number(url.port),
     modules: [{ type: 'ESModule', path: workerPath }, ...workerModules], modulesRoot: resolve('.'),
@@ -67,6 +69,18 @@ const options = convertV4MiniflareOptions({
     },
     async outboundService(request) {
         const target = new URL(request.url);
+        // Isolated upstream: only synthetic browser-test profiles are accepted.
+        if (target.hostname === 'oauth2.googleapis.com' && target.pathname === '/token') {
+            const body = new URLSearchParams(await request.text());
+            const code = body.get('code') ?? '';
+            if (!body.get('code_verifier') || code.length > 4096) return Response.json({ error: 'invalid_grant' }, { status: 400 });
+            const profile = JSON.parse(Buffer.from(code, 'base64url').toString());
+            if (!/^ui-[0-9a-f-]{36}@loginflare\.test$/.test(profile.email) || !profile.sub?.startsWith('ui-social-')) throw new Error('Expected a synthetic social identity');
+            const id_token = await new SignJWT({ ...profile, email_verified: profile.unverified !== true }).setProtectedHeader({ alg: 'RS256', kid: 'e2e-social' })
+                .setIssuer('https://accounts.google.com').setAudience(body.get('client_id')).setIssuedAt().setExpirationTime('5m').sign(socialKeys.privateKey);
+            return Response.json({ id_token, access_token: 'isolated-social-token', token_type: 'Bearer', expires_in: 300 });
+        }
+        if (target.hostname === 'www.googleapis.com' && target.pathname.endsWith('/certs')) return Response.json({ keys: [{ ...await exportJWK(socialKeys.publicKey), kid: 'e2e-social', alg: 'RS256', use: 'sig' }] });
         // Native ID-token logout verification fetches this instance's public keys.
         if (target.origin === origin && target.pathname === '/api/auth/jwks' && request.method === 'GET') return instance.dispatchFetch(request);
         if (request.url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify' && request.method === 'POST') {

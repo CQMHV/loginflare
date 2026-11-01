@@ -3,9 +3,11 @@ import { initReactI18next } from 'react-i18next';
 import { oauthEn, oauthZh } from './oauth-translations';
 import { emailEn, emailZh } from './email-translations';
 import { mfaEn, mfaZh } from './mfa-translations';
+import { socialEn, socialZh, socialErrorsEn, socialErrorsZh } from './social-translations';
 import { resolveLocale } from './locale';
 
 const enUS = {
+    social: socialEn,
     mfa: mfaEn,
     oauth: oauthEn,
     emails: emailEn,
@@ -254,6 +256,7 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    social: socialZh,
     mfa: mfaZh,
     oauth: oauthZh,
     emails: emailZh,
@@ -502,6 +505,8 @@ const zhCN: typeof enUS = {
 };
 
 const initialLocale = resolveLocale(window.location.pathname);
+Object.assign(enUS.errors, socialErrorsEn);
+Object.assign(zhCN.errors, socialErrorsZh);
 document.documentElement.lang = initialLocale;
 
 void i18n.use(initReactI18next).init({

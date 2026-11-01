@@ -55,7 +55,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     await switchArea(page, 'Administration');
     await expect(page).toHaveURL('/en-us/admin/users');
     const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
-    await expect(administrationNavigation.getByRole('link')).toHaveCount(3);
+    await expect(administrationNavigation.getByRole('link')).toHaveCount(4);
     await expect(page.getByRole('navigation', { name: 'Account navigation', exact: true })).toHaveCount(0);
     await administrationNavigation.getByRole('link', { name: 'Applications', exact: true }).click();
     await page.getByRole('link', { name: 'Create application', exact: true }).click();

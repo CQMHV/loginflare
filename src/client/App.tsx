@@ -21,6 +21,8 @@ import { ToolbarIcon } from './ToolbarIcon';
 import { BrandingUpdates, useBranding } from './branding';
 import { BrandingSettings } from './BrandingSettings';
 import { MfaSettings } from './MfaSettings';
+import { SecurityConfirmation, SocialButtons, SocialCompletion, SocialSettings, useSecurity } from './Social';
+import { SocialConnectionsPage } from './SocialConnections';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -109,8 +111,8 @@ function AccountMenu({ busy, onSignOut }: { busy: boolean; onSignOut: () => void
     const { identity, locale } = useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
-    return <MenuButton className="account-menu" variant="avatar" label={t('accountMenu')} description={identity?.user.name} busy={busy}
-        icon={<Avatar name={identity?.user.name ?? ''} image={identity?.user.image} className="user-avatar" />}
+    return <MenuButton className="account-menu" variant="avatar" label={t('accountMenu')} description={identity?.user.name || identity?.user.email} busy={busy}
+        icon={<Avatar name={identity?.user.name || identity?.user.email || ''} image={identity?.user.image} className="user-avatar" />}
         options={[
             { value: 'profile', label: t('profile'), icon: <Icon name="profile" size={24} /> },
             { value: 'signout', label: t('signout'), icon: <Icon name="logout" size={24} /> },
@@ -386,6 +388,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     setRecoveryChallenge(undefined); setRecoveryCode(''); setSuccess(undefined); setError(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1);
                 }}>{t('emails.recoveryStartOver')}</Button>}
             </form>}
+        {['login', 'signup'].includes(mode) && <SocialButtons locale={locale} />}
         {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p><Link className="resend-link" to={authPath('verify-email', loginIdentifier.includes('@') ? { email: loginIdentifier.trim() } : undefined)}>{t('resend')}</Link></>}
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
         {mode === 'signup' && error && <Link className="resend-link" to={authPath('verify-email', { email })}>{t('resend')}</Link>}
@@ -404,6 +407,7 @@ function TwoFactorPage() {
     const [busy, setBusy] = useState(false);
     const captureSecrets = useClearSecrets(() => setCode(''));
     const query = oauthSearch(location.search);
+    const social = new URLSearchParams(location.search).get('social') === '1';
     async function submit(event: FormEvent) {
         event.preventDefault();
         const current = captureSecrets();
@@ -420,11 +424,11 @@ function TwoFactorPage() {
             setCode('');
             await refresh();
             savePreference(locale);
-            navigate(localizedPath(locale, 'account'), { replace: true });
+            navigate(localizedPath(locale, social ? 'social/complete' : 'account'), { replace: true });
         } catch (cause) { if (current()) setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    if (identity && !query) return <Navigate to={localizedPath(locale, 'account')} replace />;
+    if (identity && !query && !social) return <Navigate to={localizedPath(locale, 'account')} replace />;
     return <AuthLayout>
         <div className="auth-step-icon"><Icon name="shield" size={26} /></div>
         <h2>{t('mfa.challengeTitle')}</h2>
@@ -438,6 +442,11 @@ function TwoFactorPage() {
         </form>
         <Link className="back-link" to={withOAuthSearch(localizedPath(locale, 'login'), location.search)}>{t('backToLogin')}</Link>
     </AuthLayout>;
+}
+
+function SocialCompletionPage() {
+    const { locale, refresh } = useApp();
+    return <AuthLayout><SocialCompletion locale={locale} refresh={refresh} /></AuthLayout>;
 }
 
 function ConsentPage() {
@@ -565,7 +574,8 @@ function AdminLayout() {
         navigation={<>
             <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink></>} />;
+            <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink></>} />;
 }
 
 function PageHeading({ title, description, children }: PropsWithChildren<{ title: string; description: string }>) {
@@ -587,7 +597,7 @@ function ProfilePage() {
         event.preventDefault();
         setBusy(true); setError(undefined); setSaved(false);
         try {
-            await request('/update-user', { name, ...(username.trim() ? { username: username.trim() } : {}) });
+            await request('/update-user', { ...(name.trim() ? { name } : {}), ...(username.trim() ? { username: username.trim() } : {}) });
             await dataActions.invalidate('profile', 'user', 'users'); clearDraft(draft); setSaved(true);
         } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
@@ -596,11 +606,11 @@ function ProfilePage() {
         <PageHeading title={t('profileTitle')} description={t('profileDescription')} />
         <ResourceFeedback query={{ ...identityQuery, error: null }} />
         <section className="card profile-card" aria-labelledby="profile-account-title"><div className="card-heading"><h2 id="profile-account-title">{t('accountDetails')}</h2><p>{t('accountDetailsDescription')}</p></div><div className="card-body">
-            <AvatarEditor name={identity?.user.name ?? ''} image={identity?.user.image} />
+            <AvatarEditor name={identity?.user.name || identity?.user.email || ''} image={identity?.user.image} />
             <Divider />
             <form className="stack-form profile-form" onSubmit={(event) => { void save(event); }}>
                 <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
-                <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={(name) => setDraft({ ...draft, name })} maxLength={100} required />
+                <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={(name) => setDraft({ ...draft, name })} maxLength={100} required={!!identity?.user.name} />
                 <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={(username) => setDraft({ ...draft, username })} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
                 <div className="form-footer">{draft && <Button className="text-button" onClick={() => setDraft(undefined)}>{t('discardDraft')}</Button>}<Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
             </form>
@@ -613,6 +623,8 @@ function ProfilePage() {
 function SecurityPage() {
     const { t } = useTranslation();
     const { identity, refresh } = useApp();
+    const security = useSecurity();
+    const hasPassword = security.data?.hasPassword;
     const dataActions = useDataActions();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -627,22 +639,23 @@ function SecurityPage() {
         if (newPassword !== confirmation) { setError('PASSWORD_MISMATCH'); return; }
         setBusy(true);
         try {
-            await request('/change-password', { currentPassword, newPassword, revokeOtherSessions: true });
-            await dataActions.invalidate('sessions');
+            if (hasPassword) await request('/change-password', { currentPassword, newPassword, revokeOtherSessions: true });
+            else await request('/social/set-password', { newPassword });
+            await dataActions.invalidate('sessions', 'security');
             setCurrentPassword(''); setNewPassword(''); setConfirmation(''); setSuccess(true);
             await refresh();
         } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
-    return <><PageHeading title={t('securityTitle')} description={t('securityDescription')} /><section className="card"><div className="card-heading"><h2>{t('changePassword')}</h2><p>{t('changePasswordDescription')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void submit(event); }}>
+    return <><PageHeading title={t('securityTitle')} description={t('securityDescription')} /><ResourceFeedback query={security} />{security.data && <section className="card"><div className="card-heading"><h2>{t(hasPassword ? 'changePassword' : 'social.setPassword')}</h2><p>{t(hasPassword ? 'changePasswordDescription' : 'social.passwordless')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void submit(event); }}>
         <ErrorNotice code={error === 'PASSWORD_MISMATCH' ? undefined : error} />
         {error === 'PASSWORD_MISMATCH' && <div className="notice error" role="alert">{t('passwordMismatch')}</div>}
         <SuccessNotice message={success ? t('passwordChanged') : undefined} />
-        <TextField label={t('currentPassword')} type="password" name="currentPassword" autoComplete="current-password" value={currentPassword} onValueChange={setCurrentPassword} required />
+        <SecurityConfirmation purpose="set-password" password={currentPassword} onPassword={setCurrentPassword} disabled={busy} />
         <TextField label={t('newPassword')} type="password" name="newPassword" autoComplete="new-password" value={newPassword} onValueChange={setNewPassword} minLength={8} maxLength={128} required supportingText={t('passwordHint')} />
         <TextField label={t('confirmPassword')} type="password" name="confirmPassword" autoComplete="new-password" value={confirmation} onValueChange={setConfirmation} minLength={8} maxLength={128} required />
-        <div className="form-footer"><Button type="submit" className="primary" busy={busy}>{t('changePassword')}</Button></div>
-    </form></section><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>;
+        <div className="form-footer"><Button type="submit" className="primary" busy={busy}>{t(hasPassword ? 'changePassword' : 'social.setPassword')}</Button></div>
+    </form></section>}<SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>;
 }
 
 function formatDate(value: string | undefined, locale: Locale): string {
@@ -776,6 +789,7 @@ function LocaleRoutes() {
             <Route index element={identity === undefined ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search, hash }} replace />} />
             <Route path="login" element={<AuthPage mode="login" />} />
             <Route path="two-factor" element={<TwoFactorPage />} />
+            <Route path="social/complete" element={<SocialCompletionPage />} />
             <Route path="signup" element={<AuthPage mode="signup" />} />
             <Route path="verify-email" element={<AuthPage mode="verify-email" />} />
             <Route path="verified" element={<AuthPage mode="verified" />} />
@@ -794,6 +808,7 @@ function LocaleRoutes() {
                         <Route path="admin" element={<Navigate to={localizedPath(locale, 'admin/users')} replace />} />
                         <Route path="admin/users" element={<UsersPage />} />
                         <Route path="admin/branding" element={<BrandingSettings />} />
+                        <Route path="admin/social-connections" element={<SocialConnectionsPage />} />
                         <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
                         <Route path="admin/applications/new" element={<ApplicationEditor key="new" locale={locale} create />} />

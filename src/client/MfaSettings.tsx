@@ -1,17 +1,23 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { QRCodeSVG } from 'qrcode.react';
 import { request } from './api';
 import i18n from './i18n';
-import { Button, Checkbox, ConfirmationDialog, TextField } from './material';
+import { Button, Checkbox, ConfirmationDialog, Select, TextField } from './material';
 import { useClearSecrets } from './page-state';
 import { useDataActions } from './data';
+import { SecurityConfirmation, useSecurity } from './Social';
 
 interface Enrollment { totpURI: string; backupCodes: string[] }
 
 export function MfaSettings({ enabled, refresh }: { enabled: boolean; refresh: () => Promise<void> }) {
     const { t } = useTranslation();
     const actions = useDataActions();
+    const security = useSecurity();
+    const [operation, setOperation] = useState<'regenerate' | 'disable'>('regenerate');
+    useEffect(() => {
+        if (security.data?.proofPurpose === 'two-factor/disable') setOperation('disable');
+    }, [security.data?.proofPurpose]);
     const [password, setPassword] = useState('');
     const [code, setCode] = useState('');
     const [enrollment, setEnrollment] = useState<Enrollment>();
@@ -43,12 +49,13 @@ export function MfaSettings({ enabled, refresh }: { enabled: boolean; refresh: (
                 setSuccess(action === 'verify' ? 'mfa.enabledSuccess' : 'mfa.disabledSuccess');
             }
         } catch (cause) { if (current()) setError(actions.fail(cause)); }
-        finally { setBusy(false); setPassword(''); }
+        finally { setBusy(false); setPassword(''); await actions.invalidate('security'); }
     }
 
     function submit(event: FormEvent) {
         event.preventDefault();
-        void perform(enrollment ? 'verify' : enabled ? 'regenerate' : 'enable');
+        if (!enrollment && enabled && !security.data?.hasPassword && operation === 'disable') setConfirmDisable(true);
+        else void perform(enrollment ? 'verify' : enabled ? 'regenerate' : 'enable');
     }
 
     function downloadCodes() {
@@ -73,13 +80,14 @@ export function MfaSettings({ enabled, refresh }: { enabled: boolean; refresh: (
                     <TextField label={t('mfa.secret')} value={new URL(enrollment.totpURI).searchParams.get('secret') ?? ''} readOnly />
                     <TextField label={t('mfa.code')} name="code" value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} required />
                 </> : <>
-                    <TextField label={t('mfa.password')} type="password" name="mfaPassword" autoComplete="current-password" value={password} onValueChange={setPassword} maxLength={128} required />
+                    {enabled && security.data && !security.data.hasPassword && <Select label={t('social.operation')} value={operation} options={[{ value: 'regenerate', label: t('mfa.regenerate') }, { value: 'disable', label: t('mfa.disable') }]} onChange={(value) => setOperation(value as 'regenerate' | 'disable')} />}
+                    <SecurityConfirmation purpose={!enabled ? 'two-factor/enable' : !security.data?.hasPassword && operation === 'disable' ? 'two-factor/disable' : 'two-factor/generate-backup-codes'} password={password} onPassword={setPassword} disabled={busy} passwordLabel={t('mfa.password')} />
                     {enabled && <p className="muted">{t('mfa.regenerateHint')}</p>}
                 </>}
                 {enrollment && <Checkbox label={t('mfa.saved')} checked={saved} onCheckedChange={setSaved} />}
                 <div className="action-row">
-                    <Button type="submit" busy={busy} disabled={!!enrollment && !saved}>{t(enrollment ? 'mfa.confirm' : enabled ? 'mfa.regenerate' : 'mfa.enable')}</Button>
-                    {enabled && !enrollment && <Button className="secondary" disabled={busy || !password} onClick={() => setConfirmDisable(true)}>{t('mfa.disable')}</Button>}
+                    <Button type="submit" busy={busy} disabled={!!enrollment && !saved}>{t(enrollment ? 'mfa.confirm' : enabled ? !security.data?.hasPassword && operation === 'disable' ? 'mfa.disable' : 'mfa.regenerate' : 'mfa.enable')}</Button>
+                    {enabled && !enrollment && security.data?.hasPassword && <Button className="secondary" disabled={busy || !password} onClick={() => setConfirmDisable(true)}>{t('mfa.disable')}</Button>}
                     {enrollment && <Button className="text-button" disabled={busy} onClick={() => { setEnrollment(undefined); setBackupCodes(undefined); setCode(''); }}>{t('cancel')}</Button>}
                 </div>
             </form>

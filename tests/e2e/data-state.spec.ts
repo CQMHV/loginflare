@@ -33,6 +33,8 @@ async function mockAccount(context: BrowserContext) {
         const application = () => ({ clientId, name: state.applicationName, type: 'web', disabled: false,
             redirectUris: ['https://app.example.test/callback'], postLogoutRedirectUris: ['https://app.example.test/'], scopes: ['openid', 'profile'] });
         if (url.pathname === '/api/auth/get-session') result = structuredClone(state.actor);
+        else if (url.pathname === '/api/auth/social/security') result = { hasPassword: true, identities: [], providers: [] };
+        else if (url.pathname === '/api/social/providers') result = { providers: [] };
         else if (url.pathname === '/api/config') result = { turnstileSiteKey: '1x00000000000000000000AA' };
         else if (url.pathname === '/api/auth/sign-out') state.actor = null;
         else if (url.pathname === '/api/auth/sign-in/username') state.actor = identity(req.postDataJSON().username, 'user');

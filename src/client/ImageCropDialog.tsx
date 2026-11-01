@@ -12,6 +12,7 @@ import { ApiError } from './api';
 import { Button, Progress } from './material';
 import { useClearSecrets } from './page-state';
 import { ToolbarIcon } from './ToolbarIcon';
+import { encodeWebP } from './image-encoding';
 
 export interface ImagePhoto {
     id: string;
@@ -165,9 +166,7 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
             context.rotate(rotation * Math.PI / 180);
             context.scale(mediaSize.width / bitmap.width * renderedZoom, mediaSize.height / bitmap.height * renderedZoom);
             context.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
-            const blob = await new Promise<Blob | null>((resolve) => output.toBlob(resolve, 'image/webp', 0.86));
-            if (!blob || blob.size > maximumBytes) throw new Error('Image encoding failed');
-            if (blob.type !== 'image/webp') throw new ApiError('IMAGE_WEBP_UNAVAILABLE', 400);
+            const blob = await encodeWebP(output, maximumBytes);
             if (current()) await onSave(blob);
         } catch (cause) { if (current()) setError(cause instanceof ApiError ? cause.code : 'IMAGE_ENCODING_FAILED'); }
         finally { setEncoding(false); }

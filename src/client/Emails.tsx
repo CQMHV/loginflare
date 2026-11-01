@@ -5,6 +5,7 @@ import i18n from './i18n';
 import { Button, Divider, List, ListItem, TextField } from './material';
 import { ResourceFeedback, useDataActions, useResource } from './data';
 import { useClearSecrets } from './page-state';
+import { SecurityConfirmation, useSecurity } from './Social';
 
 interface EmailAddress {
     id: string;
@@ -18,6 +19,7 @@ interface Verification { emailId: string; email: string; challengeId: string }
 
 export function EmailsPage() {
     const { t } = useTranslation();
+    const security = useSecurity();
     const emailQuery = useResource<{ emails: EmailAddress[] }>('emails', '/api/auth/emails');
     const emails = emailQuery.data?.emails;
     const dataActions = useDataActions();
@@ -32,6 +34,9 @@ export function EmailsPage() {
     const actionSection = useRef<HTMLElement>(null);
     const codeSection = useRef<HTMLElement>(null);
     const captureSecrets = useClearSecrets(() => { setPassword(''); setCode(''); setVerification(undefined); setAction(undefined); });
+    useEffect(() => {
+        if (security.data?.proofPurpose === 'emails/add') setAction((current) => current ?? { kind: 'add' });
+    }, [security.data?.proofPurpose]);
     useEffect(() => {
         const section = action ? actionSection.current : verification ? codeSection.current : null;
         section?.querySelector<HTMLElement>('md-outlined-text-field')?.focus();
@@ -69,7 +74,7 @@ export function EmailsPage() {
             // An address may already be pending when delivery fails. Keep its
             // resend/remove controls available instead of hiding that state.
             await dataActions.invalidate('emails');
-        } finally { setPassword(''); setBusy(false); }
+        } finally { setPassword(''); setBusy(false); await dataActions.invalidate('security'); }
     }
 
     async function verify(event: FormEvent) {
@@ -96,7 +101,7 @@ export function EmailsPage() {
             <div className="card-heading"><h2 id="email-action-title">{t(actionTitle)}</h2><p>{t(actionDescription, { email: action.kind === 'add' ? '' : action.address.email })}</p></div>
             <form className="card-body stack-form" onSubmit={(event) => { void submit(event); }}>
                 {action.kind === 'add' && <TextField label={t('emails.newAddress')} type="email" autoComplete="email" value={email} onValueChange={setEmail} maxLength={254} required />}
-                <TextField label={t('currentPassword')} type="password" autoComplete="current-password" value={password} onValueChange={setPassword} maxLength={128} supportingText={t('emails.passwordHint')} required />
+                <SecurityConfirmation purpose={`emails/${action.kind}`} password={password} onPassword={setPassword} disabled={busy} />
                 <div className="action-row"><Button type="submit" className={action.kind === 'remove' ? 'danger-button' : 'primary'} busy={busy}>{t(action.kind === 'add' || action.kind === 'resend' ? 'emails.sendCode' : actionTitle)}</Button><Button className="secondary" disabled={busy} onClick={() => choose()}>{t('cancel')}</Button></div>
             </form>
         </section>}

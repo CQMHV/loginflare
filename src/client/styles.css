@@ -348,3 +348,11 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 .mfa-form, .mfa-backup-codes { width: 100%; max-width: 560px; }
 .mfa-backup-codes ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 0; list-style: none; }
 .mfa-backup-codes code { overflow-wrap: anywhere; user-select: all; }
+.social-buttons { display: grid; gap: 12px; margin-top: 24px; }
+.social-identity { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; flex-wrap: wrap; }
+.social-identity > div { min-width: 0; overflow-wrap: anywhere; }
+.social-identity p { margin: 6px 0; }
+.social-connection-list { display: grid; gap: 12px; margin-bottom: 24px; }
+.social-connection-list .card { margin-bottom: 0; }
+.security-confirmation { max-width: 560px; }
+.break-all, .auth-form-container dd { overflow-wrap: anywhere; }

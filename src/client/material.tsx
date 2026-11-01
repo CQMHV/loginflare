@@ -96,9 +96,9 @@ export function TextField({ label, onValueChange, supportingText, ...props }: Te
     });
 }
 
-export function Checkbox({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
+export function Checkbox({ label, checked, onCheckedChange, disabled = false }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void; disabled?: boolean }) {
     return <label className="check-label">{createElement('md-checkbox', {
-        checked, 'aria-label': label, 'touch-target': 'wrapper',
+        checked, disabled, 'aria-label': label, 'touch-target': 'wrapper',
         onChange: (event: Event) => onCheckedChange((event.currentTarget as HTMLElement & { checked: boolean }).checked),
     })}<span>{label}</span></label>;
 }
