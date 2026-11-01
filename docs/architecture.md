@@ -118,6 +118,14 @@ The OAuth provider and core are pinned together at 1.7.13. Authorization code + 
 
 Ordinary logout preserves the provider's `offline_access` refresh-token semantics. Security events have a separate Loginflare revocation policy. The [integration guide](oauth.md) describes the resulting behavior and the limits of application-owned sessions. There is no global logout notification service or custom OAuth protocol implementation.
 
+## Multi-factor authentication
+
+Better Auth's two-factor plugin owns TOTP enrollment, encrypted secrets and recovery codes, signed ten-minute login challenges, single-use challenge/code consumption, per-challenge attempt budgets and account lockouts. MFA is optional per account and protects both password endpoints. The plugin runs before the OAuth provider's completion hook, so signed OAuth state continues only after a successful second factor. The localized `/two-factor` page accepts authenticator codes or recovery codes; verification endpoints also accept the provider-signed `oauth_query`.
+
+The security page requires the current password for enrollment, recovery-code regeneration and disabling. Enrollment stays inactive until a TOTP is verified. QR codes render locally, and setup secrets/codes stay in component memory; page hiding, session rotation and account changes clear them. Users must acknowledge saving their codes before confirming enrollment. The gateway exposes only enable, disable, verify-TOTP, verify-backup-code and generate-backup-codes, with same-origin JSON and field allowlists. OTP delivery, trusted devices and backup-code viewing are not exposed.
+
+Enrollment confirmation and disabling rotate the current session and revoke other sessions plus prior OAuth grants. Password reset preserves MFA and invalidates pending MFA challenges. Verification rechecks account eligibility when creating a session, including accounts suspended after the password step. Native D1 rate limiting applies to all two-factor endpoints; account lockouts also bound failures across source addresses. Migration `0011_mfa.sql` adds the plugin schema and an index for revoking challenges by user. No new Worker bindings or secrets are required; keep `BETTER_AUTH_SECRET` stable because it encrypts the stored credentials.
+
 ## Mail and failure behavior
 
 Email Service sends registration-verification links and email-management/recovery codes using both HTML and plain text in the account's preferred language. Registration token values must survive URL handling unchanged. Private verification delivery failures provide a retry/resend path. Public recovery delivery runs through the request's `waitUntil` callback and returns the same generic result on failed delivery, so delivery status and network latency do not disclose account eligibility. Failed delivery invalidates its challenge and records only a redacted failure event. There is no automatic provider switch or verification bypass.

@@ -2,9 +2,11 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { oauthEn, oauthZh } from './oauth-translations';
 import { emailEn, emailZh } from './email-translations';
+import { mfaEn, mfaZh } from './mfa-translations';
 import { resolveLocale } from './locale';
 
 const enUS = {
+    mfa: mfaEn,
     oauth: oauthEn,
     emails: emailEn,
     avatar: {
@@ -167,6 +169,14 @@ const enUS = {
     passwordMismatch: 'Your passwords do not match.',
     errors: {
         UNKNOWN_ERROR: 'We couldn’t complete this request. Please try again.',
+        INVALID_BACKUP_CODE: 'This recovery code is invalid or has already been used.',
+        INVALID_TWO_FACTOR_COOKIE: 'Your sign-in challenge expired. Sign in again to continue.',
+        TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: 'Too many attempts. Sign in again to start a new challenge.',
+        ACCOUNT_TEMPORARILY_LOCKED: 'Too many failed codes. Please try again in 15 minutes.',
+        TOTP_ALREADY_ENABLED: 'An authenticator is already configured. Refresh the page to continue.',
+        TOTP_NOT_ENABLED: 'No verified authenticator is available. Sign in again or restart setup.',
+        TWO_FACTOR_NOT_ENABLED: 'Two-factor authentication is not enabled.',
+        BACKUP_CODES_NOT_ENABLED: 'No recovery codes are available. Use your authenticator app.',
         AVATAR_INVALID_IMAGE: 'Choose a valid static JPG, PNG or WebP image, up to 16384 pixels per side and 100 megapixels.',
         AVATAR_FILE_TOO_LARGE: 'Choose an image no larger than 20 MiB.',
         AVATAR_WEBP_UNAVAILABLE: 'Your browser cannot create WebP images. Update your browser and try again.',
@@ -199,7 +209,7 @@ const enUS = {
         BANNED_USER: 'This account has been suspended. Contact the operator for help.',
         UNAUTHORIZED: 'Your session has ended. Sign in again to continue.',
         SESSION_EXPIRED: 'Your session has ended. Sign in again to continue.',
-        SESSION_NOT_FRESH: 'Sign out and sign in again to view and manage your sessions.',
+        SESSION_NOT_FRESH: 'Sign out and sign in again to continue this security action.',
         INVALID_CURSOR: 'This page link is no longer valid. Return to the latest records.',
         FORBIDDEN: 'You don’t have permission to perform this action.',
         TOO_MANY_REQUESTS: 'Too many attempts. Please wait before trying again.',
@@ -229,6 +239,7 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    mfa: mfaZh,
     oauth: oauthZh,
     emails: emailZh,
     avatar: {
@@ -391,6 +402,14 @@ const zhCN: typeof enUS = {
     passwordMismatch: '两次输入的密码不一致。',
     errors: {
         UNKNOWN_ERROR: '无法完成此请求，请重试。',
+        INVALID_BACKUP_CODE: '此恢复码无效或已使用。',
+        INVALID_TWO_FACTOR_COOKIE: '登录验证已过期，请返回重新登录。',
+        TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: '尝试次数过多，请返回重新登录以开始新的验证。',
+        ACCOUNT_TEMPORARILY_LOCKED: '动态码验证失败次数过多，请在 15 分钟后重试。',
+        TOTP_ALREADY_ENABLED: '已设置验证器，请刷新页面后继续。',
+        TOTP_NOT_ENABLED: '没有可用的已验证验证器，请重新登录或重新设置。',
+        TWO_FACTOR_NOT_ENABLED: '尚未开启双重验证。',
+        BACKUP_CODES_NOT_ENABLED: '没有可用的恢复码，请使用验证器应用。',
         AVATAR_INVALID_IMAGE: '请选择有效的静态 JPG、PNG 或 WebP 图片，单边不超过 16384 像素、总像素不超过 1 亿。',
         AVATAR_FILE_TOO_LARGE: '请选择不超过 20 MiB 的图片。',
         AVATAR_WEBP_UNAVAILABLE: '当前浏览器无法生成 WebP 图片，请更新浏览器后重试。',
@@ -423,7 +442,7 @@ const zhCN: typeof enUS = {
         BANNED_USER: '此账号已停用，请联系管理员。',
         UNAUTHORIZED: '会话已结束，请重新登录。',
         SESSION_EXPIRED: '会话已结束，请重新登录。',
-        SESSION_NOT_FRESH: '请退出并重新登录，以查看和管理登录会话。',
+        SESSION_NOT_FRESH: '请退出并重新登录后，再执行此安全操作。',
         INVALID_CURSOR: '此分页链接已失效，请返回最新记录。',
         FORBIDDEN: '你没有执行此操作的权限。',
         TOO_MANY_REQUESTS: '尝试次数过多，请稍后重试。',

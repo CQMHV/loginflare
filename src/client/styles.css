@@ -417,3 +417,8 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
     md-dialog { --md-dialog-show-duration: 0ms; --md-dialog-hide-duration: 0ms; }
 }
+/* Keep authenticator QR modules high-contrast in both themes. */
+.mfa-qr { max-width: 100%; height: auto; align-self: start; border-radius: 12px; }
+.mfa-form, .mfa-backup-codes { width: 100%; max-width: 560px; }
+.mfa-backup-codes ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 0; list-style: none; }
+.mfa-backup-codes code { overflow-wrap: anywhere; user-select: all; }

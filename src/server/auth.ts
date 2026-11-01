@@ -1,5 +1,5 @@
 import { betterAuth } from 'better-auth';
-import { admin, captcha, jwt, username } from 'better-auth/plugins';
+import { admin, captcha, jwt, twoFactor, username } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { z } from 'zod';
 import { validateConfig, type Env } from './config.ts';
@@ -86,6 +86,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             emailManagement(env, schedule),
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
             username({ displayUsername: false }),
+            twoFactor({ issuer: 'Loginflare' }),
             jwt({
                 jwks: { keyPairConfig: { alg: 'RS256' } },
                 jwt: { issuer: `${env.AUTH_URL}/api/auth` },

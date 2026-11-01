@@ -18,6 +18,7 @@ import { ConnectionNotice, DataScope, ResourceFeedback, useConfiguration, useDat
 import { PageStateProvider, useClearSecrets, usePageDraft } from './page-state';
 import { Avatar, AvatarEditor } from './Avatar';
 import { ToolbarIcon } from './ToolbarIcon';
+import { MfaSettings } from './MfaSettings';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -302,13 +303,20 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     if (oauthQuery) {
                         const result = await providerRequest(path, credentials, captchaToken);
                         savePreference(locale);
+                        if (result?.twoFactorRedirect) {
+                            setPassword('');
+                            await refresh();
+                            navigate(authPath('two-factor'), { replace: true });
+                            return;
+                        }
                         if (result?.redirect) return;
                         throw new ApiError('INVALID_OAUTH_QUERY', 400);
                     }
-                    await captchaRequest(path, credentials, captchaToken);
+                    const result = await captchaRequest<{ twoFactorRedirect?: boolean }>(path, credentials, captchaToken);
+                    setPassword('');
                     await refresh();
                     savePreference(locale);
-                    navigate(localizedPath(locale, 'account'), { replace: true });
+                    navigate(localizedPath(locale, result.twoFactorRedirect ? 'two-factor' : 'account'), { replace: true });
                     break;
                 }
                 case 'signup':
@@ -380,6 +388,53 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
         {mode === 'signup' && error && <Link className="resend-link" to={authPath('verify-email', { email })}>{t('resend')}</Link>}
         {['verify-email', 'forgot-password', 'reset-password'].includes(mode) && <Link className="back-link" to={authPath('login')}><Icon name="back" size={15} />{t('backToLogin')}</Link>}
+    </AuthLayout>;
+}
+
+function TwoFactorPage() {
+    const { locale, identity, refresh } = useApp();
+    const { t } = useTranslation();
+    const location = useLocation();
+    const navigate = useNavigate();
+    const [backup, setBackup] = useState(false);
+    const [code, setCode] = useState('');
+    const [error, setError] = useState<string>();
+    const [busy, setBusy] = useState(false);
+    const captureSecrets = useClearSecrets(() => setCode(''));
+    const query = oauthSearch(location.search);
+    async function submit(event: FormEvent) {
+        event.preventDefault();
+        const current = captureSecrets();
+        setBusy(true); setError(undefined);
+        try {
+            const path = backup ? '/two-factor/verify-backup-code' : '/two-factor/verify-totp';
+            if (query) {
+                const result = await providerRequest(path, { code: code.trim() });
+                if (!result?.redirect) throw new ApiError('INVALID_OAUTH_QUERY', 400);
+                return;
+            }
+            await request(path, { code: code.trim() });
+            if (!current()) return;
+            setCode('');
+            await refresh();
+            savePreference(locale);
+            navigate(localizedPath(locale, 'account'), { replace: true });
+        } catch (cause) { if (current()) setError(errorCode(cause)); }
+        finally { setBusy(false); }
+    }
+    if (identity && !query) return <Navigate to={localizedPath(locale, 'account')} replace />;
+    return <AuthLayout>
+        <div className="auth-step-icon"><Icon name="shield" size={26} /></div>
+        <h2>{t('mfa.challengeTitle')}</h2>
+        <p className="section-description">{t(backup ? 'mfa.backupDescription' : 'mfa.challengeDescription')}</p>
+        {query && <p className="oauth-context">{t('oauth.authorizationPending')}</p>}
+        <ErrorNotice code={error} />
+        <form className="stack-form" onSubmit={(event) => { void submit(event); }}>
+            <TextField label={t(backup ? 'mfa.backupCode' : 'mfa.code')} name="code" value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode={backup ? 'text' : 'numeric'} pattern={backup ? undefined : '[0-9]{6}'} minLength={backup ? undefined : 6} maxLength={backup ? 32 : 6} required />
+            <Button type="submit" className="primary full" busy={busy}>{t('mfa.verify')}</Button>
+            <Button className="text-button" disabled={busy} onClick={() => { setBackup(!backup); setCode(''); setError(undefined); }}>{t(backup ? 'mfa.useAuthenticator' : 'mfa.useBackup')}</Button>
+        </form>
+        <Link className="back-link" to={withOAuthSearch(localizedPath(locale, 'login'), location.search)}>{t('backToLogin')}</Link>
     </AuthLayout>;
 }
 
@@ -540,7 +595,7 @@ function ProfilePage() {
 
 function SecurityPage() {
     const { t } = useTranslation();
-    const { refresh } = useApp();
+    const { identity, refresh } = useApp();
     const dataActions = useDataActions();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -570,7 +625,7 @@ function SecurityPage() {
         <TextField label={t('newPassword')} type="password" name="newPassword" autoComplete="new-password" value={newPassword} onValueChange={setNewPassword} minLength={8} maxLength={128} required supportingText={t('passwordHint')} />
         <TextField label={t('confirmPassword')} type="password" name="confirmPassword" autoComplete="new-password" value={confirmation} onValueChange={setConfirmation} minLength={8} maxLength={128} required />
         <div className="form-footer"><Button type="submit" className="primary" busy={busy}>{t('changePassword')}</Button></div>
-    </form></section></>;
+    </form></section><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>;
 }
 
 function formatDate(value: string | undefined, locale: Locale): string {
@@ -703,6 +758,7 @@ function LocaleRoutes() {
         <Route path="/:language">
             <Route index element={identity === undefined ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search, hash }} replace />} />
             <Route path="login" element={<AuthPage mode="login" />} />
+            <Route path="two-factor" element={<TwoFactorPage />} />
             <Route path="signup" element={<AuthPage mode="signup" />} />
             <Route path="verify-email" element={<AuthPage mode="verify-email" />} />
             <Route path="verified" element={<AuthPage mode="verified" />} />

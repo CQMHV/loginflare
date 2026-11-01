@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { addVerifiedEmail, cookies, harness, origin, password, recoveryToken, session } from './helpers';
 import { avatarWebp } from './fixtures/avatars';
+import { authenticatorCode } from './totp';
 
 const issuer = `${origin}/api/auth`;
 const callback = 'https://client.example.test/callback';
@@ -182,6 +183,48 @@ async function userInfo(client: Harness, token: string) {
 }
 
 describe('OAuth/OIDC protocol in the Workers runtime', () => {
+    it('continues a signed OAuth request only after MFA and revokes older grants on enrollment and disable', async () => {
+        const { client, registered, cookie } = await fixture();
+        const old = await tokensFor(client, registered, cookie);
+        const enabled = await client.request('/api/auth/two-factor/enable', { cookie, body: { password } });
+        expect(enabled.status).toBe(200);
+        const { totpURI } = await enabled.json<{ totpURI: string }>();
+        const enrollment = await client.request('/api/auth/two-factor/verify-totp', { cookie, body: { code: await authenticatorCode(totpURI) } });
+        expect(enrollment.status).toBe(200);
+        expect((await refresh(client, registered, old.refresh_token)).status).toBe(400);
+        expect((await userInfo(client, old.access_token)).status).toBe(401);
+        const parameters = await authorizationParameters(registered);
+        const initial = await protocol(client, `/api/auth/oauth2/authorize?${parameters.query}`);
+        const login = await redirectUrl(initial);
+        const signed = login.search.slice(1);
+        const pending = await client.request('/api/auth/sign-in/email', { body: { email: 'person@example.test', password, oauth_query: signed } });
+        expect(await pending.clone().json()).toMatchObject({ twoFactorRedirect: true });
+        expect(await session(client, cookies(pending))).toBeNull();
+        const tampered = await client.request('/api/auth/two-factor/verify-totp', {
+            cookie: cookies(pending), body: { code: await authenticatorCode(totpURI), oauth_query: `${signed}tampered` }, headers: { 'CF-Connecting-IP': '192.0.2.41' },
+        });
+        expect(tampered.status).toBe(400);
+        expect(await session(client, cookies(pending))).toBeNull();
+        const verified = await client.request('/api/auth/two-factor/verify-totp', {
+            cookie: cookies(pending), body: { code: await authenticatorCode(totpURI), oauth_query: signed }, headers: { 'CF-Connecting-IP': '192.0.2.42' },
+        });
+        expect(verified.status, await verified.clone().text()).toBe(200);
+        let destination = await redirectUrl(verified);
+        const active = cookies(verified);
+        if (destination.pathname.endsWith('/consent')) {
+            const approved = await client.request('/api/auth/oauth2/consent', { cookie: active, body: { accept: true, oauth_query: destination.search.slice(1) } });
+            destination = await redirectUrl(approved);
+        }
+        expect(destination.origin).toBe(appOrigin);
+        expect(destination.searchParams.get('state')).toBe(parameters.query.get('state'));
+        const issued = await exchange(client, registered, destination.searchParams.get('code')!, parameters.verifier);
+        expect(issued.status, await issued.clone().text()).toBe(200);
+        const tokens = await issued.json<Tokens>();
+        const disabled = await client.request('/api/auth/two-factor/disable', { cookie: active, body: { password }, headers: { 'CF-Connecting-IP': '192.0.2.43' } });
+        expect(disabled.status).toBe(200);
+        expect((await refresh(client, registered, tokens.refresh_token)).status).toBe(400);
+        expect((await userInfo(client, tokens.access_token)).status).toBe(401);
+    });
     it('returns the current avatar only with profile scope while preserving the account subject', async () => {
         const { client, registered, cookie } = await fixture();
         const context = createExecutionContext();

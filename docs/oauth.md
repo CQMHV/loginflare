@@ -91,6 +91,7 @@ Ordinary logout and an explicit security revocation have different meanings. Log
 | Revoke a selected session | Permanently revokes grants originating from that session |
 | Revoke other sessions or change password | Revokes grants from other sessions, including offline grants whose original session already ended; grants from the current session remain |
 | Password reset | Revokes all of the user's OAuth grants |
+| Enable or disable MFA | Rotates the current session and revokes older sessions and previous OAuth grants |
 | Administrator revokes all user sessions | Revokes all of the user's OAuth grants |
 | Suspend account | Revokes all of the user's OAuth grants and rejects further issuance and UserInfo access |
 | Restore account | Allows new sign-in and authorization; previously revoked grants remain revoked |

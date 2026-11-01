@@ -25,8 +25,10 @@ export function createOAuthPolicy(env: Env) {
     async function revokeAll(userId: string, exceptSessionId?: string, remove = false) {
         const now = new Date().toISOString();
         const sessions = `"userId" = ?${exceptSessionId ? ' AND "id" <> ?' : ''}`;
-        const grants = `"userId" = ?${exceptSessionId ? ' AND "originalSessionId" <> ?' : ''}`;
+        const grants = `"userId" = ?${exceptSessionId ? ' AND ("originalSessionId" IS NULL OR "originalSessionId" <> ?)' : ''}`;
         await env.DB.batch([
+            env.DB.prepare(`DELETE FROM "verification" WHERE "value" = ? AND "identifier" LIKE '2fa-%'`)
+                .bind(userId),
             env.DB.prepare(`UPDATE "session" SET "oauthRevokedAt" = ? WHERE ${sessions} AND "oauthRevokedAt" IS NULL`)
                 .bind(now, userId, ...(exceptSessionId ? [exceptSessionId] : [])),
             env.DB.prepare(`UPDATE "oauthGrantPolicy" SET "revokedAt" = ? WHERE ${grants} AND "revokedAt" IS NULL`)
@@ -69,7 +71,14 @@ export function createOAuthPolicy(env: Env) {
         id: 'loginflare-oauth-policy',
         init() {
             return { options: { databaseHooks: {
-                session: { delete: {
+                session: { create: {
+                    async before(session, ctx) {
+                        if (!ctx?.path?.startsWith('/two-factor/')) return;
+                        const user = await env.DB.prepare('SELECT "banned", "emailVerified" FROM "user" WHERE "id" = ?')
+                            .bind(session.userId).first<{ banned: number | null; emailVerified: number }>();
+                        if (!user || user.banned || !user.emailVerified) throw new APIError('FORBIDDEN', { code: 'FORBIDDEN' });
+                    },
+                }, delete: {
                     async before(session, ctx) {
                         if (!ctx) return;
                         const path = ctx.path;
@@ -100,12 +109,22 @@ export function createOAuthPolicy(env: Env) {
             }),
         },
         hooks: { after: [{
-            matcher: (ctx) => ['/admin/revoke-user-sessions', '/change-password'].includes(ctx.path ?? ''),
+            matcher: (ctx) => ['/admin/revoke-user-sessions', '/change-password', '/two-factor/verify-totp', '/two-factor/disable'].includes(ctx.path ?? ''),
             handler: createAuthMiddleware(async (ctx) => {
                 const result = ctx.context.returned;
                 if (isAPIError(result) || (result instanceof Response && !result.ok)) return;
                 if (ctx.path === '/admin/revoke-user-sessions') {
                     if (typeof ctx.body?.userId === 'string') await revokeAll(ctx.body.userId, undefined, true);
+                    return;
+                }
+                if (ctx.path?.startsWith('/two-factor/')) {
+                    // Enrollment and disabling rotate the current session. Revoke all
+                    // older sessions and offline grants after either security change.
+                    const next = ctx.context.newSession;
+                    const previous = ctx.context.session;
+                    if (next && previous && next.session.id !== previous.session.id) {
+                        await revokeAll(next.user.id, next.session.id, true);
+                    }
                     return;
                 }
                 const identity = ctx.context.session;

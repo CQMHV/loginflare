@@ -25,6 +25,11 @@ const routes: Record<string, readonly string[]> = {
     '/change-password': ['POST'],
     '/revoke-session': ['POST'],
     '/revoke-other-sessions': ['POST'],
+    '/two-factor/enable': ['POST'],
+    '/two-factor/disable': ['POST'],
+    '/two-factor/verify-totp': ['POST'],
+    '/two-factor/verify-backup-code': ['POST'],
+    '/two-factor/generate-backup-codes': ['POST'],
     '/admin/get-user': ['GET'],
     '/admin/ban-user': ['POST'],
     '/admin/unban-user': ['POST'],
@@ -50,6 +55,11 @@ const fields: Record<string, readonly string[]> = {
     '/change-password': ['currentPassword', 'newPassword', 'revokeOtherSessions'],
     '/revoke-session': ['token'],
     '/revoke-other-sessions': [],
+    '/two-factor/enable': ['password'],
+    '/two-factor/disable': ['password'],
+    '/two-factor/verify-totp': ['code', 'oauth_query'],
+    '/two-factor/verify-backup-code': ['code', 'oauth_query'],
+    '/two-factor/generate-backup-codes': ['password'],
     '/admin/ban-user': ['userId', 'banReason'],
     '/admin/unban-user': ['userId'],
     '/admin/revoke-user-sessions': ['userId'],
@@ -63,7 +73,8 @@ const fields: Record<string, readonly string[]> = {
 };
 
 const privatePaths = new Set(['/update-user', '/change-password', '/revoke-session', '/revoke-other-sessions',
-    '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove']);
+    '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove',
+    '/two-factor/enable', '/two-factor/disable', '/two-factor/generate-backup-codes']);
 const app = new Hono<{ Bindings: Env }>();
 
 function logPath(path: string): string {
@@ -227,7 +238,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|two-factor|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);

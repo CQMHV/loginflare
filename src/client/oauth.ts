@@ -29,7 +29,7 @@ export function withOAuthSearch(path: string, search: string, extra?: Record<str
 
 export async function providerRequest(path: string, body: Record<string, unknown>, captchaToken?: string) {
     try {
-        const result = await authClient.$fetch<{ redirect?: boolean; url?: string }>(path, {
+        const result = await authClient.$fetch<{ redirect?: boolean; url?: string; twoFactorRedirect?: boolean }>(path, {
             method: 'POST', body,
             headers: captchaToken ? { 'x-captcha-response': captchaToken } : undefined,
         });

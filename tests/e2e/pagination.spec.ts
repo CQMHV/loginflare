@@ -194,9 +194,9 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     executeLocal(`UPDATE session SET "createdAt" = '${new Date(now - 2 * 86_400_000).toISOString()}' WHERE id = '${sessionId}' AND "userId" = '${administrator.id}';`);
     try {
         await page.goto('/en-us/account/sessions');
-        await expect(page.getByRole('alert')).toHaveText('Sign out and sign in again to view and manage your sessions.');
+        await expect(page.getByRole('alert')).toHaveText('Sign out and sign in again to continue this security action.');
         await page.goto('/zh-cn/account/sessions');
-        await expect(page.getByRole('alert')).toHaveText('请退出并重新登录，以查看和管理登录会话。');
+        await expect(page.getByRole('alert')).toHaveText('请退出并重新登录后，再执行此安全操作。');
     } finally {
         executeLocal(`UPDATE session SET "createdAt" = '${new Date().toISOString()}' WHERE id = '${sessionId}' AND "userId" = '${administrator.id}';`);
     }

@@ -14,6 +14,7 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 
 - Register, verify email, resend verification, sign in with an email address or username, and sign out.
 - Recover a forgotten password and change a known password.
+- Enable authenticator-based MFA (TOTP), save or reset one-use recovery codes, and verify email/username and OAuth sign-ins.
 - Update a display name and username, upload/crop/remove a profile photo, and manage active sessions.
 - Manage primary and secondary email addresses on a dedicated page, verify new addresses with codes, and choose the primary sign-in email.
 - Find users by exact ID, username, or primary email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
@@ -22,13 +23,15 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - English and Simplified Chinese pages, error messages, and transactional emails.
 - Better Auth account/session primitives, atomic D1-backed rate limiting, scheduled expiry cleanup, and server-verified Turnstile challenges.
 
-This release does not offer social login, MFA, organizations, multi-tenancy, account deletion, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
+This release does not offer social login, organizations, multi-tenancy, account deletion, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
 
 Usernames are separate from display names. The registration form asks for a unique username of 3–30 ASCII letters, numbers, underscores, or dots; usernames are stored in lowercase and sign-in is case-insensitive. Existing accounts can continue using email and choose a username in their profile. Users can change their username; an existing username cannot be cleared. Email verification is required for both sign-in methods. Only the primary email works as an email sign-in identifier.
 
 The **Email addresses** page manages one primary email and additional secondary emails. Every address is unique across all accounts, regardless of its role. Adding an address requires the current password and verification of a code sent to that address. A verified secondary email can become primary after password confirmation; the previous primary remains secondary. The primary address must be replaced before it can be removed. Password recovery starts with the username or primary email and sends a code to a specified verified primary or secondary address belonging to that account. Secondary emails never identify an account for sign-in.
 
 ## Interface
+
+Set up MFA on the account center's **Security** page using your current password. Scan the QR code or enter the setup key, save the recovery codes, and confirm an authenticator code to activate MFA. Each recovery code works once; resetting codes invalidates the previous set. Enabling or disabling MFA revokes other sessions and previous application grants. Password recovery keeps MFA enabled. A recovery code can replace a lost authenticator, but password recovery cannot bypass MFA if both are lost.
 
 Profile photos use a private R2 bucket and Better Auth's existing `user.image` field. Choose a static JPG, PNG or WebP image up to 20 MiB in the account center, then drag, zoom or rotate it inside the circular crop frame. Mouse, touch and keyboard controls share the same preview. The initial/minimum zoom fills the crop frame exactly; dragging stays within the image bounds. The browser creates a 256-pixel square from the original and encodes the visible composition as WebP before upload; the Worker accepts only WebP, checks its dimensions and size and strips metadata. Header/profile photos, user management and OIDC `picture` claims share that address. Photo changes invalidate the existing account/admin caches across tabs. See [avatar storage and lifecycle](docs/architecture.md#avatars) and the [deployment prerequisites](docs/deployment.md).
 

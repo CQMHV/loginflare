@@ -4,6 +4,8 @@
 
 ## Prerequisites
 
+Before deploying the MFA-enabled build, apply `0011_mfa.sql` through the existing migration wrapper. It preserves existing accounts with MFA disabled and adds the two-factor credentials table. No additional bindings or secrets are needed. Keep `BETTER_AUTH_SECRET` stable: TOTP secrets and recovery codes are encrypted with it. Users manage MFA on the Security page; password recovery does not disable it.
+
 Deploy only after local tests and a production build succeed. Review the target account, environment, Worker, database ID, public URL, and sending domain before making any remote change.
 
 - A Cloudflare account with Workers Paid for arbitrary-recipient transactional email.

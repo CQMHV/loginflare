@@ -7,6 +7,7 @@ export interface User {
     image?: string | null;
     email: string;
     emailVerified: boolean;
+    twoFactorEnabled?: boolean;
     role?: string | null;
     locale?: Locale | null;
     banned?: boolean | null;
