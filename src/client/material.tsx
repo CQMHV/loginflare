@@ -109,8 +109,8 @@ export function Select({ label, value, options, onChange }: { label: string; val
     }, ...options.map((option) => createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
 }
 
-export function MenuButton({ label, description, icon, options, onSelect, className = '', busy = false }: {
-    label: string; description?: string; icon: ReactNode; className?: string; busy?: boolean;
+export function MenuButton({ label, description, icon, options, onSelect, className = '', busy = false, variant = 'tonal' }: {
+    label: string; description?: string; icon: ReactNode; className?: string; busy?: boolean; variant?: 'tonal' | 'avatar';
     options: { value: string; label: string; selected?: boolean; icon?: ReactNode }[];
     onSelect: (value: string) => void;
 }) {
@@ -159,9 +159,9 @@ export function MenuButton({ label, description, icon, options, onSelect, classN
     }
     const currentLabel = description ?? options.find((option) => option.selected)?.label;
     return <div className={`menu-control ${className}`}>
-        {createElement('md-filled-tonal-icon-button', { id, type: 'button', 'aria-label': label, 'aria-description': currentLabel, title: currentLabel ? `${label}: ${currentLabel}` : label, 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'aria-controls': menuId, disabled: busy, 'aria-busy': busy || undefined,
+        {createElement(variant === 'avatar' ? 'button' : 'md-filled-tonal-icon-button', { id, type: 'button', className: variant === 'avatar' ? 'avatar-menu-trigger' : undefined, 'aria-label': label, 'aria-description': currentLabel, title: currentLabel ? `${label}: ${currentLabel}` : label, 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'aria-controls': menuId, disabled: busy, 'aria-busy': busy || undefined,
             onClick: () => { if (menu.current?.open) menu.current.close(); else show(); }, onKeyDown: keyDown,
-        }, icon)}
+        }, icon, variant === 'avatar' && createElement('md-ripple'), variant === 'avatar' && createElement('md-focus-ring'))}
         {createElement('md-menu', { ref: menu, id: menuId, anchor: id, positioning: 'popover', 'aria-label': label, anchorCorner: 'end-end', menuCorner: 'start-end' },
             ...options.map((option) => createElement('md-menu-item', {
                 key: option.value, type: 'button', 'data-menu-value': option.value, selected: Boolean(option.selected), 'aria-selected': option.selected ? 'true' : undefined,

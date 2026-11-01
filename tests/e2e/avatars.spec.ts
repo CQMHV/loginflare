@@ -77,7 +77,7 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
     await expect.poll(() => headerPhoto.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(256);
     expect(await headerPhoto.evaluate((image) => {
         const photo = image.getBoundingClientRect();
-        const button = image.closest('md-filled-tonal-icon-button')!.getBoundingClientRect();
+        const button = image.closest('button')!.getBoundingClientRect();
         return { fillsButton: photo.width === button.width && photo.height === button.height, objectFit: getComputedStyle(image).objectFit };
     })).toEqual({ fillsButton: true, objectFit: 'cover' });
     await page.screenshot({ path: test.info().outputPath('header-profile-photo.png'), fullPage: false });

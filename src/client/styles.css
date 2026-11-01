@@ -234,6 +234,11 @@ md-filled-button:not(.danger-button) {
 .workspace-title svg { color: var(--md-sys-color-primary); }
 .workspace-switch { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 16px; font-size: 14px; font-weight: 500; }
 .workspace-switch:hover { background: var(--md-sys-color-surface-container-high); text-decoration: none; }
+.avatar-menu-trigger { position: relative; display: grid; place-items: center; flex-shrink: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--md-sys-color-on-surface); font: inherit; cursor: pointer; --md-focus-ring-shape: 50%; }
+.avatar-menu-trigger { width: 40px; height: 40px; }
+.avatar-menu-trigger::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+.avatar-menu-trigger:focus-visible { outline: none; }
+.avatar-menu-trigger:disabled { cursor: wait; }
 .user-avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; }
 .page-content { width: 100%; max-width: 1180px; padding: 32px 48px 56px; margin: 0 auto; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
