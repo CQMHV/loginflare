@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { ApiError, errorCode, fetchJson, request, type Identity } from './api';
 import { Button, Progress } from './material';
 import i18n from './i18n';
+import type { Branding } from '../shared/branding';
 
 export const identityKey = ['identity'] as const;
 export const freshness = { identity: 15_000, sessions: 15_000, ordinary: 60_000, configuration: 300_000 };
-export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'consent';
+export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'consent' | 'branding';
 type Group = Resource | 'profile';
-type SyncMessage = { type: 'identity' | 'signout' | 'invalidate'; owner?: string; groups?: Group[] };
+type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding'; owner?: string; groups?: Group[] };
 const SyncContext = createContext<(message: SyncMessage) => void>(() => {});
 const ScopeContext = createContext({ scope: '', owner: '' });
 
@@ -92,6 +93,9 @@ export function DataProvider({ children }: PropsWithChildren) {
         bus.onmessage = (event: MessageEvent<SyncMessage>) => {
             const message = event.data;
             if (message?.type === 'signout') endIdentity(client);
+            else if (message?.type === 'branding') {
+                void client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'branding' || (query.queryKey[0] === 'private' && query.queryKey[2] === 'branding'), refetchType: document.visibilityState === 'visible' ? 'active' : 'none' });
+            }
             else if (message?.type === 'identity') {
                 clearPrivate(client);
                 void client.resetQueries({ queryKey: identityKey, exact: true });
@@ -172,6 +176,13 @@ export function useDataActions() {
             await invalidate(client, scope, groups);
         },
         fail: (error: unknown) => handlePrivateError(client, scope, error),
+        async brandingSaved(value: Branding) {
+            await client.cancelQueries({ predicate: (query) => query.queryKey[0] === 'branding' || (query.queryKey[0] === 'private' && query.queryKey[1] === scope && query.queryKey[2] === 'branding') });
+            const newer = (previous: Branding | undefined) => previous && previous.revision > value.revision ? previous : value;
+            client.setQueryData<Branding>(['branding'], newer);
+            if (scope === identityScope(client.getQueryData(identityKey))) client.setQueryData<Branding>(['private', scope, 'branding', ''], newer);
+            publish({ type: 'branding' });
+        },
         signOut() { endIdentity(client); publish({ type: 'signout' }); },
     };
 }

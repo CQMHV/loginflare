@@ -40,7 +40,7 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
     return fetchJson<T>(`/api/auth${path}`, body, undefined, undefined, signal);
 }
 
-export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> {
+export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', signal?: AbortSignal): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (captchaToken) headers['x-captcha-response'] = captchaToken;

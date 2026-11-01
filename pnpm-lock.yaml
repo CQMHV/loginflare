@@ -20,6 +20,9 @@ importers:
       '@material-symbols/svg-500':
         specifier: 0.45.8
         version: 0.45.8
+      '@material/material-color-utilities':
+        specifier: 0.3.0
+        version: 0.3.0
       '@material/web':
         specifier: 2.5.0
         version: 2.5.0
@@ -839,6 +842,9 @@ packages:
 
   '@material-symbols/svg-500@0.45.8':
     resolution: {integrity: sha512-Hl1IUi3ya9TQoPYSky8vMkSdBziA0pLzM+uMizxKbp/8W8mljGxYkBDYat08LND76JA7n27xRJ7RRkAT29Lt0Q==}
+
+  '@material/material-color-utilities@0.3.0':
+    resolution: {integrity: sha512-ztmtTd6xwnuh2/xu+Vb01btgV8SQWYCaK56CkRK8gEkWe5TuDyBcYJ0wgkMRn+2VcE9KUmhvkz+N9GHrqw/C0g==}
 
   '@material/web@2.5.0':
     resolution: {integrity: sha512-x2Uovyq8E/Zc1xHXd9s1eBMXF5pMHVAt70pISKd0fL3Ajj4L6zQaQUY/awcfR2RDAMKXC7i4+vr0arv1YaOR/g==}
@@ -2281,6 +2287,8 @@ snapshots:
       '@lit-labs/ssr-dom-shim': 1.6.0
 
   '@material-symbols/svg-500@0.45.8': {}
+
+  '@material/material-color-utilities@0.3.0': {}
 
   '@material/web@2.5.0':
     dependencies:

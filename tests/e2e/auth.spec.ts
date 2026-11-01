@@ -198,7 +198,7 @@ test('completes registration, recovery, account management, and administrator co
     await page.getByRole('link', { name: 'Administration', exact: true }).click();
     await expect(page).toHaveURL('/en-us/admin/users');
     const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
-    await expect(administrationNavigation.getByRole('link')).toHaveCount(2);
+    await expect(administrationNavigation.getByRole('link')).toHaveCount(3);
     await expect(administrationNavigation.getByRole('link', { name: 'Users', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'Applications', exact: true })).toBeVisible();
     await expect(accountNavigation).toHaveCount(0);
@@ -221,7 +221,7 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.locator('.workspace-title')).toHaveText('管理后台');
     await page.goto('/zh-cn/admin');
     await expect(page).toHaveURL('/zh-cn/admin/users');
-    await expect(page.getByRole('navigation', { name: '管理导航', exact: true }).getByRole('link')).toHaveCount(2);
+    await expect(page.getByRole('navigation', { name: '管理导航', exact: true }).getByRole('link')).toHaveCount(3);
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('admin-mobile-zh-cn.png'), fullPage: true });

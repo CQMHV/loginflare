@@ -1,6 +1,13 @@
 import { expect, test, type Page } from './fixtures';
 import { renderedTextContrast } from './contrast';
 
+async function themeSurface(page: Page, theme: 'light' | 'dark') {
+    return page.evaluate((theme) => {
+        const color = window.loginflareBranding.getSnapshot().colors[theme].surface!;
+        return `rgb(${[1, 3, 5].map((start) => parseInt(color.slice(start, start + 2), 16)).join(', ')})`;
+    }, theme);
+}
+
 async function chooseTheme(page: Page, name: 'Light' | 'Dark' | 'System' | '浅色' | '深色' | '跟随系统') {
     await expect(page.locator('.theme-control md-menu .menu')).toBeHidden();
     await page.getByRole('button', { name: /^(Theme|主题)$/ }).click();
@@ -44,7 +51,7 @@ test('initializes the system theme before the React application loads', async ({
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'system');
     await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
-    await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(25, 21, 17)');
+    await expect(page.locator('html')).toHaveCSS('background-color', await themeSurface(page, 'dark'));
     await expect(page.locator('#root')).toBeEmpty();
     expect(await page.evaluate(() => localStorage.getItem('loginflare.theme'))).toBeNull();
     await page.emulateMedia({ colorScheme: 'light' });
@@ -58,7 +65,7 @@ test('initializes the system theme before the React application loads', async ({
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(25, 21, 17)');
+    await expect(page.locator('html')).toHaveCSS('background-color', await themeSurface(page, 'dark'));
 });
 
 test('persists a manual choice across navigation and reloads, then resumes live system changes', async ({ page }) => {

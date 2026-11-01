@@ -25,6 +25,7 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
         { table: 'emailChallenge', cutoff },
         { table: 'verification', cutoff: cutoffIso },
         { table: 'userAvatar', cutoff, column: 'deleteAfter', avatars: true },
+        { table: 'brandLogo', cutoff, column: 'deleteAfter', logos: true },
         { table: 'oauthAccessToken', cutoff: cutoffIso },
         { table: 'oauthRefreshToken', cutoff: cutoffIso, guard: 'AND NOT EXISTS (SELECT 1 FROM "oauthAccessToken" a WHERE a."refreshId" = "oauthRefreshToken"."id")' },
         { table: 'session', cutoff: cutoffIso, guard: `AND NOT EXISTS (SELECT 1 FROM "oauthAccessToken" a WHERE a."sessionId" = "session"."id")
@@ -38,24 +39,25 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
             if (!canContinue()) break;
             const position = positions.get(task.table);
             const column = task.column ?? 'expiresAt';
+            const reference = task.avatars ? 'EXISTS (SELECT 1 FROM "user" u WHERE u."id" = "userAvatar"."userId" AND u."image" = "userAvatar"."url")' : task.logos ? 'EXISTS (SELECT 1 FROM "siteBranding" b WHERE b."logoId" = "brandLogo"."id")' : '';
             const values: (string | number)[] = [task.cutoff];
             if (position?.id) values.push(typeof task.cutoff === 'number' ? Number(position.expiresAt) : position.expiresAt, position.id);
             values.push(batchSize);
             // Select a bounded page before reference checks, never scan for 500 eligible deletions.
-            const rows = await env.DB.prepare(`SELECT "id", "${column}" AS "expiresAt" ${task.avatars ? ', EXISTS (SELECT 1 FROM "user" u WHERE u."id" = "userAvatar"."userId" AND u."image" = "userAvatar"."url") AS "referenced"' : ''}
+            const rows = await env.DB.prepare(`SELECT "id", "${column}" AS "expiresAt" ${reference ? `, ${reference} AS "referenced"` : ''}
                 FROM "${task.table}" WHERE "${column}" <= ?
                 ${position?.id ? `AND ("${column}", "id") > (?, ?)` : ''} ORDER BY "${column}", "id" LIMIT ?`)
                 .bind(...values).all<{ id: string; expiresAt: string | number; referenced?: number }>();
             if (!canContinue()) break;
-            if (task.avatars) {
-                const obsolete = rows.results.filter((row) => !row.referenced).map((row) => row.id);
+            if (task.avatars || task.logos) {
+                const obsolete = rows.results.filter((row) => !row.referenced).map((row) => task.logos ? `branding/${row.id}` : row.id);
                 if (obsolete.length) await env.AVATARS.delete(obsolete);
             }
             const statements: D1PreparedStatement[] = [];
             for (let offset = 0; offset < rows.results.length; offset += 90) {
                 const ids = rows.results.slice(offset, offset + 90).map((row) => row.id);
                 statements.push(env.DB.prepare(`DELETE FROM "${task.table}" WHERE "id" IN (${ids.map(() => '?').join(',')}) AND "${column}" <= ? ${task.guard ?? ''}
-                    ${task.avatars ? 'AND NOT EXISTS (SELECT 1 FROM "user" u WHERE u."id" = "userAvatar"."userId" AND u."image" = "userAvatar"."url")' : ''}`)
+                    ${reference ? `AND NOT ${reference}` : ''}`)
                     .bind(...ids, task.cutoff));
             }
             const last = rows.results.at(-1);

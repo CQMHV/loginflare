@@ -36,7 +36,7 @@ Keep the `global_fetch_strictly_public` compatibility flag enabled alongside `no
 | `BETTER_AUTH_SECRET` | Worker secret | Random authentication secret, at least 32 characters |
 | `TURNSTILE_SECRET_KEY` | Worker secret | Secret matching the production Turnstile site key |
 | `DB` | Environment's D1 binding | Its independent database ID and migration directory |
-| `AVATARS` | Environment's R2 binding | Private bucket for that environment's profile photos |
+| `AVATARS` | Environment's R2 binding | Private bucket for that environment's profile photos and brand logos |
 | `EMAIL` | Environment's `send_email` binding | Cloudflare Email Service sender |
 
 The trusted origin is taken from `AUTH_URL` and must match the public origin. Missing mandatory configuration is an error, not a reason to disable verification or CAPTCHA. Test Turnstile keys are rejected outside development.
@@ -44,6 +44,8 @@ The trusted origin is taken from `AUTH_URL` and must match the public origin. Mi
 Use Cloudflare's local bindings by default when developing. A remote email binding sends real messages and is not needed for the local test suite.
 
 Create the intended private avatar bucket before remote deployment, and set its `bucket_name` in that environment's `r2_buckets`. The staging declaration names `loginflare-staging-avatars`; the production name is a placeholder. These declarations do not provision a bucket. Keep public bucket access disabled: the Worker serves the controlled `/avatars/:id` image route. Local R2 bindings have `remote: false` and use `.cloudflare/state`; browser/scale suites use their own isolated directories. The deployment account must be able to bind the intended bucket. No remote bucket is created by local development/tests.
+
+The same private bucket stores brand logos under `branding/`; `/branding/logos/:id` serves the isolated image responses. Apply all committed D1 migrations, including `0009_branding.sql` and `0010_branding_color_scheme.sql`, before switching to this Worker version. Brand names, logos, source colors and scheme variants are managed in the administrator console rather than environment variables. Existing branding receives the Tonal Spot variant during migration, preserving its generated colors.
 
 ## Cloudflare CLI
 

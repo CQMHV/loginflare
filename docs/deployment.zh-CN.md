@@ -36,7 +36,7 @@ Email Sending 当前为 Beta，生产上线前应核对最新的 [Email Service 
 | `BETTER_AUTH_SECRET` | Worker Secret | 至少 32 字符的随机认证密钥 |
 | `TURNSTILE_SECRET_KEY` | Worker Secret | 与正式站点密钥配对的私密密钥 |
 | `DB` | 对应环境的 D1 绑定 | 独立数据库 ID 与迁移目录 |
-| `AVATARS` | 对应环境的 R2 绑定 | 该环境保存头像的私有存储桶 |
+| `AVATARS` | 对应环境的 R2 绑定 | 该环境保存头像与品牌 Logo 的私有存储桶 |
 | `EMAIL` | 对应环境的 `send_email` 绑定 | Cloudflare Email Service 发信能力 |
 
 可信 Origin 取自 `AUTH_URL`，应与公开 Origin 一致。必需配置缺失时明确报错，不跳过邮箱验证或防机器人校验。开发环境以外会拒绝 Turnstile 测试密钥。
@@ -44,6 +44,8 @@ Email Sending 当前为 Beta，生产上线前应核对最新的 [Email Service 
 开发默认使用本地模拟绑定。远程邮件绑定会发送真实邮件，本地测试不需要启用。
 
 远程部署前先创建该环境的私有头像桶，并在 `r2_buckets` 填入 `bucket_name`。staging 声明使用 `loginflare-staging-avatars`，production 名称仍为占位值；声明本身不会创建存储桶。保持桶的公开访问关闭，由 Worker 的 `/avatars/:id` 路由返回头像。开发绑定使用 `remote: false` 和 `.cloudflare/state`，浏览器/规模测试使用各自的隔离目录。部署账号需能绑定目标桶。本次功能的本地开发和测试不会创建远程桶。
+
+同一私有桶也存储 `branding/` 下的品牌 Logo，由 `/branding/logos/:id` 返回受限图片响应。切换至此 Worker 版本前，应应用全部迁移，包括 `0009_branding.sql` 与 `0010_branding_color_scheme.sql`。品牌名、Logo、主题色与配色方案在管理后台维护，不使用环境变量配置。迁移时现有品牌设置会获得调性点缀（Tonal Spot）方案，保持原有生成配色。
 
 ## Cloudflare CLI
 

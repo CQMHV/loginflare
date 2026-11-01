@@ -84,6 +84,7 @@ interface TextFieldProps {
     maxLength?: number;
     pattern?: string;
     required?: boolean;
+    disabled?: boolean;
     readOnly?: boolean;
     supportingText?: string;
 }
@@ -102,9 +103,9 @@ export function Checkbox({ label, checked, onCheckedChange }: { label: string; c
     })}<span>{label}</span></label>;
 }
 
-export function Select({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
+export function Select({ label, value, options, onChange, disabled = false }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean }) {
     return createElement('md-outlined-select', {
-        value, label, 'aria-label': label,
+        value, label, disabled, 'aria-label': label,
         onChange: (event: Event) => onChange((event.currentTarget as HTMLElement & { value: string }).value),
     }, ...options.map((option) => createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
 }

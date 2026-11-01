@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { cloudflare } from '@cloudflare/vite-plugin';
+import { brandColors } from './src/shared/brand-colors.ts';
+import { defaultBranding } from './src/shared/branding.ts';
 
 export default defineConfig({
     cacheDir: 'node_modules/.vite/loginflare',
@@ -27,6 +29,18 @@ export default defineConfig({
             plugins: [{
                 postcssPlugin: 'loginflare-font-display',
                 AtRule: {
+                    'loginflare-default-colors'(rule, { Rule, Declaration }) {
+                        const schemes = brandColors(defaultBranding.primaryColor, defaultBranding.colorScheme);
+                        rule.replaceWith(...Object.entries(schemes).map(([theme, colors]) => {
+                            const block = new Rule({ selector: theme === 'light' ? ':root' : ":root[data-theme='dark']" });
+                            block.source = rule.source;
+                            for (const [role, color] of Object.entries(colors)) {
+                                const declaration = new Declaration({ prop: `--md-sys-color-${role}`, value: color });
+                                declaration.source = rule.source; block.append(declaration);
+                            }
+                            return block;
+                        }));
+                    },
                     'font-face'(rule) {
                         // Keep Fontsource's subsets and URLs while applying one
                         // loading policy in both development and production.

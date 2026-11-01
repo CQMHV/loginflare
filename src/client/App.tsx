@@ -18,6 +18,8 @@ import { ConnectionNotice, DataScope, ResourceFeedback, useConfiguration, useDat
 import { PageStateProvider, useClearSecrets, usePageDraft } from './page-state';
 import { Avatar, AvatarEditor } from './Avatar';
 import { ToolbarIcon } from './ToolbarIcon';
+import { BrandingUpdates, useBranding } from './branding';
+import { BrandingSettings } from './BrandingSettings';
 import { MfaSettings } from './MfaSettings';
 
 interface AppContextValue {
@@ -55,8 +57,9 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
 
 function Brand({ destination }: { destination?: string }) {
     const { locale } = useApp();
-    return <Link className="brand" to={destination ?? localizedPath(locale)} aria-label="Loginflare">
-        <svg className="brand-logo" width="160" height="38" viewBox="96 104 2016 476" aria-hidden="true"><use href="/assets/logo.svg#logo" /></svg>
+    const brand = useBranding();
+    return <Link className="brand" to={destination ?? localizedPath(locale)} aria-label={brand.name}>
+        <img className="brand-logo" src={brand.logoUrl} alt="" onError={(event) => { if (event.currentTarget.getAttribute('src') !== '/assets/logo.svg') event.currentTarget.src = '/assets/logo.svg'; }} /><span className="brand-name">{brand.name}</span>
         <span className="version-label">BETA</span>
     </Link>;
 }
@@ -138,6 +141,7 @@ function Busy() {
 
 function AuthLayout({ children }: PropsWithChildren) {
     const { t } = useTranslation();
+    const brand = useBranding();
     return <div className="auth-shell">
         <aside className="auth-story">
             <Brand />
@@ -159,7 +163,7 @@ function AuthLayout({ children }: PropsWithChildren) {
         <main className="auth-main">
             <div className="auth-top"><div className="mobile-brand"><Brand /></div><div className="display-controls"><LanguageSwitcher compact /><ThemeSwitcher /></div></div>
             <div className="auth-form-container">{children}</div>
-            <footer className="auth-footer">Loginflare <span>·</span> {t('tagline')}</footer>
+            <footer className="auth-footer">{brand.name} <span>·</span> {t('tagline')}</footer>
         </main>
     </div>;
 }
@@ -494,6 +498,7 @@ interface AppFrameProps {
 }
 
 function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget }: AppFrameProps) {
+    const brand = useBranding();
     const { identity, locale } = useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
@@ -524,7 +529,7 @@ function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget
             <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><LanguageSwitcher compact /><ThemeSwitcher /><AccountMenu busy={busy} onSignOut={() => { void signOut(); }} /></div></header>
             <div className="workspace-bar"><span className="workspace-title"><Icon name={area === 'admin' ? 'shield' : 'profile'} />{title}</span>{switchTarget && <Link className="workspace-switch" to={switchTarget.to}><Icon name={switchTarget.icon} size={18} />{switchTarget.label}<Icon name="arrow" size={16} /></Link>}</div>
             <main className="page-content"><ConnectionNotice /><ErrorNotice code={error} /><Outlet /></main>
-            <footer className="app-footer">Loginflare <span>·</span> {t('openSource')}</footer>
+            <footer className="app-footer">{brand.name} <span>·</span> {t('openSource')}</footer>
         </div>
     </div>;
 }
@@ -547,7 +552,8 @@ function AdminLayout() {
     return <AppFrame area="admin" title={t('adminConsole')} home={localizedPath(locale, 'admin/users')} navigationLabel={t('adminNavigation')}
         navigation={<><p className="nav-label">{t('adminConsole')}</p>
             <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink></>}
+            <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink></>}
         switchTarget={{ to: localizedPath(locale, 'account'), label: t('accountCenter'), icon: 'profile' }} />;
 }
 
@@ -776,6 +782,7 @@ function LocaleRoutes() {
                     <Route element={<AdminLayout />}>
                         <Route path="admin" element={<Navigate to={localizedPath(locale, 'admin/users')} replace />} />
                         <Route path="admin/users" element={<UsersPage />} />
+                        <Route path="admin/branding" element={<BrandingSettings />} />
                         <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
                         <Route path="admin/applications/new" element={<ApplicationEditor key="new" locale={locale} create />} />
@@ -790,6 +797,7 @@ function LocaleRoutes() {
 }
 
 export default function App() {
+    const brand = useBranding();
     const location = useLocation();
     const identityQuery = useIdentity();
     const identity = identityQuery.data === undefined && identityQuery.isError ? null : identityQuery.data;
@@ -800,11 +808,11 @@ export default function App() {
     useEffect(() => {
         document.documentElement.lang = locale;
         void i18n.changeLanguage(locale);
-        document.title = 'Loginflare';
-    }, [locale]);
+        document.title = brand.name;
+    }, [locale, brand.name]);
 
     const context = { identity, refresh, locale };
-    return <AppContext.Provider value={context}><DataScope identity={identity}><PageStateProvider key={identity ? `${identity.user.id}:${identity.user.role ?? 'user'}` : ''}>
+    return <AppContext.Provider value={context}><BrandingUpdates /><DataScope identity={identity}><PageStateProvider key={identity ? `${identity.user.id}:${identity.user.role ?? 'user'}` : ''}>
         {loadError && <div className="global-error"><ErrorNotice code={loadError} /><Button type="button" className="text-button" onClick={() => { void identityQuery.refetch(); }}>{i18n.t('tryAgain')}</Button></div>}
         {location.pathname === '/' ? (identity === undefined && !loadError ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search: location.search, hash: location.hash }} replace />) : <LocaleRoutes />}
     </PageStateProvider></DataScope></AppContext.Provider>;

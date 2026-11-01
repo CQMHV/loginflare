@@ -8,8 +8,9 @@ import add from '@material-symbols/svg-500/rounded/add.svg?raw';
 import remove from '@material-symbols/svg-500/rounded/remove.svg?raw';
 import rotate_right from '@material-symbols/svg-500/rounded/rotate_right.svg?raw';
 import restart_alt from '@material-symbols/svg-500/rounded/restart_alt.svg?raw';
+import settings from '@material-symbols/svg-500/rounded/settings.svg?raw';
 
-const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt };
+const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt, settings };
 
 export function ToolbarIcon({ name }: { name: keyof typeof symbols }) {
     // Only fixed Material Symbols assets from the pinned package enter this markup.

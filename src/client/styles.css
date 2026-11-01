@@ -1,6 +1,8 @@
 @import '@fontsource-variable/roboto/index.css';
 @import '@fontsource-variable/noto-sans-sc/index.css';
 
+@loginflare-default-colors;
+
 :root {
     color-scheme: light;
     font-family: var(--md-ref-typeface-plain);
@@ -9,44 +11,7 @@
     -webkit-font-smoothing: antialiased;
     --md-ref-typeface-plain: 'Roboto Variable', 'Noto Sans SC Variable', 'Segoe UI', 'Microsoft YaHei', sans-serif;
     --md-ref-typeface-brand: var(--md-ref-typeface-plain);
-    /* Brand emphasis and readable action colors have different contrast needs. */
-    --loginflare-brand: #f38020;
-    --loginflare-on-brand: #201a15;
     --loginflare-scrollbar-size: 8px;
-    --md-sys-color-primary: #a13e00;
-    --md-sys-color-on-primary: #ffffff;
-    --md-sys-color-primary-container: #ffdeb5;
-    --md-sys-color-on-primary-container: #321300;
-    --md-sys-color-secondary: #70523b;
-    --md-sys-color-on-secondary: #ffffff;
-    --md-sys-color-secondary-container: #ffe4ca;
-    --md-sys-color-on-secondary-container: #2c1c10;
-    --md-sys-color-tertiary: #3f6260;
-    --md-sys-color-on-tertiary: #ffffff;
-    --md-sys-color-tertiary-container: #c2e9e5;
-    --md-sys-color-on-tertiary-container: #00201f;
-    --md-sys-color-error: #ba1a1a;
-    --md-sys-color-on-error: #ffffff;
-    --md-sys-color-error-container: #ffdad6;
-    --md-sys-color-on-error-container: #410002;
-    --md-sys-color-background: #fffbf7;
-    --md-sys-color-on-background: #231f1b;
-    --md-sys-color-surface: #fffbf7;
-    --md-sys-color-on-surface: #231f1b;
-    --md-sys-color-surface-variant: #f2e3d5;
-    --md-sys-color-on-surface-variant: #55463a;
-    --md-sys-color-surface-container-lowest: #ffffff;
-    --md-sys-color-surface-container-low: #fff5eb;
-    --md-sys-color-surface-container: #faeee2;
-    --md-sys-color-surface-container-high: #f4e8dc;
-    --md-sys-color-surface-container-highest: #eee2d6;
-    --md-sys-color-outline: #827365;
-    --md-sys-color-outline-variant: #d8c3b0;
-    --md-sys-color-inverse-surface: #38302a;
-    --md-sys-color-inverse-on-surface: #fff0e3;
-    --md-sys-color-inverse-primary: #ffb77c;
-    --md-sys-color-shadow: #000000;
-    --md-sys-color-scrim: #000000;
     --md-sys-shape-corner-small: 8px;
     --md-sys-shape-corner-medium: 12px;
     --md-sys-shape-corner-large: 16px;
@@ -59,38 +24,6 @@
 }
 :root[data-theme='dark'] {
     color-scheme: dark;
-    --md-sys-color-primary: #ffb77c;
-    --md-sys-color-on-primary: #512600;
-    --md-sys-color-primary-container: #733600;
-    --md-sys-color-on-primary-container: #ffdcc0;
-    --md-sys-color-secondary: #e3bfa3;
-    --md-sys-color-on-secondary: #412c1b;
-    --md-sys-color-secondary-container: #594230;
-    --md-sys-color-on-secondary-container: #ffdcc0;
-    --md-sys-color-tertiary: #a7ceca;
-    --md-sys-color-on-tertiary: #0d3734;
-    --md-sys-color-tertiary-container: #294e4b;
-    --md-sys-color-on-tertiary-container: #c2e9e5;
-    --md-sys-color-error: #ffb4ab;
-    --md-sys-color-on-error: #690005;
-    --md-sys-color-error-container: #93000a;
-    --md-sys-color-on-error-container: #ffdad6;
-    --md-sys-color-background: #191511;
-    --md-sys-color-on-background: #eee0d5;
-    --md-sys-color-surface: #191511;
-    --md-sys-color-on-surface: #eee0d5;
-    --md-sys-color-surface-variant: #514439;
-    --md-sys-color-on-surface-variant: #d8c3b0;
-    --md-sys-color-surface-container-lowest: #130f0c;
-    --md-sys-color-surface-container-low: #211d19;
-    --md-sys-color-surface-container: #25211d;
-    --md-sys-color-surface-container-high: #302b27;
-    --md-sys-color-surface-container-highest: #3b3632;
-    --md-sys-color-outline: #a08d7d;
-    --md-sys-color-outline-variant: #514439;
-    --md-sys-color-inverse-surface: #eee0d5;
-    --md-sys-color-inverse-on-surface: #38302a;
-    --md-sys-color-inverse-primary: #a13e00;
 }
 * { box-sizing: border-box; }
 @media (pointer: fine) {
@@ -123,20 +56,6 @@ md-filled-button, md-outlined-button, md-text-button, md-icon-button, md-checkbo
 md-outlined-text-field { width: 100%; min-width: 0; text-align: start; }
 md-outlined-text-field[type='textarea'] { --md-outlined-text-field-container-shape: 12px; }
 md-icon-button { flex-shrink: 0; }
-/* Preserve Material state layers while keeping orange-button labels readable. */
-md-filled-button:not(.danger-button) {
-    --md-filled-button-container-color: var(--loginflare-brand);
-    --md-filled-button-label-text-color: var(--loginflare-on-brand);
-    --md-filled-button-icon-color: var(--loginflare-on-brand);
-    --md-filled-button-hover-label-text-color: var(--loginflare-on-brand);
-    --md-filled-button-focus-label-text-color: var(--loginflare-on-brand);
-    --md-filled-button-pressed-label-text-color: var(--loginflare-on-brand);
-    --md-filled-button-hover-icon-color: var(--loginflare-on-brand);
-    --md-filled-button-focus-icon-color: var(--loginflare-on-brand);
-    --md-filled-button-pressed-icon-color: var(--loginflare-on-brand);
-    --md-filled-button-hover-state-layer-color: var(--loginflare-on-brand);
-    --md-filled-button-pressed-state-layer-color: var(--loginflare-on-brand);
-}
 .danger-button {
     --md-filled-button-container-color: var(--md-sys-color-error);
     --md-filled-button-label-text-color: var(--md-sys-color-on-error);
@@ -153,9 +72,10 @@ md-filled-button:not(.danger-button) {
 .danger { --md-text-button-label-text-color: var(--md-sys-color-error); --md-text-button-hover-label-text-color: var(--md-sys-color-error); --md-text-button-focus-label-text-color: var(--md-sys-color-error); --md-text-button-pressed-label-text-color: var(--md-sys-color-error); }
 .progress-indicator { width: 20px; height: 20px; --md-circular-progress-size: 20px; --md-circular-progress-active-indicator-width: 10; vertical-align: middle; }
 [aria-busy='true'] .progress-indicator { margin-inline-end: 8px; --md-circular-progress-active-indicator-color: currentColor; }
-.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--md-sys-color-on-surface); width: fit-content; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--md-sys-color-on-surface); width: fit-content; max-width: 100%; min-width: 0; }
 .brand:hover { text-decoration: none; }
-.brand-logo { display: block; width: 160px; height: auto; }
+.brand-logo { display: block; width: 36px; height: 40px; object-fit: contain; flex-shrink: 0; }
+.brand-name { font-size: 22px; line-height: 28px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .version-label { font-size: 10px; font-weight: 500; letter-spacing: .6px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; padding: 3px 6px; }
 .language-control { display: inline-flex; align-items: center; position: relative; flex-shrink: 0; }
 .language-control > md-outlined-select { width: 148px; min-width: 0; }
@@ -361,7 +281,7 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .auth-story { padding: 32px; }
     .sidebar { width: 224px; }
     .sidebar > .brand { margin-left: 4px; }
-    .sidebar > .brand .brand-logo { width: 132px; }
+    .sidebar > .brand .brand-logo { width: 32px; height: 36px; }
     .app-content { margin-left: 224px; }
     .app-header { padding: 16px 24px; }
     .page-content { padding: 24px; }
@@ -387,7 +307,7 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .app-footer { order: 4; }
     .header-actions { gap: 6px; }
     .brand { gap: 8px; }
-    .brand-logo { width: 150px; }
+    .brand-logo { width: 32px; height: 36px; }
     .version-label { display: none; }
     .card-heading, .card-body { padding: 24px; }
     .preference-list, .session-list, .email-list { padding-inline: 8px; }
@@ -418,6 +338,13 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
     md-dialog { --md-dialog-show-duration: 0ms; --md-dialog-hide-duration: 0ms; }
 }
+
+.branding-form { max-width: 760px; }
+.branding-logo-editor { display: flex; align-items: center; gap: 20px; min-width: 0; flex-wrap: wrap; }
+.branding-logo-image { width: 100%; height: 100%; object-fit: contain; }
+.branding-color-row { display: flex; align-items: flex-start; gap: 16px; }
+.branding-color-row md-outlined-text-field { flex: 1; min-width: 0; }
+.branding-color-picker { width: 56px; height: 56px; padding: 4px; border: 1px solid var(--md-sys-color-outline); border-radius: 12px; background: var(--md-sys-color-surface); cursor: pointer; flex-shrink: 0; }
 /* Keep authenticator QR modules high-contrast in both themes. */
 .mfa-qr { max-width: 100%; height: auto; align-self: start; border-radius: 12px; }
 .mfa-form, .mfa-backup-codes { width: 100%; max-width: 560px; }

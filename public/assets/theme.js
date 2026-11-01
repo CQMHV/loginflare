@@ -18,7 +18,8 @@
         document.documentElement.dataset.theme = theme;
         document.documentElement.dataset.themePreference = preference;
         const meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = theme === 'dark' ? '#191511' : '#fffbf7';
+        const surface = getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-surface').trim();
+        if (meta && surface) meta.content = surface;
         window.dispatchEvent(new Event(eventName));
     }
     window.loginflareTheme = Object.freeze({
