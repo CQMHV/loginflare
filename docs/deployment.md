@@ -144,6 +144,8 @@ For staging or production, record and validate a recovery point using D1's suppo
 
 ## Staging acceptance
 
+Apply `0012_social_connections.sql` with the existing migration workflow before deploying third-party sign-in. No new binding is required. Keep `BETTER_AUTH_SECRET` stable to decrypt client secrets and pending flows. Configure and test connections in the administrator console using [the setup guide](social.md); register each generated callback exactly. Real-platform acceptance requires operator-owned client credentials and accounts. Disabling a connector invalidates pending flows and future sign-ins but retains established sessions; ensure users have another enabled method or verified-email recovery before disabling their only provider. Connection failures do not affect local password login.
+
 Use addresses and accounts controlled by the operator. A real email delivery check is a deliberate remote action, not part of the local automated suite.
 
 Verify the following before promoting a build to production:

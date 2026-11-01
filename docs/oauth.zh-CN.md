@@ -1,5 +1,7 @@
 # 外部应用与 OAuth/OIDC
 
+Google、GitHub 和通用 OIDC/OAuth 连接器由 Loginflare 管理员统一配置。应用沿用本文接入协议，不受用户所选登录方式影响；`sub` 始终为稳定的本站用户 ID。本站邮箱验证与 MFA 完成后才继续授权。绑定、邮箱冲突和恢复规则详见[第三方登录](social.zh-CN.md)。
+
 [English](oauth.md) · [架构说明](architecture.md) · [中文 README](../README.zh-CN.md)
 
 Loginflare 使用 `@better-auth/oauth-provider` 和 Better Auth 1.7.13，让独立 Web 应用使用已有账号登录。协议行为由上游提供；Loginflare 通过正式扩展接口和 D1 约束增加应用管理、本地化同意页面及账号安全策略。

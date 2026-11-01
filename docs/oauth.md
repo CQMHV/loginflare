@@ -6,6 +6,8 @@ Loginflare uses `@better-auth/oauth-provider` and Better Auth 1.7.13 to let inde
 
 ## Client contract
 
+Google, GitHub and generic OIDC/OAuth connections are configured once by the Loginflare administrator. Applications keep this same client contract and receive a stable Loginflare user ID as `sub`, regardless of the sign-in method. Loginflare completes local email verification and MFA before resuming authorization. See [Third-party sign-in](social.md) for account linking, email conflicts and recovery behavior.
+
 The issuer is `${AUTH_URL}/api/auth`, for example `https://identity.example.com/api/auth`. Set the public origin before registering applications and keep the issuer stable. Clients should discover endpoints from the issuer instead of constructing token URLs themselves.
 
 | Client | Authentication | Secret location | Authorization flow |
