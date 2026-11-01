@@ -75,7 +75,7 @@ async function visibility(page: Page, visible: boolean) {
     }, visible);
 }
 
-for (const [role, width] of [['admin', 1280], ['admin', 375], ['user', 320]] as const) {
+for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['user', 320]] as const) {
     test(`keeps the ${role} header menus accessible and bounded at ${width}px`, async ({ page, context }) => {
         const server = await mockAccount(context);
         server.state.actor = identity('alpha', role);
@@ -93,7 +93,8 @@ for (const [role, width] of [['admin', 1280], ['admin', 375], ['user', 320]] as 
             expect(bounds!.x).toBeGreaterThanOrEqual(0);
             expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
         }
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        expect(await page.locator('.sidebar').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
         await language.press('ArrowUp');
         const selected = page.getByRole('menuitem', { name: '简体中文', exact: true });
         await expect(selected).toBeFocused();
@@ -149,6 +150,7 @@ for (const [role, width] of [['admin', 1280], ['admin', 375], ['user', 320]] as 
             expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
             expect(bounds!.y).toBeGreaterThanOrEqual(0);
             expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(triggerBounds.y);
+            expect(await page.locator('.sidebar').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
             await page.keyboard.press('Enter');
             await expect(page).toHaveURL('/en-us/admin/users');
             await expect(area).toHaveAccessibleName('Switch area: Administration');
@@ -158,7 +160,8 @@ for (const [role, width] of [['admin', 1280], ['admin', 375], ['user', 320]] as 
             await expect(page.locator('.area-label')).toHaveText('Account center');
         }
         await expect(page.getByRole('navigation', { name: role === 'admin' ? 'Administration navigation' : 'Account navigation', exact: true })).toBeVisible();
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        expect(await page.locator('.sidebar').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     });
 }
 

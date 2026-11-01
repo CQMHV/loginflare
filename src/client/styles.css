@@ -41,7 +41,7 @@
         border-radius: calc(var(--loginflare-scrollbar-size) / 2);
     }
 }
-body { margin: 0; min-width: 320px; font-size: 14px; line-height: 1.5; }
+body { margin: 0; font-size: 14px; line-height: 1.5; }
 h1, h2, p { margin: 0; }
 h1, h2 { font-weight: 400; }
 a { color: var(--md-sys-color-primary); text-decoration: none; touch-action: manipulation; }
@@ -135,7 +135,7 @@ md-icon-button { flex-shrink: 0; }
 .loading-state { display: flex; align-items: center; justify-content: center; padding: 48px 20px; gap: 12px; color: var(--md-sys-color-on-surface-variant); }
 .app-shell { display: flex; min-height: 100dvh; }
 .sidebar { position: fixed; top: 0; bottom: 0; width: 256px; padding: 32px 16px; background: var(--md-sys-color-surface-container-low); display: flex; flex-direction: column; overflow-y: auto; }
-.sidebar > .brand { margin-left: 12px; }
+.sidebar > .brand { padding-inline-start: 12px; }
 .area-selector { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--md-sys-color-outline-variant); }
 .area-selector .menu-control, .area-menu-trigger { width: 100%; }
 .area-menu-trigger { position: relative; display: flex; align-items: center; min-height: 56px; padding: 16px; border: 0; border-radius: 12px; background: transparent; color: var(--md-sys-color-on-surface-variant); font: inherit; font-weight: 500; cursor: pointer; touch-action: manipulation; --md-ripple-hover-color: currentColor; --md-ripple-pressed-color: currentColor; --md-focus-ring-shape: 12px; }
@@ -279,7 +279,7 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 @media (max-width: 1000px) {
     .auth-story { padding: 32px; }
     .sidebar { width: 224px; }
-    .sidebar > .brand { margin-left: 4px; }
+    .sidebar > .brand { padding-inline-start: 4px; gap: 8px; }
     .sidebar > .brand .brand-logo { width: 32px; height: 36px; }
     .app-content { margin-left: 224px; }
     .app-header { padding: 16px 24px; }
