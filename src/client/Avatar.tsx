@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { createElement, useEffect, useRef, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, fetchJson, readResponse } from './api';
 import { Button, ConfirmationDialog, Progress } from './material';
@@ -8,7 +8,7 @@ import { ToolbarIcon } from './ToolbarIcon';
 import { avatarIdPattern, inspectImage, maximumSourceBytes } from '../shared/avatars';
 import type { AvatarCropDialogProps, AvatarPhoto } from './AvatarCropDialog';
 
-export function Avatar({ name, image, className, fallback }: { name: string; image?: string | null; className: string; fallback?: ReactNode }) {
+export function Avatar({ name, image, className }: { name: string; image?: string | null; className: string }) {
     const { t } = useTranslation();
     const [failed, setFailed] = useState<string>();
     let source: string | undefined;
@@ -19,7 +19,7 @@ export function Avatar({ name, image, className, fallback }: { name: string; ima
         } catch { /* Invalid profile data uses the default avatar. */ }
     }
     return <span className={className} role="img" aria-label={t('avatar.label', { name })}>
-        {source ? <img src={source} alt="" decoding="async" loading={className === 'table-avatar' ? 'lazy' : undefined} referrerPolicy="no-referrer" onError={() => setFailed(source)} /> : fallback ?? (name.trim().slice(0, 1).toUpperCase() || '?')}
+        {source ? <img src={source} alt="" decoding="async" loading={className === 'table-avatar' ? 'lazy' : undefined} referrerPolicy="no-referrer" onError={() => setFailed(source)} /> : <ToolbarIcon name="person" />}
     </span>;
 }
 

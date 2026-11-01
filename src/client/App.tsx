@@ -106,7 +106,7 @@ function AccountMenu({ busy, onSignOut }: { busy: boolean; onSignOut: () => void
     const { t } = useTranslation();
     const navigate = useNavigate();
     return <MenuButton className="account-menu" variant="avatar" label={t('accountMenu')} description={identity?.user.name} busy={busy}
-        icon={<Avatar name={identity?.user.name ?? ''} image={identity?.user.image} className="user-avatar" fallback={<ToolbarIcon name="person" />} />}
+        icon={<Avatar name={identity?.user.name ?? ''} image={identity?.user.image} className="user-avatar" />}
         options={[
             { value: 'profile', label: t('profile'), icon: <Icon name="profile" size={24} /> },
             ...(identity?.user.role === 'admin' ? [{ value: 'admin', label: t('adminConsole'), icon: <Icon name="shield" size={24} /> }] : []),

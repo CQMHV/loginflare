@@ -85,6 +85,8 @@ for (const [role, width] of [['admin', 1280], ['user', 320]] as const) {
         const language = header.getByRole('button', { name: '语言', exact: true });
         const theme = header.getByRole('button', { name: '主题', exact: true });
         const account = header.getByRole('button', { name: '账号菜单', exact: true });
+        await expect(account.locator('.user-avatar')).toHaveText('');
+        await expect(account.locator('.user-avatar md-icon svg')).toBeVisible();
         for (const control of [language, theme, account]) {
             await expect(control).toBeVisible();
             const bounds = await control.boundingBox();
