@@ -113,13 +113,11 @@ function AccountMenu({ busy, onSignOut }: { busy: boolean; onSignOut: () => void
         icon={<Avatar name={identity?.user.name ?? ''} image={identity?.user.image} className="user-avatar" />}
         options={[
             { value: 'profile', label: t('profile'), icon: <Icon name="profile" size={24} /> },
-            ...(identity?.user.role === 'admin' ? [{ value: 'admin', label: t('adminConsole'), icon: <Icon name="shield" size={24} /> }] : []),
             { value: 'signout', label: t('signout'), icon: <Icon name="logout" size={24} /> },
         ]}
         onSelect={(value) => {
             if (value === 'signout') onSignOut();
             else if (value === 'profile') navigate(localizedPath(locale, 'account'));
-            else if (value === 'admin' && identity?.user.role === 'admin') navigate(localizedPath(locale, 'admin/users'));
         }} />;
 }
 
@@ -494,12 +492,28 @@ interface AppFrameProps {
     home: string;
     navigationLabel: string;
     navigation: React.ReactNode;
-    switchTarget?: { to: string; label: string; icon: string };
 }
 
-function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget }: AppFrameProps) {
-    const brand = useBranding();
+function AreaSwitcher({ area, title }: { area: 'account' | 'admin'; title: string }) {
     const { identity, locale } = useApp();
+    const { t } = useTranslation();
+    const navigate = useNavigate();
+    const icon = <Icon name={area === 'admin' ? 'shield' : 'profile'} />;
+    return <div className="area-selector">
+        {identity?.user.role === 'admin' ? <MenuButton variant="navigation" placement="above" label={t('switchArea')} description={title} icon={icon}
+            options={[
+                { value: 'account', label: t('accountCenter'), icon: <Icon name="profile" size={24} />, selected: area === 'account' },
+                { value: 'admin', label: t('adminConsole'), icon: <Icon name="shield" size={24} />, selected: area === 'admin' },
+            ]}
+            onSelect={(next) => {
+                if (next !== area && (next === 'account' || next === 'admin')) navigate(localizedPath(locale, next === 'admin' ? 'admin/users' : 'account'));
+            }} /> : <div className="area-label">{icon}<span>{title}</span></div>}
+    </div>;
+}
+
+function AppFrame({ area, title, home, navigationLabel, navigation }: AppFrameProps) {
+    const brand = useBranding();
+    const { locale } = useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [busy, setBusy] = useState(false);
@@ -523,11 +537,10 @@ function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget
         <aside className="sidebar">
             <Brand destination={home} />
             <nav aria-label={navigationLabel}>{navigation}</nav>
-            <div className="sidebar-bottom"><span className="small-cloud">☁</span><p>{t('tagline')}</p><small>Cloudflare Workers + D1</small></div>
+            <AreaSwitcher area={area} title={title} />
         </aside>
         <div className="app-content">
             <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><LanguageSwitcher compact /><ThemeSwitcher /><AccountMenu busy={busy} onSignOut={() => { void signOut(); }} /></div></header>
-            <div className="workspace-bar"><span className="workspace-title"><Icon name={area === 'admin' ? 'shield' : 'profile'} />{title}</span>{switchTarget && <Link className="workspace-switch" to={switchTarget.to}><Icon name={switchTarget.icon} size={18} />{switchTarget.label}<Icon name="arrow" size={16} /></Link>}</div>
             <main className="page-content"><ConnectionNotice /><ErrorNotice code={error} /><Outlet /></main>
             <footer className="app-footer">{brand.name} <span>·</span> {t('openSource')}</footer>
         </div>
@@ -535,26 +548,24 @@ function AppFrame({ area, title, home, navigationLabel, navigation, switchTarget
 }
 
 function AccountLayout() {
-    const { identity, locale } = useApp();
+    const { locale } = useApp();
     const { t } = useTranslation();
     return <AppFrame area="account" title={t('accountCenter')} home={localizedPath(locale, 'account')} navigationLabel={t('accountNavigation')}
-        navigation={<><p className="nav-label">{t('account')}</p>
+        navigation={<>
             <NavigationLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'account/emails')}><Icon name="mail" />{t('emails.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavigationLink></>}
-        switchTarget={identity?.user.role === 'admin' ? { to: localizedPath(locale, 'admin/users'), label: t('adminConsole'), icon: 'shield' } : undefined} />;
+            <NavigationLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavigationLink></>} />;
 }
 
 function AdminLayout() {
     const { locale } = useApp();
     const { t } = useTranslation();
     return <AppFrame area="admin" title={t('adminConsole')} home={localizedPath(locale, 'admin/users')} navigationLabel={t('adminNavigation')}
-        navigation={<><p className="nav-label">{t('adminConsole')}</p>
+        navigation={<>
             <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink></>}
-        switchTarget={{ to: localizedPath(locale, 'account'), label: t('accountCenter'), icon: 'profile' }} />;
+            <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink></>} />;
 }
 
 function PageHeading({ title, description, children }: PropsWithChildren<{ title: string; description: string }>) {

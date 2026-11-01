@@ -1,4 +1,4 @@
-import { expect, test as base, type APIRequestContext, type BrowserContext } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { testOrigin } from './runtime';
 
@@ -44,5 +44,10 @@ export async function installOfflineRoutes(context: BrowserContext) {
 export const test = base.extend({
     context: async ({ context }, use) => { await installOfflineRoutes(context); await use(context); },
 });
+export async function switchArea(page: Page, name: string) {
+    await page.locator('.area-selector').getByRole('button').click();
+    await page.getByRole('menuitem', { name, exact: true }).click();
+}
+
 export { expect };
 export type { Page } from '@playwright/test';

@@ -134,26 +134,25 @@ md-icon-button { flex-shrink: 0; }
 .notice.success { display: flex; gap: 10px; align-items: center; background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
 .loading-state { display: flex; align-items: center; justify-content: center; padding: 48px 20px; gap: 12px; color: var(--md-sys-color-on-surface-variant); }
 .app-shell { display: flex; min-height: 100dvh; }
-.sidebar { position: fixed; top: 0; bottom: 0; width: 256px; padding: 32px 16px; background: var(--md-sys-color-surface-container-low); display: flex; flex-direction: column; }
+.sidebar { position: fixed; top: 0; bottom: 0; width: 256px; padding: 32px 16px; background: var(--md-sys-color-surface-container-low); display: flex; flex-direction: column; overflow-y: auto; }
 .sidebar > .brand { margin-left: 12px; }
-.sidebar nav { margin-top: 48px; }
-.nav-label { font-size: 12px; font-weight: 500; letter-spacing: .5px; margin: 0 16px 12px; color: var(--md-sys-color-on-surface-variant); }
+.area-selector { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.area-selector .menu-control, .area-menu-trigger { width: 100%; }
+.area-menu-trigger { position: relative; display: flex; align-items: center; min-height: 56px; padding: 16px; border: 0; border-radius: 12px; background: transparent; color: var(--md-sys-color-on-surface-variant); font: inherit; font-weight: 500; cursor: pointer; touch-action: manipulation; --md-ripple-hover-color: currentColor; --md-ripple-pressed-color: currentColor; --md-focus-ring-shape: 12px; }
+.area-menu-trigger:focus-visible { outline: none; }
+.area-menu-trigger[aria-expanded='true'] { background: var(--md-sys-color-surface-container-high); }
+.area-selector md-menu { min-width: 224px; max-width: calc(100vw - 32px); }
+.menu-trigger-label { display: flex; align-items: center; gap: 16px; width: 100%; min-width: 0; }
+.menu-trigger-label > span { flex: 1; text-align: start; }
+.area-label { display: flex; align-items: center; gap: 12px; min-height: 48px; padding-inline: 16px; font-weight: 500; }
+.sidebar nav { margin: 32px 0 24px; }
 .sidebar nav > a { position: relative; display: flex; gap: 16px; align-items: center; min-height: 56px; padding: 16px; border-radius: 28px; margin-top: 4px; font-size: 14px; font-weight: 500; color: var(--md-sys-color-on-surface-variant); --md-ripple-hover-color: currentColor; --md-ripple-pressed-color: currentColor; --md-focus-ring-shape: 28px; }
 .sidebar nav > a:hover { text-decoration: none; }
 .sidebar nav > a:focus-visible { outline: none; }
 .sidebar nav > a.active { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
-.sidebar-bottom { margin-top: auto; padding: 32px 16px 0; color: var(--md-sys-color-on-surface-variant); }
-.sidebar-bottom p { margin: 8px 0; font-size: 12px; }
-.sidebar-bottom small { font-size: 11px; }
-.small-cloud { color: var(--md-sys-color-primary); font-size: 28px; }
 .app-content { flex: 1; margin-left: 256px; min-width: 0; display: flex; flex-direction: column; }
 .app-header { min-height: 80px; padding: 16px 40px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.workspace-bar { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 48px 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.workspace-title { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--md-sys-color-on-surface-variant); }
-.workspace-title svg { color: var(--md-sys-color-primary); }
-.workspace-switch { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 16px; font-size: 14px; font-weight: 500; }
-.workspace-switch:hover { background: var(--md-sys-color-surface-container-high); text-decoration: none; }
 .avatar-menu-trigger, .image-upload-trigger, .image-edit-button { position: relative; display: grid; place-items: center; flex-shrink: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--md-sys-color-on-surface); font: inherit; cursor: pointer; --md-focus-ring-shape: 50%; }
 .avatar-menu-trigger { width: 40px; height: 40px; }
 .avatar-menu-trigger::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
@@ -285,7 +284,6 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .app-content { margin-left: 224px; }
     .app-header { padding: 16px 24px; }
     .page-content { padding: 24px; }
-    .workspace-bar { padding-right: 24px; padding-left: 24px; }
 }
 @media (max-width: 760px) {
     .page-heading { flex-wrap: wrap; }
@@ -296,13 +294,14 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
     .auth-top { justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .auth-form-container { padding: 48px 0; }
     .sidebar { position: static; width: 100%; padding: 0 16px 12px; order: 2; background: var(--md-sys-color-surface); }
-    .sidebar > .brand, .sidebar-bottom, .nav-label { display: none; }
+    .sidebar > .brand { display: none; }
+    .area-selector { margin-top: 12px; padding-top: 12px; }
+    .area-selector .menu-control { width: auto; }
     .sidebar nav { display: flex; margin: 0; gap: 4px; flex-wrap: wrap; }
     .sidebar nav > a { flex: 1; justify-content: center; padding: 12px 16px; min-height: 48px; margin: 0; gap: 8px; white-space: nowrap; }
     .app-shell { flex-direction: column; }
     .app-content { margin: 0; display: contents; }
     .app-header { order: 0; padding: 16px 24px; min-height: 80px; flex-wrap: wrap; }
-    .workspace-bar { order: 1; padding-bottom: 16px; }
     .page-content { order: 3; padding: 24px; flex: 1; }
     .app-footer { order: 4; }
     .header-actions { gap: 6px; }
@@ -321,7 +320,6 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 @media (max-width: 390px) {
     .auth-main { padding: 16px; }
     .app-header { padding: 16px; gap: 8px; }
-    .workspace-bar { padding-right: 16px; padding-left: 16px; }
     .header-actions { gap: 0; }
     .brand { gap: 6px; }
     .page-content { padding: 24px 16px; }

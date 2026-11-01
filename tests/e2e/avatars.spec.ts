@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { deflateSync } from 'node:zlib';
-import { expect, test } from './fixtures';
+import { expect, test, switchArea } from './fixtures';
 import { executeLocal, removeLocalFixtures } from './database';
 import { avatarJpeg, avatarWebp, sourcePng } from '../fixtures/avatars';
 import { inspectImage, maximumSourceBytes } from '../../src/shared/avatars';
@@ -45,11 +45,11 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).toHaveURL('/en-us/account');
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     const row = page.locator('tbody tr').filter({ hasText: email });
     await expect(row).toBeVisible();
     await expect(row.locator('.table-avatar img')).toHaveCount(0);
-    await page.getByRole('link', { name: 'Account center', exact: true }).click();
+    await switchArea(page, 'Account center');
     const peer = await context.newPage();
     await peer.goto('/en-us/account');
     await peer.getByLabel('Display name', { exact: true }).fill('Unsaved peer draft');
@@ -93,11 +93,11 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
     await expect(peer.locator('.account-menu .user-avatar img')).toHaveAttribute('src', first!);
     await expect(peer.getByLabel('Display name', { exact: true })).toHaveValue('Unsaved peer draft');
     await peer.close();
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     await expect(row.locator('.table-avatar img')).toHaveAttribute('src', first!);
     await row.locator('.table-user').click();
     await expect(page.locator('.page-heading .profile-avatar img')).toHaveAttribute('src', first!);
-    await page.getByRole('link', { name: 'Account center', exact: true }).click();
+    await switchArea(page, 'Account center');
     await page.getByLabel('Choose an avatar image', { exact: true }).setInputFiles({ name: 'unsafe.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg onload="alert(1)"/>') });
     await expect(page.getByRole('alert')).toContainText('Choose a valid static');
     await expect(page.locator('.profile-avatar img')).toHaveAttribute('src', first!);

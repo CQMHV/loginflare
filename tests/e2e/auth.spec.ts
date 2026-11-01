@@ -1,5 +1,5 @@
 import { testOrigin } from './runtime';
-import { expect, test, installOfflineRoutes } from './fixtures';
+import { expect, test, switchArea, installOfflineRoutes } from './fixtures';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { snapshotEmails, waitForCode, waitForMail } from './mailbox';
@@ -75,7 +75,7 @@ test('completes registration, recovery, account management, and administrator co
     for (const name of ['Profile', 'Email addresses', 'Security', 'Sessions']) {
         await expect(accountNavigation.getByRole('link', { name, exact: true })).toBeVisible();
     }
-    await expect(page.getByRole('link', { name: 'Administration', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Switch area:/ })).toHaveCount(0);
     await expect(page.getByRole('navigation', { name: 'Administration navigation', exact: true })).toHaveCount(0);
     await expect(page.getByLabel('Email address', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Verified', { exact: true })).toHaveCount(0);
@@ -143,7 +143,7 @@ test('completes registration, recovery, account management, and administrator co
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true }).getByRole('link')).toHaveCount(4);
     await expect(page.getByRole('navigation', { name: '管理导航', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: '管理后台', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^切换区域:/ })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('profile-mobile-zh-cn.png') });
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -192,21 +192,21 @@ test('completes registration, recovery, account management, and administrator co
         timeout: 30_000,
     });
     await page.reload();
-    await expect(page.getByRole('link', { name: 'Administration', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Switch area:/ })).toHaveAccessibleName('Switch area: Account center');
     await expect(accountNavigation.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
     await expect(accountNavigation.getByRole('link', { name: 'Applications', exact: true })).toHaveCount(0);
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     await expect(page).toHaveURL('/en-us/admin/users');
     const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
     await expect(administrationNavigation.getByRole('link')).toHaveCount(3);
     await expect(administrationNavigation.getByRole('link', { name: 'Users', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'Applications', exact: true })).toBeVisible();
     await expect(accountNavigation).toHaveCount(0);
-    await page.getByRole('link', { name: 'Account center', exact: true }).click();
+    await switchArea(page, 'Account center');
     await expect(page).toHaveURL('/en-us/account');
     await expect(accountNavigation.getByRole('link')).toHaveCount(4);
     await expect(administrationNavigation).toHaveCount(0);
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(administrationNavigation).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -218,17 +218,17 @@ test('completes registration, recovery, account management, and administrator co
     await page.getByRole('button', { name: 'Language', exact: true }).click();
     await page.getByRole('menuitem', { name: '简体中文', exact: true }).click();
     await expect(page).toHaveURL('/zh-cn/admin/users');
-    await expect(page.locator('.workspace-title')).toHaveText('管理后台');
+    await expect(page.getByRole('button', { name: /^切换区域:/ })).toHaveAccessibleName('切换区域: 管理后台');
     await page.goto('/zh-cn/admin');
     await expect(page).toHaveURL('/zh-cn/admin/users');
     await expect(page.getByRole('navigation', { name: '管理导航', exact: true }).getByRole('link')).toHaveCount(3);
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('admin-mobile-zh-cn.png'), fullPage: true });
-    await page.getByRole('link', { name: '账号中心', exact: true }).click();
+    await switchArea(page, '账号中心');
     await expect(page).toHaveURL('/zh-cn/account');
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true }).getByRole('link')).toHaveCount(4);
-    await page.getByRole('link', { name: '管理后台', exact: true }).click();
+    await switchArea(page, '管理后台');
     await expect(page).toHaveURL('/zh-cn/admin/users');
     await page.goto('/en-us/admin');
     await expect(page).toHaveURL('/en-us/admin/users');

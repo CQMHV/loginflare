@@ -110,8 +110,9 @@ export function Select({ label, value, options, onChange, disabled = false }: { 
     }, ...options.map((option) => createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
 }
 
-export function MenuButton({ label, description, icon, options, onSelect, className = '', busy = false, variant = 'tonal' }: {
-    label: string; description?: string; icon: ReactNode; className?: string; busy?: boolean; variant?: 'tonal' | 'avatar';
+export function MenuButton({ label, description, icon, options, onSelect, className = '', busy = false, variant = 'tonal', placement = 'below' }: {
+    label: string; description?: string; icon: ReactNode; className?: string; busy?: boolean; variant?: 'tonal' | 'avatar' | 'navigation';
+    placement?: 'above' | 'below';
     options: { value: string; label: string; selected?: boolean; icon?: ReactNode }[];
     onSelect: (value: string) => void;
 }) {
@@ -159,11 +160,14 @@ export function MenuButton({ label, description, icon, options, onSelect, classN
         }
     }
     const currentLabel = description ?? options.find((option) => option.selected)?.label;
+    const triggerLabel = variant === 'navigation' && currentLabel ? `${label}: ${currentLabel}` : label;
+    const alignment = variant === 'navigation' ? 'start' : 'end';
+    const nativeTrigger = variant !== 'tonal';
     return <div className={`menu-control ${className}`}>
-        {createElement(variant === 'avatar' ? 'button' : 'md-filled-tonal-icon-button', { id, type: 'button', className: variant === 'avatar' ? 'avatar-menu-trigger' : undefined, 'aria-label': label, 'aria-description': currentLabel, title: currentLabel ? `${label}: ${currentLabel}` : label, 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'aria-controls': menuId, disabled: busy, 'aria-busy': busy || undefined,
+        {createElement(nativeTrigger ? 'button' : 'md-filled-tonal-icon-button', { id, type: 'button', className: variant === 'avatar' ? 'avatar-menu-trigger' : variant === 'navigation' ? 'area-menu-trigger' : undefined, 'aria-label': triggerLabel, 'aria-description': currentLabel, title: currentLabel ? `${label}: ${currentLabel}` : label, 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'aria-controls': menuId, disabled: busy, 'aria-busy': busy || undefined,
             onClick: () => { if (menu.current?.open) menu.current.close(); else show(); }, onKeyDown: keyDown,
-        }, icon, variant === 'avatar' && createElement('md-ripple'), variant === 'avatar' && createElement('md-focus-ring'))}
-        {createElement('md-menu', { ref: menu, id: menuId, anchor: id, positioning: 'popover', 'aria-label': label, anchorCorner: 'end-end', menuCorner: 'start-end' },
+        }, variant === 'navigation' ? <span className="menu-trigger-label">{icon}<span>{currentLabel ?? label}</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d={placement === 'above' ? 'm7 14 5-5 5 5' : 'm7 10 5 5 5-5'} /></svg></span> : icon, nativeTrigger && createElement('md-ripple'), nativeTrigger && createElement('md-focus-ring', { inward: variant === 'navigation' }))}
+        {createElement('md-menu', { ref: menu, id: menuId, anchor: id, positioning: 'popover', 'aria-label': label, anchorCorner: `${placement === 'above' ? 'start' : 'end'}-${alignment}`, menuCorner: `${placement === 'above' ? 'end' : 'start'}-${alignment}` },
             ...options.map((option) => createElement('md-menu-item', {
                 key: option.value, type: 'button', 'data-menu-value': option.value, selected: Boolean(option.selected), 'aria-selected': option.selected ? 'true' : undefined,
             }, <div slot="headline">{option.label}</div>, option.icon && <span slot="start">{option.icon}</span>, option.selected && <svg slot="end" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" /></svg>)),

@@ -1,5 +1,5 @@
 import { testOrigin } from './runtime';
-import { expect, test, type Page } from './fixtures';
+import { expect, test, switchArea, type Page } from './fixtures';
 import { hashPassword } from 'better-auth/crypto';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { executeLocal, removeLocalApplications, removeLocalFixtures } from './database';
@@ -91,7 +91,7 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 25_000 });
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).toHaveURL('/en-us/account');
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     await expect(page.locator('tbody tr')).toHaveCount(20);
     await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Return to latest', exact: true })).toBeDisabled();
@@ -157,7 +157,7 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     await page.reload();
     await expect(page.locator('tbody tr')).toContainText(applications[4].name);
 
-    await page.getByRole('link', { name: 'Account center', exact: true }).click();
+    await switchArea(page, 'Account center');
     await page.getByRole('link', { name: 'Sessions', exact: true }).click();
     await expect(page.locator('.session-row')).toHaveCount(20);
     await expect(page.getByText('This session', { exact: true })).toBeVisible();

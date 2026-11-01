@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './fixtures';
+import { expect, test, switchArea, type Page } from './fixtures';
 import { testOrigin } from './runtime';
 import type { BrowserContext } from '@playwright/test';
 import type { Identity } from '../../src/client/api';
@@ -75,7 +75,7 @@ async function visibility(page: Page, visible: boolean) {
     }, visible);
 }
 
-for (const [role, width] of [['admin', 1280], ['user', 320]] as const) {
+for (const [role, width] of [['admin', 1280], ['admin', 375], ['user', 320]] as const) {
     test(`keeps the ${role} header menus accessible and bounded at ${width}px`, async ({ page, context }) => {
         const server = await mockAccount(context);
         server.state.actor = identity('alpha', role);
@@ -104,7 +104,7 @@ for (const [role, width] of [['admin', 1280], ['user', 320]] as const) {
         await expect(language).toHaveAttribute('aria-expanded', 'false');
         await account.press('ArrowDown');
         await expect(page.getByRole('menuitem', { name: '个人资料', exact: true })).toBeFocused();
-        await expect(page.getByRole('menuitem', { name: '管理后台', exact: true })).toHaveCount(role === 'admin' ? 1 : 0);
+        await expect(page.getByRole('menuitem', { name: '管理后台', exact: true })).toHaveCount(0);
         await page.screenshot({ path: test.info().outputPath(`header-${role}-${width}.png`), fullPage: true });
         await page.keyboard.press('Escape');
         await expect(header.locator('.account-menu md-menu .menu')).toBeHidden();
@@ -124,9 +124,41 @@ for (const [role, width] of [['admin', 1280], ['user', 320]] as const) {
         await page.keyboard.press('Escape');
         await expect(header.locator('.account-menu md-menu .menu')).toBeHidden();
         await header.getByRole('button', { name: 'Account menu', exact: true }).click();
-        await page.getByRole('menuitem', { name: role === 'admin' ? 'Administration' : 'Profile', exact: true }).click();
-        await expect(page).toHaveURL(role === 'admin' ? '/en-us/admin/users' : '/en-us/account');
+        await page.getByRole('menuitem', { name: 'Profile', exact: true }).click();
+        await expect(page).toHaveURL('/en-us/account');
+        const area = page.locator('.area-selector').getByRole('button', { name: /^Switch area:/ });
+        if (role === 'admin') {
+            await expect(area).toHaveAccessibleName('Switch area: Account center');
+            const triggerBounds = (await area.boundingBox())!;
+            const navigationBounds = (await page.getByRole('navigation', { name: 'Account navigation', exact: true }).boundingBox())!;
+            expect(triggerBounds.y).toBeGreaterThanOrEqual(navigationBounds.y + navigationBounds.height);
+            if (width > 760) expect(triggerBounds.y + triggerBounds.height).toBeGreaterThan(812 - 64);
+            await area.press('ArrowDown');
+            const current = page.getByRole('menuitem', { name: 'Account center', exact: true });
+            await expect(current).toBeFocused();
+            await expect(current).toHaveAttribute('aria-selected', 'true');
+            await page.keyboard.press('Escape');
+            await expect(page.locator('.area-selector md-menu .menu')).toBeHidden();
+            await expect(area).toBeFocused();
+            await expect(area).toHaveAttribute('aria-expanded', 'false');
+            await area.press('ArrowUp');
+            const destination = page.getByRole('menuitem', { name: 'Administration', exact: true });
+            await expect(destination).toBeFocused();
+            const bounds = await destination.boundingBox();
+            expect(bounds!.x).toBeGreaterThanOrEqual(0);
+            expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+            expect(bounds!.y).toBeGreaterThanOrEqual(0);
+            expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(triggerBounds.y);
+            await page.keyboard.press('Enter');
+            await expect(page).toHaveURL('/en-us/admin/users');
+            await expect(area).toHaveAccessibleName('Switch area: Administration');
+            await expect(page.getByRole('navigation', { name: 'Account navigation', exact: true })).toHaveCount(0);
+        } else {
+            await expect(area).toHaveCount(0);
+            await expect(page.locator('.area-label')).toHaveText('Account center');
+        }
         await expect(page.getByRole('navigation', { name: role === 'admin' ? 'Administration navigation' : 'Account navigation', exact: true })).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
 }
 
@@ -195,7 +227,7 @@ test('reuses account and administration reads, preserves drafts and scroll, and 
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Updated on server');
 
     await page.setViewportSize({ width: 1280, height: 500 });
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     await expect(page.locator('tbody tr')).toHaveCount(20);
     const target = page.locator('.table-user').nth(15);
     await target.scrollIntoViewIfNeeded();
@@ -323,7 +355,7 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Second revision');
     await page.reload();
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('First revision');
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     await page.getByRole('link', { name: 'Applications', exact: true }).click();
     await page.getByRole('link', { name: 'Cache application', exact: true }).click();
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();

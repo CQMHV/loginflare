@@ -1,5 +1,5 @@
 import { testOrigin } from './runtime';
-import { expect, test, installOfflineRoutes } from './fixtures';
+import { expect, test, switchArea, installOfflineRoutes } from './fixtures';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { removeLocalApplications, removeLocalFixtures } from './database';
@@ -52,10 +52,10 @@ test('manages applications, consent, and signed registration/recovery continuati
     execFileSync(process.execPath, ['scripts/database.mjs', 'promote', '--email', email, '--local'], { cwd: process.cwd(), stdio: 'pipe', timeout: 30_000 });
     await page.reload();
 
-    await page.getByRole('link', { name: 'Administration', exact: true }).click();
+    await switchArea(page, 'Administration');
     await expect(page).toHaveURL('/en-us/admin/users');
     const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
-    await expect(administrationNavigation.getByRole('link')).toHaveCount(2);
+    await expect(administrationNavigation.getByRole('link')).toHaveCount(3);
     await expect(page.getByRole('navigation', { name: 'Account navigation', exact: true })).toHaveCount(0);
     await administrationNavigation.getByRole('link', { name: 'Applications', exact: true }).click();
     await page.getByRole('link', { name: 'Create application', exact: true }).click();
