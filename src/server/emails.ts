@@ -4,9 +4,10 @@ import { z } from 'zod';
 import type { Env } from './config';
 import { sendEmailCode } from './mail';
 import { consumeEmailQuota, consumeRecoveryChallenge, removeEmailAddress, replaceEmailChallenge, setPrimaryAddress, verifyEmailAddress, type Address } from './email-operations';
+import { requireSecurity, securityGuard, type SecurityAuthorization } from './security-proof';
 
 const emailInput = z.email().max(254).transform((value) => value.toLowerCase());
-const passwordInput = z.string().min(1).max(128);
+const passwordInput = z.string().max(128).optional();
 const challengeInput = z.object({ challengeId: z.string().uuid(), code: z.string().regex(/^\d{6}$/) });
 const lifetime = 10 * 60_000;
 type AccountUser = { id: string; email: string; name: string; locale?: unknown; banned?: boolean | null };
@@ -44,21 +45,12 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
         return row;
     }
 
-    async function requirePassword(context: {
-        internalAdapter: { findCredentialAccount: (id: string) => Promise<{ password?: string | null } | null> };
-        password: { verify: (data: { hash: string; password: string }) => Promise<boolean> };
-    }, userId: string, password: string) {
-        const account = await context.internalAdapter.findCredentialAccount(userId);
-        if (!account?.password || !await context.password.verify({ hash: account.password, password })) fail('INVALID_PASSWORD');
-        return account.password;
-    }
-
-    async function challenge(user: AccountUser, row: Address, purpose: 'verify' | 'recovery', credentialHash?: string) {
+    async function challenge(user: AccountUser, row: Address, purpose: 'verify' | 'recovery', authorization?: SecurityAuthorization) {
         const challengeId = crypto.randomUUID();
         const code = randomCode();
         const hash = await digest(challengeId, code);
         const now = Date.now();
-        if (!await replaceEmailChallenge(env.DB, { id: challengeId, userId: user.id, emailId: row.id, purpose, hash, now, expiresAt: now + lifetime, credentialHash })) fail('INVALID_CODE');
+        if (!await replaceEmailChallenge(env.DB, { id: challengeId, userId: user.id, emailId: row.id, purpose, hash, now, expiresAt: now + lifetime, authorization })) fail('INVALID_CODE');
         async function deliver() {
             try {
                 await sendEmailCode(env, { ...user, email: row.email }, code, purpose);
@@ -119,7 +111,8 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 method: 'POST', use: [sensitiveSessionMiddleware], body: z.object({ email: emailInput, password: passwordInput }),
             }, async (ctx) => {
                 const user = ctx.context.session.user;
-                const credentialHash = await requirePassword(ctx.context, user.id, ctx.body.password);
+                const authorization = await requireSecurity(ctx, env, 'emails/add', ctx.body.password);
+                const guard = securityGuard(authorization, 'u."id"');
                 await quota(`manage:${user.id}`);
                 // Pending auxiliary reservations expire after one day. Native unverified
                 // signup addresses follow Better Auth's existing account lifecycle.
@@ -131,8 +124,8 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 try {
                     const inserted = await env.DB.prepare(`INSERT INTO "userEmail" ("id", "userId", "email", "verified", "createdAt")
                         SELECT ?, ?, ?, 0, ? FROM "user" u WHERE u."id" = ? AND COALESCE(u."banned", 0) = 0
-                        AND EXISTS (SELECT 1 FROM "account" a WHERE a."userId" = u."id" AND a."providerId" = 'credential' AND a."password" = ?)`)
-                        .bind(row.id, row.userId, row.email, row.createdAt, user.id, credentialHash).run();
+                        AND ${guard.sql}`)
+                        .bind(row.id, row.userId, row.email, row.createdAt, user.id, ...guard.values).run();
                     if (!inserted.meta.changes) fail('INVALID_PASSWORD');
                 } catch (error) {
                     if (String(error).includes('UNIQUE')) fail('EMAIL_ALREADY_EXISTS');
@@ -140,7 +133,7 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                     throw error;
                 }
                 try {
-                    return ctx.json({ emailId: row.id, challengeId: await challenge(user, row, 'verify', credentialHash) });
+                    return ctx.json({ emailId: row.id, challengeId: await challenge(user, row, 'verify', authorization) });
                 } catch (error) {
                     await env.DB.prepare('DELETE FROM "userEmail" WHERE "id" = ? AND "verified" = 0').bind(row.id).run();
                     throw error;
@@ -150,11 +143,11 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 method: 'POST', use: [sensitiveSessionMiddleware], body: z.object({ emailId: z.string().min(1), password: passwordInput }),
             }, async (ctx) => {
                 const user = ctx.context.session.user;
-                const credentialHash = await requirePassword(ctx.context, user.id, ctx.body.password);
+                const authorization = await requireSecurity(ctx, env, 'emails/resend', ctx.body.password);
                 const row = await address(user.id, ctx.body.emailId);
                 if (row.verified) fail('EMAIL_ALREADY_VERIFIED');
                 await quota(`manage:${user.id}`);
-                return ctx.json({ challengeId: await challenge(user, row, 'verify', credentialHash) });
+                return ctx.json({ challengeId: await challenge(user, row, 'verify', authorization) });
             }),
             verifyAdditionalEmail: createAuthEndpoint('/emails/verify', {
                 method: 'POST', use: [sensitiveSessionMiddleware], body: challengeInput,
@@ -169,13 +162,13 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 method: 'POST', use: [sensitiveSessionMiddleware], body: z.object({ emailId: z.string().min(1), password: passwordInput }),
             }, async (ctx) => {
                 const user = ctx.context.session.user;
-                const credentialHash = await requirePassword(ctx.context, user.id, ctx.body.password);
+                const authorization = await requireSecurity(ctx, env, 'emails/set-primary', ctx.body.password);
                 const row = await address(user.id, ctx.body.emailId);
                 if (!row.verified) fail('EMAIL_NOT_VERIFIED');
                 // Bind the final write to the verified target and the password just
                 // checked, so concurrent removal or credential changes cannot revive it.
                 try {
-                    if (!await setPrimaryAddress(env.DB, row, credentialHash)) fail('INVALID_PASSWORD');
+                    if (!await setPrimaryAddress(env.DB, row, authorization)) fail('INVALID_PASSWORD');
                 } catch (error) {
                     if (String(error).includes('EMAIL_NOT_VERIFIED')) fail('EMAIL_NOT_VERIFIED');
                     if (String(error).includes('EMAIL_ALREADY_EXISTS')) fail('EMAIL_ALREADY_EXISTS');
@@ -187,11 +180,11 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
                 method: 'POST', use: [sensitiveSessionMiddleware], body: z.object({ emailId: z.string().min(1), password: passwordInput }),
             }, async (ctx) => {
                 const user = ctx.context.session.user;
-                const credentialHash = await requirePassword(ctx.context, user.id, ctx.body.password);
+                const authorization = await requireSecurity(ctx, env, 'emails/remove', ctx.body.password);
                 const row = await address(user.id, ctx.body.emailId);
                 if (row.email === user.email.toLowerCase()) fail('PRIMARY_EMAIL_REQUIRED');
                 try {
-                    if (!await removeEmailAddress(env.DB, row, credentialHash)) fail('INVALID_PASSWORD');
+                    if (!await removeEmailAddress(env.DB, row, authorization)) fail('INVALID_PASSWORD');
                 } catch (error) {
                     if (String(error).includes('PRIMARY_EMAIL_REQUIRED')) fail('PRIMARY_EMAIL_REQUIRED');
                     throw error;

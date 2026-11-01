@@ -1,5 +1,7 @@
+import { securityGuard, type SecurityAuthorization } from './security-proof';
+
 export interface Address { id: string; userId: string; email: string; verified: number; createdAt: number }
-interface Challenge { id: string; userId: string; emailId: string; purpose: 'verify' | 'recovery'; hash: string; now: number; expiresAt: number; credentialHash?: string }
+interface Challenge { id: string; userId: string; emailId: string; purpose: 'verify' | 'recovery'; hash: string; now: number; expiresAt: number; authorization?: SecurityAuthorization }
 
 /** Per-account mail quota uses a fixed window, unlike the native API limiter. */
 export async function consumeEmailQuota(database: D1Database, key: string) {
@@ -14,14 +16,15 @@ export async function consumeEmailQuota(database: D1Database, key: string) {
 
 /** Replace only this address's proof; global expired-data cleanup is scheduled. */
 export async function replaceEmailChallenge(database: D1Database, challenge: Challenge) {
-    const { id, userId, emailId, purpose, hash, now, expiresAt, credentialHash } = challenge;
+    const { id, userId, emailId, purpose, hash, now, expiresAt, authorization } = challenge;
+    const guard = authorization ? securityGuard(authorization, 'u."id"') : null;
     const results = await database.batch([
         database.prepare('DELETE FROM "emailChallenge" WHERE "userId" = ? AND "emailId" = ? AND "purpose" = ?').bind(userId, emailId, purpose),
         database.prepare(`INSERT INTO "emailChallenge" ("id", "userId", "emailId", "purpose", "codeHash", "attempts", "expiresAt", "createdAt")
             SELECT ?, ?, ?, ?, ?, 0, ?, ? WHERE EXISTS (SELECT 1 FROM "user" u JOIN "userEmail" e ON e."userId" = u."id"
                 WHERE u."id" = ? AND e."id" = ? AND COALESCE(u."banned", 0) = 0 ${purpose === 'recovery' ? 'AND e."verified" = 1' : ''}
-                ${credentialHash ? 'AND EXISTS (SELECT 1 FROM "account" a WHERE a."userId" = u."id" AND a."providerId" = \'credential\' AND a."password" = ?)' : ''})`)
-            .bind(id, userId, emailId, purpose, hash, expiresAt, now, userId, emailId, ...(credentialHash ? [credentialHash] : [])),
+                ${guard ? `AND ${guard.sql}` : ''})`)
+            .bind(id, userId, emailId, purpose, hash, expiresAt, now, userId, emailId, ...(guard?.values ?? [])),
     ]);
     return results[1].meta.changes;
 }
@@ -36,20 +39,21 @@ export async function verifyEmailAddress(database: D1Database, emailId: string, 
     return results[0].meta.changes;
 }
 
-export async function setPrimaryAddress(database: D1Database, address: Address, credentialHash: string) {
+export async function setPrimaryAddress(database: D1Database, address: Address, authorization: SecurityAuthorization) {
+    const guard = securityGuard(authorization, '"user"."id"');
     const result = await database.prepare(`UPDATE "user" SET "email" = ?, "emailVerified" = 1, "updatedAt" = ?
         WHERE "id" = ? AND COALESCE("banned", 0) = 0
         AND EXISTS (SELECT 1 FROM "userEmail" e WHERE e."id" = ? AND e."userId" = "user"."id" AND e."verified" = 1)
-        AND EXISTS (SELECT 1 FROM "account" a WHERE a."userId" = "user"."id" AND a."providerId" = 'credential' AND a."password" = ?)`)
-        .bind(address.email, new Date().toISOString(), address.userId, address.id, credentialHash).run();
+        AND ${guard.sql}`)
+        .bind(address.email, new Date().toISOString(), address.userId, address.id, ...guard.values).run();
     return result.meta.changes;
 }
 
-export async function removeEmailAddress(database: D1Database, address: Address, credentialHash: string) {
+export async function removeEmailAddress(database: D1Database, address: Address, authorization: SecurityAuthorization) {
+    const guard = securityGuard(authorization, 'u."id"');
     const result = await database.prepare(`DELETE FROM "userEmail" WHERE "id" = ? AND "userId" = ?
-        AND EXISTS (SELECT 1 FROM "user" u JOIN "account" a ON a."userId" = u."id"
-            WHERE u."id" = ? AND COALESCE(u."banned", 0) = 0 AND a."providerId" = 'credential' AND a."password" = ?)`)
-        .bind(address.id, address.userId, address.userId, credentialHash).run();
+        AND EXISTS (SELECT 1 FROM "user" u WHERE u."id" = ? AND COALESCE(u."banned", 0) = 0 AND ${guard.sql})`)
+        .bind(address.id, address.userId, address.userId, ...guard.values).run();
     return result.meta.changes;
 }
 

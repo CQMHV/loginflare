@@ -34,6 +34,7 @@ avatars.on(['POST', 'DELETE'], '/api/account/avatar', async (c) => {
     if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
     if (identity.user.banned || !identity.user.emailVerified) return c.json({ code: 'FORBIDDEN' }, 403);
     const uploading = c.req.method === 'POST';
+    const importing = uploading && c.req.header('X-Avatar-Import') === 'if-empty';
     for (const [key, window, max] of [
         [`avatar:${uploading ? 'upload' : 'remove'}:${identity.user.id}`, uploading ? 3600 : 60, uploading ? 10 : 30],
         [`avatar:ip:${c.req.header('CF-Connecting-IP') ?? 'unknown'}`, 60, 60],
@@ -62,8 +63,12 @@ avatars.on(['POST', 'DELETE'], '/api/account/avatar', async (c) => {
     const committing = Date.now(), nowIso = new Date(committing).toISOString();
     const changed = await c.env.DB.prepare(`UPDATE "user" SET "image" = ?, "updatedAt" = ? WHERE "id" = ? AND COALESCE("banned", 0) = 0 AND "emailVerified" = 1
         AND EXISTS (SELECT 1 FROM "session" s WHERE s."id" = ? AND s."userId" = "user"."id" AND s."expiresAt" > ?)
-        ${image ? 'AND EXISTS (SELECT 1 FROM "userAvatar" a WHERE a."url" = ? AND a."userId" = "user"."id" AND a."deleteAfter" > ?)' : ''}`)
+        ${image ? 'AND EXISTS (SELECT 1 FROM "userAvatar" a WHERE a."url" = ? AND a."userId" = "user"."id" AND a."deleteAfter" > ?)' : ''}
+        ${importing ? `AND ("image" IS NULL OR "image" = '')` : ''}`)
         .bind(image, nowIso, identity.user.id, identity.session.id, nowIso, ...(image ? [image, committing] : [])).run();
-    if (!changed.meta.changes) return c.json({ code: 'UNAUTHORIZED' }, 401);
+    if (!changed.meta.changes) {
+        if (importing && await c.env.DB.prepare('SELECT 1 FROM "user" WHERE "id" = ? AND "image" IS NOT NULL AND "image" <> ?').bind(identity.user.id, '').first()) return c.json({ imported: false });
+        return c.json({ code: 'UNAUTHORIZED' }, 401);
+    }
     return c.json({ image });
 });

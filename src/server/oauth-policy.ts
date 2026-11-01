@@ -27,6 +27,10 @@ export function createOAuthPolicy(env: Env) {
         const sessions = `"userId" = ?${exceptSessionId ? ' AND "id" <> ?' : ''}`;
         const grants = `"userId" = ?${exceptSessionId ? ' AND ("originalSessionId" IS NULL OR "originalSessionId" <> ?)' : ''}`;
         await env.DB.batch([
+            env.DB.prepare(`DELETE FROM "verification" WHERE "identifier" LIKE 'social-mfa:%' AND "value" IN (SELECT "id" FROM "socialFlow" WHERE "userId" = ?)`)
+                .bind(userId),
+            env.DB.prepare('DELETE FROM "socialFlow" WHERE "userId" = ?').bind(userId),
+            env.DB.prepare('DELETE FROM "securityProof" WHERE "userId" = ?').bind(userId),
             env.DB.prepare(`DELETE FROM "verification" WHERE "value" = ? AND "identifier" LIKE '2fa-%'`)
                 .bind(userId),
             env.DB.prepare(`UPDATE "session" SET "oauthRevokedAt" = ? WHERE ${sessions} AND "oauthRevokedAt" IS NULL`)
@@ -73,7 +77,7 @@ export function createOAuthPolicy(env: Env) {
             return { options: { databaseHooks: {
                 session: { create: {
                     async before(session, ctx) {
-                        if (!ctx?.path?.startsWith('/two-factor/')) return;
+                        if (!ctx?.path || (!ctx.path.startsWith('/two-factor/') && !['/callback/:id', '/social/verify-email'].includes(ctx.path))) return;
                         const user = await env.DB.prepare('SELECT "banned", "emailVerified" FROM "user" WHERE "id" = ?')
                             .bind(session.userId).first<{ banned: number | null; emailVerified: number }>();
                         if (!user || user.banned || !user.emailVerified) throw new APIError('FORBIDDEN', { code: 'FORBIDDEN' });
@@ -109,7 +113,7 @@ export function createOAuthPolicy(env: Env) {
             }),
         },
         hooks: { after: [{
-            matcher: (ctx) => ['/admin/revoke-user-sessions', '/change-password', '/two-factor/verify-totp', '/two-factor/disable'].includes(ctx.path ?? ''),
+            matcher: (ctx) => ['/admin/revoke-user-sessions', '/change-password', '/social/set-password', '/two-factor/verify-totp', '/two-factor/disable'].includes(ctx.path ?? ''),
             handler: createAuthMiddleware(async (ctx) => {
                 const result = ctx.context.returned;
                 if (isAPIError(result) || (result instanceof Response && !result.ok)) return;
@@ -128,6 +132,10 @@ export function createOAuthPolicy(env: Env) {
                     return;
                 }
                 const identity = ctx.context.session;
+                if (identity && ctx.path === '/social/set-password') {
+                    await revokeAll(identity.user.id, identity.session.id, true);
+                    return;
+                }
                 if (identity && (ctx.path !== '/change-password' || ctx.body?.revokeOtherSessions === true)) {
                     // Includes offline grants whose browser session had already ended normally.
                     await revokeUser(identity.user.id, identity.session.id);

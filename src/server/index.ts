@@ -13,6 +13,8 @@ import { maximumAvatarBytes } from '../shared/avatars';
 import { branding } from './branding';
 import { publicBranding, readBranding } from './branding-settings';
 import { maximumBrandLogoBytes } from '../shared/branding';
+import { socialConnections, connection } from './social-connections';
+import { databaseRateLimit } from './rate-limit';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -33,6 +35,15 @@ const routes: Record<string, readonly string[]> = {
     '/two-factor/verify-totp': ['POST'],
     '/two-factor/verify-backup-code': ['POST'],
     '/two-factor/generate-backup-codes': ['POST'],
+    '/social/start': ['POST'],
+    '/social/flow': ['GET'],
+    '/social/email': ['POST'],
+    '/social/verify-email': ['POST'],
+    '/social/finish': ['POST'],
+    '/social/avatar-source': ['GET'],
+    '/social/security': ['GET'],
+    '/social/unlink': ['POST'],
+    '/social/set-password': ['POST'],
     '/admin/get-user': ['GET'],
     '/admin/ban-user': ['POST'],
     '/admin/unban-user': ['POST'],
@@ -63,6 +74,12 @@ const fields: Record<string, readonly string[]> = {
     '/two-factor/verify-totp': ['code', 'oauth_query'],
     '/two-factor/verify-backup-code': ['code', 'oauth_query'],
     '/two-factor/generate-backup-codes': ['password'],
+    '/social/start': ['connectionId', 'locale', 'purpose', 'action', 'oauth_query', 'password'],
+    '/social/email': ['email'],
+    '/social/verify-email': ['code'],
+    '/social/finish': [],
+    '/social/unlink': ['accountId', 'password'],
+    '/social/set-password': ['newPassword'],
     '/admin/ban-user': ['userId', 'banReason'],
     '/admin/unban-user': ['userId'],
     '/admin/revoke-user-sessions': ['userId'],
@@ -77,10 +94,14 @@ const fields: Record<string, readonly string[]> = {
 
 const privatePaths = new Set(['/update-user', '/change-password', '/revoke-session', '/revoke-other-sessions',
     '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove',
-    '/two-factor/enable', '/two-factor/disable', '/two-factor/generate-backup-codes']);
+    '/two-factor/enable', '/two-factor/disable', '/two-factor/generate-backup-codes',
+    '/social/security', '/social/unlink', '/social/set-password', '/social/avatar-source']);
 const app = new Hono<{ Bindings: Env }>();
 
 function logPath(path: string): string {
+    if (/^\/api\/auth\/callback\/[^/]+$/.test(path)) return '/api/auth/callback/:id';
+    if (path === '/api/social/providers' || path === '/api/admin/social-connections') return path;
+    if (/^\/api\/admin\/social-connections\/[^/]+$/.test(path)) return '/api/admin/social-connections/:id';
     if (['/api/health', '/api/config', '/api/branding', '/api/admin/branding', '/api/admin/branding/logo'].includes(path)) return path;
     if (path === '/api/admin/users' || path === '/api/account/sessions') return path;
     if (path === '/api/account/avatar') return path;
@@ -156,6 +177,7 @@ app.route('/api', management);
 app.route('/api/oauth', consent);
 app.route('/', avatars);
 app.route('/', branding);
+app.route('/', socialConnections);
 app.all('/.well-known/oauth-authorization-server/api/auth', async (c) => {
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cache-Control', 'no-store');
@@ -169,7 +191,8 @@ app.use('/api/auth/*', async (c, next) => {
 
 app.all('/api/auth/*', async (c) => {
     const path = c.req.path.slice('/api/auth'.length);
-    const methods = routes[path];
+    const callbackId = /^\/callback\/([a-f0-9-]{36})$/.exec(path)?.[1];
+    const methods = callbackId ? ['GET'] : routes[path];
     if (!methods) return c.json({ code: 'NOT_FOUND' }, 404);
     if (!methods.includes(c.req.method)) return c.json({ code: 'METHOD_NOT_ALLOWED' }, 405);
     validateConfig(c.env);
@@ -206,7 +229,19 @@ app.all('/api/auth/*', async (c) => {
     }
 
     const delivery = { failed: false };
-    const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task));
+    if (path === '/social/start' && body.purpose && body.purpose !== 'login') {
+        const identity = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
+        if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
+        if (identity.user.banned || !identity.user.emailVerified || (body.purpose === 'test' && identity.user.role !== 'admin')) return c.json({ code: 'FORBIDDEN' }, 403);
+    }
+    const selectedId = callbackId ?? (path === '/social/start' && typeof body.connectionId === 'string' ? body.connectionId : undefined);
+    if (selectedId) {
+        const rate = await databaseRateLimit(c.env.DB).consume(`social:initialize:${c.req.header('cf-connecting-ip') ?? 'unknown'}`, { window: 60, max: 40 });
+        if (!rate.allowed) return c.json({ code: 'TOO_MANY_REQUESTS' }, 429);
+    }
+    const selected = selectedId ? await connection(c.env, selectedId, !!callbackId || body.purpose === 'test') : null;
+    if (selectedId && !selected) return c.json({ code: 'SOCIAL_CONNECTION_NOT_FOUND' }, 404);
+    const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task), selected ?? undefined);
     if (privatePaths.has(path) || path.startsWith('/admin/') || path === '/get-session') {
         const identity = await auth.api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (!identity && path !== '/get-session') return c.json({ code: 'UNAUTHORIZED' }, 401);
@@ -244,7 +279,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|two-factor|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail|admin\/branding)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/new|admin\/applications\/detail|admin\/branding|admin\/social-connections)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);

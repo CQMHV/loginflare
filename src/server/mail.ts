@@ -52,11 +52,11 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
     }
 }
 
-export async function sendEmailCode(env: Env, user: MailUser, code: string, purpose: 'verify' | 'recovery'): Promise<void> {
+export async function sendEmailCode(env: Env, user: MailUser, code: string, purpose: 'verify' | 'recovery' | 'social'): Promise<void> {
     const brand = await readBranding(env.DB);
     const locale = isLocale(user.locale) ? user.locale : 'en-US';
     const chinese = locale === 'zh-CN';
-    const subject = purpose === 'verify'
+    const subject = purpose === 'social' ? chinese ? '完成第三方账号注册' : 'Complete your social sign-up' : purpose === 'verify'
         ? chinese ? '验证新增邮箱' : 'Verify your additional email'
         : chinese ? '账号密码恢复验证码' : 'Account password recovery code';
     const introduction = chinese ? `你的 ${brand.name} 验证码是：` : `Your ${brand.name} verification code is:`;

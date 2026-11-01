@@ -50,16 +50,22 @@ it.each(['oauthAccessToken', 'oauthRefreshToken'] as const)('requires a canonica
 it('collects only proofs and counters past expiry plus the safety buffer', async () => {
     const now = Date.now();
     await fixture(now);
+    await env.DB.prepare(`INSERT INTO "socialConnection" ("id", "name", "type", "config", "createdAt", "updatedAt") VALUES ('connection', 'Test', 'oauth2', '{}', ?, ?)`)
+        .bind(iso(now), iso(now)).run();
     for (const [id, expiresAt] of [['old', now - 600_000], ['buffer', now - 60_000], ['live', now + 60_000]] as const) {
         await env.DB.batch([
+            env.DB.prepare(`INSERT INTO "socialFlow" ("id", "connectionId", "revision", "browserHash", "purpose", "stage", "data", "expiresAt") VALUES (?, 'connection', 0, 'hash', 'login', 'email', 'encrypted', ?)`)
+                .bind(`flow:${id}`, expiresAt),
+            env.DB.prepare(`INSERT INTO "securityProof" ("id", "userId", "sessionId", "purpose", "expiresAt") VALUES (?, 'owner', 'origin', 'link', ?)`)
+                .bind(`security:${id}`, expiresAt),
             env.DB.prepare('INSERT INTO "rateLimit" ("id", "key", "count", "lastRequest", "expiresAt") VALUES (?, ?, 1, ?, ?)').bind(`rate:${id}`, id, expiresAt - 60_000, expiresAt),
             env.DB.prepare('INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)').bind(`proof:${id}`, `proof:${id}`, 'owner', iso(expiresAt), iso(now), iso(now)),
             env.DB.prepare('INSERT INTO "emailChallenge" ("id", "userId", "emailId", "purpose", "codeHash", "expiresAt", "createdAt") VALUES (?, ?, ?, ?, ?, ?, ?)').bind(`challenge:${id}`, 'owner', 'primary:owner', 'verify', 'hashed-code', expiresAt, now),
         ]);
     }
     const result = await maintainDatabase(env, now);
-    expect(result.deleted).toMatchObject({ rateLimit: 1, verification: 1, emailChallenge: 1 });
-    for (const table of ['rateLimit', 'verification', 'emailChallenge']) expect(await env.DB.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).first('count')).toBe(2);
+    expect(result.deleted).toMatchObject({ rateLimit: 1, verification: 1, emailChallenge: 1, socialFlow: 1, securityProof: 1 });
+    for (const table of ['rateLimit', 'verification', 'emailChallenge', 'socialFlow', 'securityProof']) expect(await env.DB.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).first('count')).toBe(2);
     expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "user"').first('count')).toBe(1);
 });
 

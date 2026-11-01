@@ -35,6 +35,19 @@ async function image(response: Response) {
     return (await response.json<{ image: string }>()).image;
 }
 
+it('imports only into an empty avatar and preserves a concurrent/manual photo', async () => {
+    const { client, cookie } = await actor();
+    const imported = await image(await avatarRequest(cookie, bytes(), client.bindings, { 'X-Avatar-Import': 'if-empty' }));
+    const manual = await image(await avatarRequest(cookie, bytes(), client.bindings));
+    expect(manual).not.toBe(imported);
+    const skipped = await avatarRequest(cookie, bytes(), client.bindings, { 'X-Avatar-Import': 'if-empty' });
+    expect(await skipped.json()).toMatchObject({ imported: false });
+    expect((await session(client, cookie))!.user.image).toBe(manual);
+    await avatarRequest(cookie, null, client.bindings);
+    const retried = await image(await avatarRequest(cookie, bytes(), client.bindings, { 'X-Avatar-Import': 'if-empty' }));
+    expect(retried).not.toBe(manual);
+});
+
 it('stores an owned normalized avatar, strips metadata, and serves it without an identity/database read', async () => {
     const { client, cookie, identity } = await actor();
     const url = await image(await avatarRequest(cookie, bytes(avatarWebpWithMetadata), client.bindings));

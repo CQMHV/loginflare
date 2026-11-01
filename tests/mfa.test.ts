@@ -146,7 +146,9 @@ it('rejects accounts banned while MFA verification was pending', async () => {
     const enrollment = await enroll(client, await client.signin());
     const pending = await challenge(client);
     await env.DB.prepare('UPDATE "user" SET "banned" = 1').run();
-    expect((await factor(client, 'verify-totp', pending, { code: await authenticatorCode(enrollment.totpURI) })).status).toBe(403);
+    expect((await factor(client, 'verify-totp', pending, { code: await authenticatorCode(enrollment.totpURI) })).status).toBe(401);
+    await env.DB.prepare('UPDATE "user" SET "banned" = 0').run();
+    expect((await factor(client, 'verify-totp', pending, { code: await authenticatorCode(enrollment.totpURI) })).status).toBe(401);
 });
 
 it('restricts MFA routes, origin, fields and enrollment to authenticated users', async () => {

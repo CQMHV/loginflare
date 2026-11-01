@@ -23,6 +23,8 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
     const tasks = [
         { table: 'rateLimit', cutoff },
         { table: 'emailChallenge', cutoff },
+        { table: 'socialFlow', cutoff },
+        { table: 'securityProof', cutoff },
         { table: 'verification', cutoff: cutoffIso },
         { table: 'userAvatar', cutoff, column: 'deleteAfter', avatars: true },
         { table: 'brandLogo', cutoff, column: 'deleteAfter', logos: true },

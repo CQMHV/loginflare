@@ -8,10 +8,16 @@ import { locales } from '../shared/locales.ts';
 import { createOAuthPolicy } from './oauth-policy.ts';
 import { emailManagement } from './emails';
 import { databaseRateLimit } from './rate-limit';
+import { socialAuthentication } from './social-auth';
+import type { LoadedConnection } from './social-connections';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void) {
+export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
+    const multifactor = twoFactor({ issuer: 'Loginflare', allowPasswordless: true });
+    const passwordMfa = multifactor.hooks.after[0]!.matcher;
+    multifactor.hooks.after[0]!.matcher = (context) => passwordMfa(context)
+        || context.path === '/callback/:id' || context.path === '/social/verify-email';
     async function send(user: { email: string; name: string; locale?: unknown }, url: string) {
         try {
             await sendAccountMail(env, user, url);
@@ -43,6 +49,10 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             sendVerificationEmail: ({ user, url }) => send(user, url),
         },
         verification: { disableCleanup: true },
+        account: { updateAccountOnSignIn: false, accountLinking: {
+            enabled: true, disableImplicitLinking: true, allowDifferentEmails: true,
+            trustedProviders: selected ? [selected.id] : [], updateUserInfoOnLink: false,
+        } },
         user: {
             additionalFields: {
                 locale: {
@@ -56,7 +66,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             changeEmail: { enabled: false },
             deleteUser: { enabled: false },
         },
-        session: { cookieCache: { enabled: false } },
+        session: { cookieCache: { enabled: false }, additionalFields: { socialFlowId: { type: 'string', required: false, input: false } } },
         advanced: {
             database: { validateSchema: false },
             useSecureCookies: env.APP_ENV !== 'development',
@@ -79,6 +89,11 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                 '/emails/set-primary': { window: 60, max: 5 },
                 '/emails/remove': { window: 60, max: 5 },
                 '/send-verification-email': { window: 60, max: 3 },
+                '/social/start': { window: 60, max: 20 },
+                '/social/email': { window: 60, max: 5 },
+                '/social/verify-email': { window: 60, max: 10 },
+                '/social/unlink': { window: 60, max: 5 },
+                '/social/set-password': { window: 60, max: 5 },
             },
         },
         plugins: [
@@ -86,7 +101,8 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             emailManagement(env, schedule),
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
             username({ displayUsername: false }),
-            twoFactor({ issuer: 'Loginflare' }),
+            multifactor,
+            socialAuthentication(env, selected),
             jwt({
                 jwks: { keyPairConfig: { alg: 'RS256' } },
                 jwt: { issuer: `${env.AUTH_URL}/api/auth` },
