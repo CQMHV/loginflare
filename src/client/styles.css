@@ -234,11 +234,11 @@ md-filled-button:not(.danger-button) {
 .workspace-title svg { color: var(--md-sys-color-primary); }
 .workspace-switch { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 16px; font-size: 14px; font-weight: 500; }
 .workspace-switch:hover { background: var(--md-sys-color-surface-container-high); text-decoration: none; }
-.avatar-menu-trigger, .avatar-upload-trigger, .avatar-edit-button { position: relative; display: grid; place-items: center; flex-shrink: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--md-sys-color-on-surface); font: inherit; cursor: pointer; --md-focus-ring-shape: 50%; }
+.avatar-menu-trigger, .image-upload-trigger, .image-edit-button { position: relative; display: grid; place-items: center; flex-shrink: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--md-sys-color-on-surface); font: inherit; cursor: pointer; --md-focus-ring-shape: 50%; }
 .avatar-menu-trigger { width: 40px; height: 40px; }
 .avatar-menu-trigger::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
-.avatar-menu-trigger:focus-visible, .avatar-upload-trigger:focus-visible, .avatar-edit-button:focus-visible { outline: none; }
-.avatar-menu-trigger:disabled, .avatar-upload-trigger:disabled, .avatar-edit-button:disabled { cursor: wait; }
+.avatar-menu-trigger:focus-visible, .image-upload-trigger:focus-visible, .image-edit-button:focus-visible { outline: none; }
+.avatar-menu-trigger:disabled, .image-upload-trigger:disabled, .image-edit-button:disabled { cursor: wait; }
 .user-avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 500; }
 .page-content { width: 100%; max-width: 1180px; padding: 32px 48px 56px; margin: 0 auto; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
@@ -252,31 +252,32 @@ md-filled-button:not(.danger-button) {
 .profile-card > .card-body { display: flex; flex-direction: column; gap: 28px; }
 .profile-form { width: 100%; max-width: 640px; }
 .avatar-editor { display: flex; align-items: center; gap: 20px; min-width: 0; }
-.avatar-photo-control { position: relative; width: 80px; height: 80px; flex-shrink: 0; }
-.avatar-upload-trigger { width: 100%; height: 100%; }
-.avatar-upload-trigger > .profile-avatar { width: 100%; height: 100%; font-size: 32px; }
-.avatar-edit-button { position: absolute; right: -4px; bottom: -4px; width: 28px; height: 28px; border: 2px solid var(--md-sys-color-surface-container-lowest); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); --md-icon-size: 16px; --md-ripple-hover-color: currentColor; --md-ripple-pressed-color: currentColor; z-index: 1; }
-.avatar-edit-button::before { content: ''; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; transform: translate(-50%, -50%); border-radius: 50%; }
-.avatar-edit-button > .progress-indicator { width: 16px; height: 16px; margin: 0; --md-circular-progress-size: 16px; --md-circular-progress-active-indicator-color: currentColor; }
+.image-picker { position: relative; width: 80px; height: 80px; flex-shrink: 0; --image-picker-shape: 50%; }
+.image-picker[data-shape='rounded'] { --image-picker-shape: 16px; }
+.image-upload-trigger { width: 100%; height: 100%; border-radius: var(--image-picker-shape); --md-focus-ring-shape: var(--image-picker-shape); }
+.image-upload-trigger > .profile-avatar { width: 100%; height: 100%; font-size: 32px; }
+.image-edit-button { position: absolute; right: -4px; bottom: -4px; width: 28px; height: 28px; border: 2px solid var(--md-sys-color-surface-container-lowest); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); --md-icon-size: 16px; --md-ripple-hover-color: currentColor; --md-ripple-pressed-color: currentColor; z-index: 1; }
+.image-edit-button::before { content: ''; position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; transform: translate(-50%, -50%); border-radius: 50%; }
+.image-edit-button > .progress-indicator { width: 16px; height: 16px; margin: 0; --md-circular-progress-size: 16px; --md-circular-progress-active-indicator-color: currentColor; }
 .avatar-description { min-width: 0; }
 .avatar-description h3 { font-size: 16px; font-weight: 500; }
 .avatar-description p { max-width: 360px; margin-top: 6px; color: var(--md-sys-color-on-surface-variant); font-size: 13px; line-height: 1.6; }
 .avatar-description > md-text-button { margin-top: 4px; }
 .avatar-error { margin: 12px 0 0; }
-.avatar-dialog { width: min(560px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); }
-.avatar-crop-headline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.avatar-crop-tools { display: flex; flex-shrink: 0; }
-.avatar-crop-content { display: flex; flex-direction: column; gap: 16px; }
-.avatar-crop-content > p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
-.avatar-crop-stage { position: relative; width: 100%; height: min(360px, max(180px, calc(100dvh - 376px))); flex-shrink: 0; overflow: hidden; border-radius: 16px; background-color: #242424; background-image: conic-gradient(#303030 25%, transparent 0 50%, #303030 0 75%, transparent 0); background-size: 16px 16px; }
-.avatar-crop-stage > .progress-indicator { position: absolute; top: 50%; left: 50%; margin: -10px 0 0 -10px; }
-.avatar-crop-stage .reactEasyCrop_Container { cursor: grab; }
-.avatar-crop-stage .reactEasyCrop_Container:active { cursor: grabbing; }
-.avatar-crop-stage .reactEasyCrop_Container:focus-visible { outline: 3px solid var(--md-sys-color-primary); outline-offset: -3px; }
-.avatar-crop-stage .reactEasyCrop_CropArea { border: 2px solid white; color: rgb(0 0 0 / .5); }
-.avatar-crop-zoom { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.avatar-crop-zoom md-slider { flex: 1; min-width: 0; }
-.avatar-crop-zoom output { width: 44px; flex-shrink: 0; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--md-sys-color-on-surface-variant); }
+.image-crop-dialog { width: min(560px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); }
+.image-crop-headline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.image-crop-tools { display: flex; flex-shrink: 0; }
+.image-crop-content { display: flex; flex-direction: column; gap: 16px; }
+.image-crop-content > p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
+.image-crop-stage { position: relative; width: 100%; height: min(360px, max(180px, calc(100dvh - 376px))); flex-shrink: 0; overflow: hidden; border-radius: 16px; background-color: #242424; background-image: conic-gradient(#303030 25%, transparent 0 50%, #303030 0 75%, transparent 0); background-size: 16px 16px; }
+.image-crop-stage > .progress-indicator { position: absolute; top: 50%; left: 50%; margin: -10px 0 0 -10px; }
+.image-crop-stage .reactEasyCrop_Container { cursor: grab; }
+.image-crop-stage .reactEasyCrop_Container:active { cursor: grabbing; }
+.image-crop-stage .reactEasyCrop_Container:focus-visible { outline: 3px solid var(--md-sys-color-primary); outline-offset: -3px; }
+.image-crop-stage .reactEasyCrop_CropArea { border: 2px solid white; color: rgb(0 0 0 / .5); }
+.image-crop-zoom { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.image-crop-zoom md-slider { flex: 1; min-width: 0; }
+.image-crop-zoom output { width: 44px; flex-shrink: 0; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--md-sys-color-on-surface-variant); }
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; white-space: nowrap; width: fit-content; }
 .badge.verified, .badge.active, .badge.current { color: var(--md-sys-color-on-tertiary-container); background: var(--md-sys-color-tertiary-container); }
 .badge.suspended { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }

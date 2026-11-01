@@ -4,6 +4,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 
 export default defineConfig({
     cacheDir: 'node_modules/.vite/loginflare',
+    optimizeDeps: { include: ['@xmldom/xmldom'] },
     plugins: [{
         name: 'loginflare-local-read-delay',
         apply: 'serve',

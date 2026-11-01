@@ -35,6 +35,7 @@
         "@material-symbols/svg-500": "0.45.8",
         "@material/web": "2.5.0",
         "@tanstack/react-query": "5.105.0",
+        "@xmldom/xmldom": "0.9.12",
         "better-auth": "1.7.13",
         "hono": "4.13.14",
         "i18next": "26.5.11",
