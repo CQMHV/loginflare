@@ -7,7 +7,7 @@ import { resolveLocale } from './locale';
 const enUS = {
     oauth: oauthEn,
     emails: emailEn,
-    avatar: { label: '{{name}}’s avatar', file: 'Choose an avatar image', change: 'Change photo', remove: 'Remove photo', removeConfirm: 'Remove your photo and use the default avatar?', crop: 'Adjust your photo', preview: 'Avatar preview', hint: 'Use a static JPG, PNG or WebP image up to 20 MiB. Adjust the crop before saving.', zoom: 'Zoom', horizontal: 'Horizontal position', vertical: 'Vertical position', save: 'Save photo' },
+    avatar: { title: 'Profile photo', selectHint: 'Click your photo to change it. JPG, PNG or WebP, up to 20 MiB.', edit: 'Edit photo', label: '{{name}}’s avatar', file: 'Choose an avatar image', change: 'Change photo', remove: 'Remove photo', removeConfirm: 'Remove your photo and use the default avatar?', crop: 'Adjust your photo', preview: 'Avatar preview', hint: 'Use a static JPG, PNG or WebP image up to 20 MiB. Adjust the crop before saving.', zoom: 'Zoom', horizontal: 'Horizontal position', vertical: 'Vertical position', save: 'Save photo' },
     brand: 'Loginflare',
     tagline: 'Your identity. Your cloud.',
     platform: 'CLOUDFLARE-NATIVE IDENTITY',
@@ -223,7 +223,7 @@ const enUS = {
 const zhCN: typeof enUS = {
     oauth: oauthZh,
     emails: emailZh,
-    avatar: { label: '{{name}}的头像', file: '选择头像图片', change: '修改头像', remove: '移除头像', removeConfirm: '移除当前照片并使用默认头像？', crop: '调整头像', preview: '头像预览', hint: '选择不超过 20 MiB 的静态 JPG、PNG 或 WebP 图片，调整裁剪范围后保存。', zoom: '缩放', horizontal: '水平位置', vertical: '垂直位置', save: '保存头像' },
+    avatar: { title: '头像', selectHint: '点击头像更换图片，支持 JPG、PNG、WebP，最大 20 MiB。', edit: '编辑头像', label: '{{name}}的头像', file: '选择头像图片', change: '修改头像', remove: '移除头像', removeConfirm: '移除当前照片并使用默认头像？', crop: '调整头像', preview: '头像预览', hint: '选择不超过 20 MiB 的静态 JPG、PNG 或 WebP 图片，调整裁剪范围后保存。', zoom: '缩放', horizontal: '水平位置', vertical: '垂直位置', save: '保存头像' },
     brand: 'Loginflare',
     tagline: '你的身份，你的云。',
     platform: 'CLOUDFLARE 原生身份平台',

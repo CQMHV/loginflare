@@ -16,7 +16,7 @@ import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigatio
 import { resolveLocale, savePreference } from './locale';
 import { ConnectionNotice, DataScope, ResourceFeedback, useConfiguration, useDataActions, useIdentity, useResource } from './data';
 import { PageStateProvider, useClearSecrets, usePageDraft } from './page-state';
-import { Avatar, AvatarControls } from './Avatar';
+import { Avatar, AvatarEditor } from './Avatar';
 import { ToolbarIcon } from './ToolbarIcon';
 
 interface AppContextValue {
@@ -523,15 +523,18 @@ function ProfilePage() {
     return <>
         <PageHeading title={t('profileTitle')} description={t('profileDescription')} />
         <ResourceFeedback query={{ ...identityQuery, error: null }} />
-        <div className="profile-overview"><Avatar name={identity?.user.name ?? ''} image={identity?.user.image} className="profile-avatar" /><div><h2>{identity?.user.name}</h2><AvatarControls image={identity?.user.image} /></div></div>
-        <section className="card"><div className="card-heading"><h2>{t('accountDetails')}</h2><p>{t('accountDetailsDescription')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
-            <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
-            <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={(name) => setDraft({ ...draft, name })} maxLength={100} required />
-            <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={(username) => setDraft({ ...draft, username })} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
-            <div className="form-footer">{draft && <Button className="text-button" onClick={() => setDraft(undefined)}>{t('discardDraft')}</Button>}<Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
-        </form></section>
+        <section className="card profile-card" aria-labelledby="profile-account-title"><div className="card-heading"><h2 id="profile-account-title">{t('accountDetails')}</h2><p>{t('accountDetailsDescription')}</p></div><div className="card-body">
+            <AvatarEditor name={identity?.user.name ?? ''} image={identity?.user.image} />
+            <Divider />
+            <form className="stack-form profile-form" onSubmit={(event) => { void save(event); }}>
+                <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
+                <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={(name) => setDraft({ ...draft, name })} maxLength={100} required />
+                <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={(username) => setDraft({ ...draft, username })} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
+                <div className="form-footer">{draft && <Button className="text-button" onClick={() => setDraft(undefined)}>{t('discardDraft')}</Button>}<Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
+            </form>
+            <dl className="account-metadata"><div><dt>{t('memberSince')}</dt><dd>{formatDate(identity?.user.createdAt, locale)}</dd></div><div><dt>{t('accountId')}</dt><dd><code>{identity?.user.id}</code></dd></div></dl>
+        </div></section>
         <section className="card"><div className="card-heading"><h2>{t('preferences')}</h2><p>{t('preferencesDescription')}</p></div><List className="preference-list" label={t('preferences')}><ListItem headline={t('language')} end={<LanguageSwitcher />} /></List></section>
-        <div className="account-metadata"><span>{t('memberSince')} {formatDate(identity?.user.createdAt, locale)}</span><span>{t('accountId')}: <code>{identity?.user.id}</code></span></div>
     </>;
 }
 

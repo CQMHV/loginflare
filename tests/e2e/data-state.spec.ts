@@ -140,7 +140,7 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
     await page.setViewportSize({ width, height: 900 });
     await page.clock.install();
     for (const [name, path, ready] of [
-        ['profile', '/en-us/account', '.profile-overview'],
+        ['profile', '/en-us/account', '.profile-card .avatar-editor'],
         ['emails', '/en-us/account/emails', '.email-row'],
         ['sessions', '/en-us/account/sessions', '.session-row'],
         ['users', '/en-us/admin/users', 'tbody tr'],
@@ -152,7 +152,7 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
         await expect(page.locator(ready).first()).toBeVisible();
         await expect(page.getByRole('button', { name: /^(Refresh data|刷新数据)$/ })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
-        const positions = () => page.locator('.page-content > .page-heading, .page-content > .profile-overview, .page-content > .card').evaluateAll((elements) =>
+        const positions = () => page.locator('.page-content > .page-heading, .page-content > .card').evaluateAll((elements) =>
             elements.map((element) => { const rect = element.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));
         const before = await positions();
         let release!: () => void;
@@ -186,7 +186,7 @@ test('reuses account and administration reads, preserves drafts and scroll, and 
     await page.clock.fastForward(16_000);
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await page.getByRole('link', { name: 'Profile', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Updated on server', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'Updated on server');
     expect(server.count(page, '/api/auth/get-session')).toBe(beforeProfileReturn + 1);
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Unsaved profile');
     await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
@@ -311,7 +311,7 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     await expect.poll(() => server.count(page, '/api/auth/update-user', 'POST')).toBe(1);
     await page.getByLabel('Display name', { exact: true }).fill('Second revision');
     release(); server.state.writeGate = undefined;
-    await expect(page.getByRole('heading', { name: 'First revision', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'First revision');
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Second revision');
     await page.getByRole('link', { name: 'Security', exact: true }).click();
     await page.getByLabel('Current password', { exact: true }).fill('must-be-cleared');
@@ -362,9 +362,9 @@ test('synchronizes profile changes between tabs without overwriting a local draf
     await peer.goto('/en-us/account');
     await peer.getByLabel('Display name', { exact: true }).fill('Saved in another tab');
     await peer.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(peer.getByRole('heading', { name: 'Saved in another tab', exact: true })).toBeVisible();
+    await expect(peer.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'Saved in another tab');
     await page.bringToFront();
-    await expect(page.getByRole('heading', { name: 'Saved in another tab', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'Saved in another tab');
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Local unsaved draft');
     await peer.close();
 });

@@ -2,7 +2,8 @@ import { createElement, useEffect, useRef, useState, type ReactNode } from 'reac
 import type { MdDialog } from '@material/web/dialog/dialog.js';
 import { useTranslation } from 'react-i18next';
 import { ApiError, fetchJson, readResponse } from './api';
-import { Button, ConfirmationDialog } from './material';
+import { Button, ConfirmationDialog, Progress } from './material';
+import { ToolbarIcon } from './ToolbarIcon';
 import { useDataActions } from './data';
 import { useClearSecrets } from './page-state';
 import { avatarIdPattern, avatarMimeType, avatarSize, inspectImage, maximumAvatarBytes, maximumSourceBytes } from '../shared/avatars';
@@ -22,7 +23,7 @@ export function Avatar({ name, image, className, fallback }: { name: string; ima
     </span>;
 }
 
-export function AvatarControls({ image }: { image?: string | null }) {
+export function AvatarEditor({ name, image }: { name: string; image?: string | null }) {
     const { t } = useTranslation();
     const actions = useDataActions();
     const input = useRef<HTMLInputElement>(null);
@@ -74,10 +75,22 @@ export function AvatarControls({ image }: { image?: string | null }) {
     }
 
     return <>
-        <div className="avatar-controls">
-            <input className="sr-only" ref={input} type="file" accept="image/png,image/jpeg,image/webp" aria-label={t('avatar.file')} disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void choose(file); }} />
-            <Button className="text-button small" busy={busy} onClick={() => input.current?.click()}>{t('avatar.change')}</Button>
-            {image && <Button className="text-button small" disabled={busy} onClick={() => setRemoving(true)}>{t('avatar.remove')}</Button>}
+        <div className="avatar-editor">
+            <input className="sr-only" ref={input} type="file" tabIndex={-1} accept="image/png,image/jpeg,image/webp" aria-label={t('avatar.file')} disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void choose(file); }} />
+            <div className="avatar-photo-control">
+                <button type="button" className="avatar-upload-trigger" aria-label={t('avatar.change')} disabled={busy} onClick={() => input.current?.click()}>
+                    <Avatar name={name} image={image} className="profile-avatar" />
+                    {createElement('md-ripple', { disabled: busy })}{createElement('md-focus-ring')}
+                </button>
+                <button type="button" className="avatar-edit-button" aria-label={t('avatar.edit')} title={t('avatar.edit')} disabled={busy} aria-busy={busy || undefined} onClick={() => input.current?.click()}>
+                    {busy ? <Progress /> : <ToolbarIcon name="edit" />}
+                    {createElement('md-ripple', { disabled: busy })}{createElement('md-focus-ring')}
+                </button>
+            </div>
+            <div className="avatar-description">
+                <h3>{t('avatar.title')}</h3><p>{t('avatar.selectHint')}</p>
+                {image && <Button className="text-button small" disabled={busy} onClick={() => setRemoving(true)}>{t('avatar.remove')}</Button>}
+            </div>
         </div>
         {error && !photo && <div className="notice error avatar-error" role="alert">{t(`errors.${error}`, { defaultValue: t('errors.UNKNOWN_ERROR') })}</div>}
         {photo && <CropDialog photo={photo} busy={busy} requestError={error} onCancel={() => setPhoto(undefined)} onSave={save} />}
