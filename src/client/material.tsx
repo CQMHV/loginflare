@@ -175,25 +175,39 @@ export function MenuButton({ label, description, icon, options, onSelect, classN
     </div>;
 }
 
-export function ConfirmationDialog({ title, description, cancelLabel, confirmLabel, onCancel, onConfirm }: {
-    title: string; description: string; cancelLabel: string; confirmLabel: string; onCancel: () => void; onConfirm: () => void;
-}) {
+export function FormDialog({ title, children, cancelLabel, confirmLabel, onCancel, onSubmit, busy = false, confirmDisabled = false, danger = false }: PropsWithChildren<{
+    title: string; cancelLabel: string; confirmLabel?: string; onCancel: () => void; onSubmit?: (event: React.FormEvent<HTMLFormElement>) => void;
+    busy?: boolean; confirmDisabled?: boolean; danger?: boolean;
+}>) {
     const dialog = useRef<MdDialog>(null);
+    const form = useRef<HTMLFormElement>(null);
+    const shown = useRef(false);
     const closing = useRef(false);
-    const [busy, setBusy] = useState(false);
+    const cancelAction = useRef<() => Promise<void>>(() => Promise.resolve());
     useEffect(() => {
-        void dialog.current?.show();
+        const element = dialog.current;
+        if (!element) return;
+        const cancelEvent = (event: Event) => { event.preventDefault(); void cancelAction.current(); };
+        element.addEventListener('cancel', cancelEvent);
+        if (!shown.current) { shown.current = true; void element.show(); }
+        return () => element.removeEventListener('cancel', cancelEvent);
     }, []);
-    async function close(callback: () => void) {
-        if (closing.current) return;
+    async function cancel() {
+        if (busy || closing.current) return;
         closing.current = true;
-        setBusy(true);
         await dialog.current?.close();
-        callback();
+        onCancel();
     }
-    return createElement('md-dialog', { ref: dialog, 'aria-label': title, onCancel: (event: Event) => { event.preventDefault(); void close(onCancel); } },
+    cancelAction.current = cancel;
+    return createElement('md-dialog', { ref: dialog, className: 'form-dialog', 'aria-label': title },
         <div slot="headline">{title}</div>,
-        <div slot="content">{description}</div>,
-        <div slot="actions"><Button className="text-button" disabled={busy} onClick={() => { void close(onCancel); }}>{cancelLabel}</Button><Button className="text-button danger" disabled={busy} onClick={() => { void close(onConfirm); }}>{confirmLabel}</Button></div>,
+        <form ref={form} slot="content" className="stack-form dialog-form" onSubmit={(event) => { event.preventDefault(); if (!busy && !closing.current && !confirmDisabled && confirmLabel) onSubmit?.(event); }}>{children}</form>,
+        <div slot="actions"><Button className="text-button" disabled={busy} onClick={() => { void cancel(); }}>{cancelLabel}</Button>{confirmLabel && <Button className={danger ? 'danger-button' : 'primary'} busy={busy} disabled={confirmDisabled} onClick={() => form.current?.requestSubmit()}>{confirmLabel}</Button>}</div>,
     );
+}
+
+export function ConfirmationDialog({ title, description, cancelLabel, confirmLabel, onCancel, onConfirm, busy = false, error }: {
+    title: string; description: string; cancelLabel: string; confirmLabel: string; onCancel: () => void; onConfirm: () => void; busy?: boolean; error?: ReactNode;
+}) {
+    return <FormDialog title={title} cancelLabel={cancelLabel} confirmLabel={confirmLabel} onCancel={onCancel} busy={busy} danger onSubmit={onConfirm}><p>{description}</p>{error}</FormDialog>;
 }

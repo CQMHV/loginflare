@@ -130,6 +130,14 @@ md-icon-button { flex-shrink: 0; }
 .back-link { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; margin-top: 24px; }
 .notice { padding: 16px; border-radius: 16px; font-size: 14px; line-height: 1.6; margin-bottom: 24px; overflow-wrap: anywhere; }
 .stack-form .notice { margin: 0; }
+.feedback-toast { position: fixed; z-index: 100; right: max(24px, env(safe-area-inset-right)); bottom: max(24px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(480px, calc(100vw - 32px)); padding: 12px 12px 12px 20px; border-radius: 16px; background: var(--md-sys-color-inverse-surface); color: var(--md-sys-color-inverse-on-surface); box-shadow: 0 4px 20px rgb(0 0 0 / 18%); font-size: 14px; line-height: 1.5; }
+.feedback-toast > span { min-width: 0; overflow-wrap: anywhere; }
+.feedback-toast > md-icon, .feedback-toast > md-icon-button { flex-shrink: 0; }
+.feedback-toast md-icon-button { --md-icon-button-icon-color: var(--md-sys-color-inverse-on-surface); }
+.feedback-toast.error { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.feedback-toast.error md-icon-button { --md-icon-button-icon-color: var(--md-sys-color-on-error-container); }
+.dialog-form > p { margin: 0; }
+.form-dialog [slot='actions'] { flex-wrap: wrap; }
 .notice.error { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .notice.success { display: flex; gap: 10px; align-items: center; background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
 .loading-state { display: flex; align-items: center; justify-content: center; padding: 48px 20px; gap: 12px; color: var(--md-sys-color-on-surface-variant); }

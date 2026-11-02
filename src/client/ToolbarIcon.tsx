@@ -9,8 +9,11 @@ import remove from '@material-symbols/svg-500/rounded/remove.svg?raw';
 import rotate_right from '@material-symbols/svg-500/rounded/rotate_right.svg?raw';
 import restart_alt from '@material-symbols/svg-500/rounded/restart_alt.svg?raw';
 import settings from '@material-symbols/svg-500/rounded/settings.svg?raw';
+import check from '@material-symbols/svg-500/rounded/check.svg?raw';
+import error from '@material-symbols/svg-500/rounded/error.svg?raw';
+import close from '@material-symbols/svg-500/rounded/close.svg?raw';
 
-const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt, settings };
+const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt, settings, check, error, close };
 
 export function ToolbarIcon({ name }: { name: keyof typeof symbols }) {
     // Only fixed Material Symbols assets from the pinned package enter this markup.
