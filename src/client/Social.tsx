@@ -84,7 +84,8 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
     const { t } = useTranslation(), navigate = useNavigate(), location = useLocation();
     const [status, setStatus] = useState<FlowStatus>(), [email, setEmail] = useState(''), [code, setCode] = useState('');
     const [error, setError] = useState<string>(() => new URLSearchParams(location.search).get('error') ?? ''), [busy, setBusy] = useState(false);
-    const actions = useDataActions();
+    const [resending, setResending] = useState(false);
+    const actions = useDataActions(), feedback = useFeedback();
     useClearSecrets(() => setCode(''));
     useEffect(() => {
         if (new URLSearchParams(location.search).has('error')) return;
@@ -120,22 +121,35 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
             else throw new ApiError('INVALID_OAUTH_QUERY', 400);
         } catch (cause) { setError(errorCode(cause)); setBusy(false); }
     }
-    async function verify(event: FormEvent) {
-        event.preventDefault(); setBusy(true); setError('');
+    async function sendCode(address: string) {
+        if (busy || !status || !['email', 'code'].includes(status.stage)) return;
+        const resend = status.stage === 'code';
+        setBusy(true); setResending(resend); setError('');
         try {
-            if (status?.stage === 'code') {
-                const result = await request<{ twoFactorRedirect?: boolean }>('/social/verify-email', { code });
-                setCode('');
-                if (result.twoFactorRedirect) { navigate(`${localizedPath(locale, 'two-factor')}?social=1`); return; }
-                setStatus(await request<FlowStatus>('/social/flow')); await refresh();
-            } else { await request('/social/email', { email }); setStatus({ ...status!, stage: 'code', email }); }
+            await request('/social/email', { email: address });
+            setCode(''); setEmail(address); setStatus({ ...status, stage: 'code', email: address });
+            if (resend) feedback.success(t('social.codeSent', { email: address }));
+        } catch (cause) { setError(errorCode(cause)); }
+        finally { setBusy(false); setResending(false); }
+    }
+    async function verify(event: FormEvent) {
+        event.preventDefault();
+        if (busy || !status) return;
+        if (status.stage === 'email') { await sendCode(email.trim().toLowerCase()); return; }
+        if (status.stage !== 'code') return;
+        setBusy(true); setError('');
+        try {
+            const result = await request<{ twoFactorRedirect?: boolean }>('/social/verify-email', { code });
+            setCode('');
+            if (result.twoFactorRedirect) { navigate(`${localizedPath(locale, 'two-factor')}?social=1`); return; }
+            setStatus(await request<FlowStatus>('/social/flow')); await refresh();
         } catch (cause) { setError(errorCode(cause)); } finally { setBusy(false); }
     }
     return <><h2>{t(status?.stage === 'tested' ? 'social.testResult' : 'social.complete')}</h2><ErrorNotice code={error} />
         {!status && !error && <p role="status">{t('loading')}</p>}
         {status && ['email', 'code'].includes(status.stage) ? <form className="stack-form" onSubmit={(event) => { void verify(event); }}><p>{t('social.emailDescription')}</p>
-            {status.stage === 'code' ? <><p role="status">{t('social.codeSent', { email: status.email })}</p><TextField label={t('emails.code')} value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} required /><Button className="text-button" disabled={busy} onClick={() => setStatus({ ...status, stage: 'email' })}>{t('social.sendCode')}</Button></> : <TextField label={t('email')} value={email} onValueChange={setEmail} type="email" maxLength={254} required />}
-            <Button type="submit" busy={busy}>{t(status.stage === 'code' ? 'social.verify' : 'social.sendCode')}</Button></form> : status && status.stage !== 'mfa' && <>
+            {status.stage === 'code' ? <><p role="status">{t('social.codeSent', { email: status.email })}</p><TextField label={t('emails.code')} value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} required disabled={busy} /><div className="action-row"><Button className="text-button" busy={resending} disabled={busy} onClick={() => { void sendCode(status.email ?? email); }}>{t('social.resendCode')}</Button><Button className="text-button" disabled={busy} onClick={() => { setCode(''); setError(''); setStatus({ ...status, stage: 'email' }); }}>{t('social.changeEmail')}</Button></div></> : <TextField label={t('email')} value={email} onValueChange={setEmail} type="email" maxLength={254} required disabled={busy} />}
+            <Button type="submit" busy={busy && !resending} disabled={resending}>{t(status.stage === 'code' ? 'social.verify' : 'social.sendCode')}</Button></form> : status && status.stage !== 'mfa' && <>
             {status.stage === 'tested' && <><p>{t('social.testDescription')}</p><dl><dt>{t('name')}</dt><dd>{status.profile?.name || '—'}</dd><dt>{t('email')}</dt><dd>{status.profile?.email || '—'}</dd><dt>Subject</dt><dd className="break-all">{status.profile?.subject}</dd></dl></>}
             <Button className="full" busy={busy} onClick={() => { void finish(); }}>{t('social.finish')}</Button>
         </>}
