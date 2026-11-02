@@ -81,6 +81,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                 '/sign-in/email': { window: 60, max: 5 },
                 '/sign-in/username': { window: 60, max: 5 },
                 '/sign-up/email': { window: 60, max: 3 },
+                '/verify-password': { window: 60, max: 5 },
                 '/emails/recovery/start': { window: 60, max: 3 },
                 '/emails/recovery/verify': { window: 60, max: 10 },
                 '/emails/add': { window: 60, max: 5 },

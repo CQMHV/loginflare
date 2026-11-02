@@ -148,6 +148,56 @@ describe('email accounts in the Workers runtime', () => {
         expect(response.ok).toBe(false);
     });
 
+    it('confirms the current password through a restricted private endpoint without granting an operation', async () => {
+        const client = harness();
+        await client.verify();
+        const cookie = await client.signin();
+        const original = await session(client, cookie);
+        const credentials = await env.DB.prepare('SELECT "password" FROM "account" WHERE "providerId" = ?').bind('credential').first('password');
+        const verified = await client.request('/api/auth/verify-password', { body: { password }, cookie });
+        expect(verified.status).toBe(200);
+        expect(await verified.json()).toEqual({ status: true });
+        const rejected = await client.request('/api/auth/verify-password', { body: { password: 'incorrect-password' }, cookie });
+        expect(rejected.status).toBe(400);
+        expect(await rejected.json()).toMatchObject({ code: 'INVALID_PASSWORD' });
+        expect((await client.request('/api/auth/verify-password', { body: { password } })).status).toBe(401);
+        expect((await client.request('/api/auth/verify-password', { cookie })).status).toBe(405);
+        expect((await client.request('/api/auth/verify-password', { body: { password, verified: true }, cookie })).status).toBe(400);
+        expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "securityProof"').first('count')).toBe(0);
+        expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "session"').first('count')).toBe(1);
+        expect(await env.DB.prepare('SELECT "password" FROM "account" WHERE "providerId" = ?').bind('credential').first('password')).toBe(credentials);
+        expect((await session(client, cookie))?.user.id).toBe(original?.user.id);
+        expect((await client.request('/api/auth/change-password', {
+            body: { currentPassword: 'incorrect-password', newPassword: 'Replacement-password-312!', revokeOtherSessions: true }, cookie,
+        })).ok).toBe(false);
+    });
+
+    it('checks the latest password after a password change rather than accepting an earlier confirmation', async () => {
+        const client = harness();
+        await client.verify();
+        const cookie = await client.signin();
+        expect((await client.request('/api/auth/verify-password', { body: { password }, cookie })).status).toBe(200);
+        const replacement = 'Replacement-password-312!';
+        const changed = await client.request('/api/auth/change-password', {
+            body: { currentPassword: password, newPassword: replacement, revokeOtherSessions: true }, cookie,
+        });
+        expect(changed.status).toBe(200);
+        const current = cookies(changed);
+        expect((await client.request('/api/auth/verify-password', { body: { password }, cookie: current })).status).toBe(400);
+        expect((await client.request('/api/auth/verify-password', { body: { password: replacement }, cookie: current })).status).toBe(200);
+    });
+
+    it('limits password confirmation attempts to five per minute', async () => {
+        const client = harness();
+        await client.verify();
+        const cookie = await client.signin();
+        for (let attempt = 0; attempt < 5; attempt++) {
+            expect((await client.request('/api/auth/verify-password', { body: { password: 'incorrect-password' }, cookie })).status).toBe(400);
+        }
+        const limited = await client.request('/api/auth/verify-password', { body: { password }, cookie });
+        expect(limited.status).toBe(429);
+    });
+
     it('changes a password only with the current password and revokes other sessions', async () => {
         const client = harness();
         await client.verify();

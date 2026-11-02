@@ -27,6 +27,7 @@ const routes: Record<string, readonly string[]> = {
     '/get-session': ['GET'],
     '/error': ['GET'],
     '/update-user': ['POST'],
+    '/verify-password': ['POST'],
     '/change-password': ['POST'],
     '/revoke-session': ['POST'],
     '/revoke-other-sessions': ['POST'],
@@ -66,6 +67,7 @@ const fields: Record<string, readonly string[]> = {
     '/send-verification-email': ['email', 'callbackURL'],
     '/reset-password': ['newPassword', 'token'],
     '/update-user': ['name', 'username', 'locale'],
+    '/verify-password': ['password'],
     '/change-password': ['currentPassword', 'newPassword', 'revokeOtherSessions'],
     '/revoke-session': ['token'],
     '/revoke-other-sessions': [],
@@ -92,7 +94,7 @@ const fields: Record<string, readonly string[]> = {
     '/emails/recovery/verify': ['challengeId', 'code'],
 };
 
-const privatePaths = new Set(['/update-user', '/change-password', '/revoke-session', '/revoke-other-sessions',
+const privatePaths = new Set(['/update-user', '/verify-password', '/change-password', '/revoke-session', '/revoke-other-sessions',
     '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove',
     '/two-factor/enable', '/two-factor/disable', '/two-factor/generate-backup-codes',
     '/social/security', '/social/unlink', '/social/set-password', '/social/avatar-source']);
