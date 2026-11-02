@@ -6,6 +6,7 @@ import { ResourceFeedback, useDataActions, useResource } from './data';
 import { useClearSecrets, usePageDraft } from './page-state';
 import { colorSchemes, defaultBranding, maximumBrandLogoBytes, type Branding } from '../shared/branding';
 import { ImagePicker } from './ImagePicker';
+import { ErrorNotice, useFeedback } from './feedback';
 
 type Draft = Pick<Branding, 'name' | 'primaryColor' | 'colorScheme' | 'logoId' | 'logoUrl' | 'revision'>;
 function sameSettings(value: Pick<Draft, 'name' | 'primaryColor' | 'colorScheme' | 'logoId'>, other: Pick<Draft, 'name' | 'primaryColor' | 'colorScheme' | 'logoId'>) {
@@ -13,6 +14,7 @@ function sameSettings(value: Pick<Draft, 'name' | 'primaryColor' | 'colorScheme'
 }
 export function BrandingSettings() {
     const { t } = useTranslation();
+    const feedback = useFeedback();
     const query = useResource<Branding>('branding', '/api/admin/branding');
     const actions = useDataActions();
     const [draft, setDraft, clearDraft] = usePageDraft<Draft>('admin:branding');
@@ -22,27 +24,26 @@ export function BrandingSettings() {
     const [busy, setBusy] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string>();
-    const [saved, setSaved] = useState(false);
     const capture = useClearSecrets(() => {});
     function edit(value: Partial<Draft>) {
         if (!current) return;
         const next = { ...current, ...value };
         setDraft(query.data && sameSettings(next, query.data) ? undefined : next);
-        setSaved(false);
+        setError(undefined);
     }
     async function upload(source: Blob) {
-        const active = capture(); setSaved(false);
+        const active = capture();
         const response = await fetch('/api/admin/branding/logo', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': source.type, Accept: 'application/json' }, body: source }).catch(() => { throw new ApiError('NETWORK_ERROR', 0); });
         const logo = await readResponse<Pick<Branding, 'logoId' | 'logoUrl'>>(response);
         if (active()) edit(logo);
     }
     async function save(event: FormEvent) {
         event.preventDefault(); if (!current || !changed) return;
-        const active = capture(); setBusy(true); setError(undefined); setSaved(false);
+        const active = capture(); setBusy(true); setError(undefined);
         try {
             const result = await fetchJson<Branding>('/api/admin/branding', { name: current.name, primaryColor: current.primaryColor, colorScheme: current.colorScheme, logoId: current.logoId, revision: current.revision }, undefined, 'PUT');
             await actions.brandingSaved(result);
-            if (active()) { clearDraft(draft); setSaved(true); }
+            if (active()) { clearDraft(draft); feedback.success(t('saved')); }
         } catch (cause) { if (active()) setError(actions.fail(cause)); }
         finally { if (active()) setBusy(false); }
     }
@@ -50,8 +51,7 @@ export function BrandingSettings() {
         <div className="page-heading"><div><h1>{t('branding.title')}</h1></div></div>
         <ResourceFeedback query={query} />
         {current && <section className="card"><form className="card-body stack-form branding-form" onSubmit={(event) => { void save(event); }}>
-            {error && <div className="notice error" role="alert">{t(`errors.${error}`, { defaultValue: t('errors.UNKNOWN_ERROR') })}</div>}
-            {saved && <div className="notice success" role="status">{t('saved')}</div>}
+            <ErrorNotice code={error} />
             <div className="branding-logo-editor">
                 <ImagePicker inputLabel={t('branding.chooseLogo')} changeLabel={t('branding.chooseLogo')} editLabel={t('branding.editLogo')} accept="image/svg+xml,image/png,image/jpeg,image/webp" shape="rounded" busy={uploading} disabled={busy} allowSvg outputSize={512} maximumBytes={maximumBrandLogoBytes} editorLabels={{ title: t('branding.crop'), position: t('branding.position'), preview: t('branding.preview'), save: t('branding.useLogo') }} onSave={upload} onError={actions.fail} onErrorChange={setError} onBusyChange={setUploading}>
                     <img className="branding-logo-image" src={current.logoUrl} alt="" />

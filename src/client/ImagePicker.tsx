@@ -28,7 +28,7 @@ export function ImagePicker({ children, inputLabel, changeLabel, editLabel, acce
     const [Dialog, setDialog] = useState<ComponentType<ImageCropDialogProps>>();
     const [working, setWorking] = useState(false);
     const [error, setError] = useState<string>();
-    function report(code?: string) { setError(code); onErrorChange(code); }
+    function report(code?: string) { setError(code); onErrorChange(photo ? undefined : code); }
     function progress(value: boolean) { setWorking(value); onBusyChange?.(value); }
     const capture = useClearSecrets(() => { setPhoto(undefined); report(); progress(false); });
     useEffect(() => () => photo?.bitmap.close(), [photo]);

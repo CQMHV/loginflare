@@ -190,7 +190,6 @@ md-icon-button { flex-shrink: 0; }
 .avatar-description h3 { font-size: 16px; font-weight: 500; }
 .avatar-description p { max-width: 360px; margin-top: 6px; color: var(--md-sys-color-on-surface-variant); font-size: 13px; line-height: 1.6; }
 .avatar-description > md-text-button { margin-top: 4px; }
-.avatar-error { margin: 12px 0 0; }
 .image-crop-dialog { width: min(560px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); }
 .image-crop-headline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .image-crop-tools { display: flex; flex-shrink: 0; }
@@ -270,7 +269,6 @@ tr:last-child td { border-bottom: 0; }
 .scope-options legend { font-weight: 500; padding: 0; margin-bottom: 12px; }
 .scope-options p, .card-body > .muted { font-size: 14px; line-height: 1.6; }
 .card-body.stack-form > md-outlined-select { max-width: 560px; }
-.secret-notice { border-color: var(--md-sys-color-primary); margin-top: 24px; }
 .consent-permissions { padding-left: 24px; margin: 20px 0 28px; }
 .consent-permissions li { margin: 12px 0; line-height: 1.6; }
 .consent-account { padding: 16px; border-radius: 16px; background: var(--md-sys-color-surface-container); overflow-wrap: anywhere; margin-bottom: 24px; font-size: 14px; }

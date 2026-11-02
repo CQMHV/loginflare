@@ -3,6 +3,7 @@ import Cropper, { type MediaSize } from 'react-easy-crop';
 import 'react-easy-crop/react-easy-crop.css';
 import '@material/web/slider/slider.js';
 import type { MdDialog } from '@material/web/dialog/dialog.js';
+import { ErrorNotice } from './feedback';
 import type { MdSlider } from '@material/web/slider/slider.js';
 import { useTranslation } from 'react-i18next';
 import { maximumSourceDimension, maximumSourcePixels } from '../shared/avatars';
@@ -90,6 +91,8 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
     const [error, setError] = useState<string>();
     const capture = useClearSecrets(() => {});
     const disabled = busy || encoding;
+    const cancelAction = useRef(() => {});
+    cancelAction.current = () => { if (!disabled) onCancel(); };
     // At 100%, fill the crop frame exactly, rather than the larger editor stage.
     const rotatedWidth = mediaSize ? (rotation % 180 === 0 ? mediaSize.width : mediaSize.height) : 0;
     const rotatedHeight = mediaSize ? (rotation % 180 === 0 ? mediaSize.height : mediaSize.width) : 0;
@@ -100,10 +103,12 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
         const element = dialog.current;
         if (!element) return;
         const afterOpen = () => setOpened(true);
+        const cancelEvent = (event: Event) => { event.preventDefault(); cancelAction.current(); };
         element.addEventListener('opened', afterOpen);
+        element.addEventListener('cancel', cancelEvent);
         // Strict Mode replays effects; show the native dialog once per mount.
         if (!shown.current) { shown.current = true; void element.show(); }
-        return () => element.removeEventListener('opened', afterOpen);
+        return () => { element.removeEventListener('opened', afterOpen); element.removeEventListener('cancel', cancelEvent); };
     }, []);
     useEffect(() => {
         const element = stage.current;
@@ -174,7 +179,7 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
 
     const pristine = crop.x === 0 && crop.y === 0 && zoom === 1 && rotation === 0;
     const percentage = `${Math.round(zoom * 100)}%`;
-    return createElement('md-dialog', { ref: dialog, className: 'image-crop-dialog', 'aria-label': labels.title, onCancel: (event: Event) => { event.preventDefault(); if (!disabled) onCancel(); } },
+    return createElement('md-dialog', { ref: dialog, className: 'image-crop-dialog', 'aria-label': labels.title },
         <div slot="headline" className="image-crop-headline"><span>{labels.title}</span><div className="image-crop-tools">
             <Button className="icon-button" disabled={disabled || !ready} aria-label={t('imageEditor.rotate')} title={t('imageEditor.rotate')} onClick={() => { setReady(false); setRotation((value) => (value + 90) % 360); }}><ToolbarIcon name="rotate_right" /></Button>
             <Button className="icon-button" disabled={disabled || pristine} aria-label={t('imageEditor.reset')} title={t('imageEditor.reset')} onClick={reset}><ToolbarIcon name="restart_alt" /></Button>
@@ -198,8 +203,7 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
                 <Button className="icon-button" disabled={disabled || !ready || zoom >= 4} aria-label={t('imageEditor.zoomIn')} title={t('imageEditor.zoomIn')} onClick={() => changeZoom(zoom + .1)}><ToolbarIcon name="add" /></Button>
                 <output aria-hidden="true">{percentage}</output>
             </div>
-            {error && <div className="notice error" role="alert">{t(`errors.${error}`)}</div>}
-            {requestError && <div className="notice error" role="alert">{t(`errors.${requestError}`, { defaultValue: t('errors.UNKNOWN_ERROR') })}</div>}
+            <ErrorNotice code={error ?? requestError} />
         </div>,
         <div slot="actions"><Button className="text-button" disabled={disabled} onClick={onCancel}>{t('cancel')}</Button><Button busy={disabled} disabled={!ready || !mediaSize} onClick={() => { void save(); }}>{labels.save}</Button></div>,
     );

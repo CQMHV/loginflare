@@ -136,7 +136,7 @@ test('drags and zooms directly, resets the crop and cancels without uploading', 
     await expect(zoom).toHaveValue('1');
     await expect.poll(() => image.evaluate((element) => (element as HTMLElement).style.transform)).toBe(initial);
     await page.screenshot({ path: test.info().outputPath('crop-desktop.png'), fullPage: false });
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.keyboard.press('Escape');
     await expect(page.locator('md-dialog.image-crop-dialog')).toHaveCount(0);
     expect(uploads).toHaveLength(0);
 });

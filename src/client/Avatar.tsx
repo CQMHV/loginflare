@@ -7,6 +7,7 @@ import { useClearSecrets } from './page-state';
 import { ToolbarIcon } from './ToolbarIcon';
 import { ImagePicker } from './ImagePicker';
 import { avatarIdPattern, avatarSize, maximumAvatarBytes } from '../shared/avatars';
+import { ErrorNotice, useFeedback } from './feedback';
 
 export function Avatar({ name, image, className }: { name: string; image?: string | null; className: string }) {
     const { t } = useTranslation();
@@ -26,25 +27,30 @@ export function Avatar({ name, image, className }: { name: string; image?: strin
 export function AvatarEditor({ name, image }: { name: string; image?: string | null }) {
     const { t } = useTranslation();
     const actions = useDataActions();
+    const feedback = useFeedback();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
     const [removing, setRemoving] = useState(false);
-    useClearSecrets(() => setRemoving(false));
+    const capture = useClearSecrets(() => { setRemoving(false); setError(undefined); });
 
     async function save(blob: Blob) {
+        const current = capture();
         let response: Response;
         try { response = await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': blob.type, Accept: 'application/json' }, body: blob }); }
         catch { throw new ApiError('NETWORK_ERROR', 0); }
         await readResponse<{ image: string }>(response);
         await actions.invalidate('profile', 'users', 'user');
+        if (current()) feedback.success(t('saved'));
     }
 
     async function remove() {
-        setBusy(true); setError(undefined); setRemoving(false);
+        const current = capture();
+        setBusy(true); setError(undefined);
         try {
             await fetchJson('/api/account/avatar', undefined, undefined, 'DELETE');
             await actions.invalidate('profile', 'users', 'user');
-        } catch (cause) { setError(actions.fail(cause)); }
+            if (current()) { setRemoving(false); feedback.success(t('saved')); }
+        } catch (cause) { if (current()) setError(actions.fail(cause)); }
         finally { setBusy(false); }
     }
 
@@ -55,10 +61,10 @@ export function AvatarEditor({ name, image }: { name: string; image?: string | n
             </ImagePicker>
             <div className="avatar-description">
                 <h3>{t('avatar.title')}</h3><p>{t('avatar.selectHint')}</p>
-                {image && <Button className="text-button small" disabled={busy} onClick={() => setRemoving(true)}>{t('avatar.remove')}</Button>}
+                {image && <Button className="text-button small" disabled={busy} onClick={() => { setError(undefined); setRemoving(true); }}>{t('avatar.remove')}</Button>}
             </div>
         </div>
-        {error && <div className="notice error avatar-error" role="alert">{t(`errors.${error}`, { defaultValue: t('errors.UNKNOWN_ERROR') })}</div>}
-        {removing && <ConfirmationDialog title={t('avatar.remove')} description={t('avatar.removeConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setRemoving(false)} onConfirm={() => { void remove(); }} />}
+        {!removing && <ErrorNotice code={error} />}
+        {removing && <ConfirmationDialog title={t('avatar.remove')} description={t('avatar.removeConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={busy} error={<ErrorNotice code={error} />} onCancel={() => { setRemoving(false); setError(undefined); }} onConfirm={() => { void remove(); }} />}
     </>;
 }

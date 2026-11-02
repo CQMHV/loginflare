@@ -69,7 +69,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     expect(response.status(), await response.text()).toBe(201);
     const created = await response.json();
     fixtureClients.push(created.application.clientId);
-    await expect(page.getByRole('status')).toContainText('Application created.');
+    await expect(page.getByRole('dialog', { name: 'Save your client secret', exact: true })).toBeVisible();
     await expect(page.getByLabel('Client secret', { exact: true })).toHaveValue(created.clientSecret);
     await page.getByRole('button', { name: 'I have saved the secret', exact: true }).click();
     await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
