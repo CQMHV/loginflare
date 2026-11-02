@@ -2,6 +2,7 @@ import { expect, test, switchArea, type Page } from './fixtures';
 import { testOrigin } from './runtime';
 import type { BrowserContext } from '@playwright/test';
 import type { Identity } from '../../src/client/api';
+import { defaultBranding } from '../../src/shared/branding';
 
 function identity(id = 'alpha', role = 'admin'): Identity {
     const now = new Date().toISOString();
@@ -38,6 +39,11 @@ async function mockAccount(context: BrowserContext) {
         else if (url.pathname === '/api/config') result = { turnstileSiteKey: '1x00000000000000000000AA' };
         else if (url.pathname === '/api/auth/sign-out') state.actor = null;
         else if (url.pathname === '/api/auth/sign-in/username') state.actor = identity(req.postDataJSON().username, 'user');
+        else if (url.pathname === '/api/auth/verify-password') {
+            if (!state.actor) { status = 401; result = { code: 'UNAUTHORIZED' }; }
+            else if (req.method() !== 'POST' || req.postDataJSON()?.password !== 'test-only-password') { status = 400; result = { code: 'INVALID_PASSWORD' }; }
+            else result = { status: true };
+        }
         else if (url.pathname === '/api/auth/update-user') {
             const body = req.postDataJSON();
             await state.writeGate;
@@ -75,6 +81,57 @@ async function visibility(page: Page, visible: boolean) {
         Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visible ? 'visible' : 'hidden' });
         document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
     }, visible);
+}
+
+for (const locale of ['en-us', 'zh-cn'] as const) {
+    test(`shows a rotated client secret in a modal at the current viewport in ${locale}`, async ({ page, context }) => {
+        const server = await mockAccount(context);
+        const chinese = locale === 'zh-cn';
+        await page.setViewportSize({ width: chinese ? 375 : 1280, height: 600 });
+        await page.goto(`/${locale}/admin/applications/detail?clientId=${server.clientId}`);
+        const rotate = page.getByRole('button', { name: chinese ? '轮换客户端密钥' : 'Rotate client secret', exact: true });
+        await rotate.click();
+        await page.locator('md-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
+        const dialog = page.locator('md-dialog.form-dialog');
+        await expect(dialog).toHaveCount(1);
+        const secret = dialog.getByLabel(chinese ? '客户端密钥' : 'Client secret', { exact: true });
+        await expect(secret).toHaveValue('test-only-one-time-application-secret');
+        await expect(secret).toBeInViewport({ ratio: 1 });
+        await expect(page.locator('.secret-notice')).toHaveCount(0);
+        await page.screenshot({ path: test.info().outputPath(`secret-modal-${locale}.png`) });
+        await dialog.getByRole('button', { name: chinese ? '我已保存密钥' : 'I have saved the secret', exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        await expect(page.getByLabel(chinese ? '客户端密钥' : 'Client secret', { exact: true })).toHaveCount(0);
+        await expect(rotate).toBeFocused();
+        expect(server.count(page, `/api/admin/applications/${server.clientId}/rotate-secret`, 'POST')).toBe(1);
+    });
+
+    test(`brings long-form submission errors into view in ${locale}`, async ({ page, context }) => {
+        const server = await mockAccount(context);
+        const chinese = locale === 'zh-cn';
+        await page.setViewportSize({ width: chinese ? 375 : 1280, height: 600 });
+        for (const endpoint of ['/api/auth/update-user', `/api/admin/applications/${server.clientId}`]) {
+            await context.route(`${testOrigin}${endpoint}`, (route) => route.request().method() === 'GET' ? route.fallback() : route.fulfill({ status: 503, json: { code: 'REQUEST_FAILED' } }));
+        }
+        await context.route(`${testOrigin}/api/admin/branding`, (route) => route.fulfill(route.request().method() === 'GET'
+            ? { json: { ...defaultBranding, logoUrl: '/assets/logo.svg', colors: { light: {}, dark: {} } } }
+            : { status: 503, json: { code: 'REQUEST_FAILED' } }));
+        for (const [path, label] of [
+            ['account', chinese ? '显示名称' : 'Display name'],
+            [`admin/applications/detail?clientId=${server.clientId}`, chinese ? '应用名称' : 'Application name'],
+            ['admin/branding', chinese ? '品牌名' : 'Brand name'],
+        ]) {
+            await page.goto(`/${locale}/${path}`);
+            await page.getByLabel(label, { exact: true }).fill('Unsaved changes');
+            for (let attempt = 0; attempt < 2; attempt++) {
+                await page.getByRole('button', { name: chinese ? '保存修改' : 'Save changes', exact: true }).click();
+                const error = page.getByRole('alert');
+                await expect(error).toBeFocused();
+                await expect(error).toBeInViewport({ ratio: 1 });
+                await expect(page.getByLabel(label, { exact: true })).toHaveValue('Unsaved changes');
+            }
+        }
+    });
 }
 
 for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['user', 320]] as const) {
@@ -117,11 +174,15 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
         await page.route(`${testOrigin}/api/auth/update-user`, (route) => route.fulfill({ status: 503, json: { code: 'REQUEST_FAILED' } }));
         await page.keyboard.press('Space');
         await expect(page).toHaveURL('/en-us/account');
-        const failure = header.getByRole('alert');
+        const failure = page.locator('.feedback-toast[role="alert"]');
         await expect(failure).toBeVisible();
+        await expect(header.getByRole('alert')).toHaveCount(0);
+        await expect(failure).toContainText('We couldn’t complete this request. Please try again.');
         const failureBounds = await failure.boundingBox();
         expect(failureBounds!.x).toBeGreaterThanOrEqual(0);
         expect(failureBounds!.x + failureBounds!.width).toBeLessThanOrEqual(width);
+        await failure.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+        await expect(failure).toHaveCount(0);
         await header.getByRole('button', { name: 'Account menu', exact: true }).press('ArrowUp');
         await expect(page.getByRole('menuitem', { name: 'Sign out', exact: true })).toBeFocused();
         await page.keyboard.press('Escape');
@@ -340,6 +401,54 @@ test('clears private data across tabs and ignores a late response from the previ
     for (const value of ['alpha-v1', 'beta-v1', 'test-only-beta-session-value', 'test-only-password']) expect(persisted).not.toContain(value);
 });
 
+test('ignores delayed operation feedback after leaving its page', async ({ page, context }) => {
+    const server = await mockAccount(context);
+    await page.goto('/en-us/account');
+    await page.getByLabel('Display name', { exact: true }).fill('Delayed profile save');
+    let release!: () => void;
+    server.state.writeGate = new Promise<void>((resolve) => { release = resolve; });
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect.poll(() => server.count(page, '/api/auth/update-user', 'POST')).toBe(1);
+    await page.getByRole('link', { name: 'Sessions', exact: true }).click();
+    await expect(page).toHaveURL('/en-us/account/sessions');
+    const response = page.waitForResponse((result) => result.url().endsWith('/api/auth/update-user'));
+    release(); server.state.writeGate = undefined;
+    await response;
+    await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'Delayed profile save');
+    await expect(page.locator('.feedback-toast')).toHaveCount(0);
+});
+
+test('requires successful server password confirmation before revealing password changes', async ({ page, context }) => {
+    const server = await mockAccount(context);
+    await page.goto('/en-us/account/security');
+    await expect(page.getByLabel('Current password', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('New password', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Confirm password', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Change password', exact: true }).click();
+    const dialog = page.locator('md-dialog.form-dialog');
+    await dialog.getByLabel('Current password', { exact: true }).fill('wrong-test-password');
+    await dialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    await expect(dialog.getByLabel('New password', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByLabel('Confirm password', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Change password', exact: true })).toHaveCount(0);
+    await dialog.getByLabel('Current password', { exact: true }).fill('test-only-password');
+    await dialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+    await expect(dialog.getByLabel('New password', { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel('Confirm password', { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel('Current password', { exact: true })).toHaveCount(0);
+    expect(server.count(page, '/api/auth/verify-password', 'POST')).toBe(2);
+    await dialog.getByLabel('New password', { exact: true }).fill('Unsubmitted-new-password-917!');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Change password', exact: true }).click();
+    await expect(dialog.getByLabel('Current password', { exact: true })).toHaveValue('');
+    await expect(dialog.getByLabel('New password', { exact: true })).toHaveCount(0);
+    await dialog.getByLabel('Current password', { exact: true }).fill('test-only-password');
+    await dialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+    await expect(dialog.getByLabel('New password', { exact: true })).toHaveValue('');
+});
+
 test('keeps newer edits after saving and clears sensitive inputs on page departure', async ({ page, context }) => {
     const server = await mockAccount(context);
     await page.goto('/en-us/account');
@@ -353,9 +462,16 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'First revision');
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Second revision');
     await page.getByRole('link', { name: 'Security', exact: true }).click();
-    await page.getByLabel('Current password', { exact: true }).fill('must-be-cleared');
+    await page.getByRole('button', { name: 'Change password', exact: true }).click();
+    const passwordDialog = page.locator('md-dialog.form-dialog');
+    await passwordDialog.getByLabel('Current password', { exact: true }).fill('must-be-cleared');
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
-    await expect(page.getByLabel('Current password', { exact: true })).toHaveValue('');
+    await expect(passwordDialog).toHaveCount(0);
+    await expect(page.getByLabel('Current password', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Change password', exact: true }).click();
+    await expect(passwordDialog.getByLabel('Current password', { exact: true })).toHaveValue('');
+    await passwordDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(passwordDialog).toHaveCount(0);
     await page.getByRole('link', { name: 'Profile', exact: true }).click();
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Second revision');
     await page.reload();

@@ -2,60 +2,64 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { QRCodeSVG } from 'qrcode.react';
 import { request } from './api';
-import i18n from './i18n';
-import { Button, Checkbox, ConfirmationDialog, Select, TextField } from './material';
+import { Button, Checkbox, FormDialog, TextField } from './material';
+import { ErrorNotice, useFeedback } from './feedback';
 import { useClearSecrets } from './page-state';
 import { useDataActions } from './data';
-import { SecurityConfirmation, useSecurity } from './Social';
+import { SecurityDialog, useSecurity } from './security';
 
 interface Enrollment { totpURI: string; backupCodes: string[] }
+type Operation = 'enable' | 'regenerate' | 'disable';
+const purposes = { enable: 'two-factor/enable', regenerate: 'two-factor/generate-backup-codes', disable: 'two-factor/disable' } as const;
 
 export function MfaSettings({ enabled, refresh }: { enabled: boolean; refresh: () => Promise<void> }) {
     const { t } = useTranslation();
-    const actions = useDataActions();
+    const actions = useDataActions(), feedback = useFeedback();
     const security = useSecurity();
-    const [operation, setOperation] = useState<'regenerate' | 'disable'>('regenerate');
+    const [operation, setOperation] = useState<Operation>();
     useEffect(() => {
-        if (security.data?.proofPurpose === 'two-factor/disable') setOperation('disable');
+        const proof = security.data?.proofPurpose;
+        const resumed = (Object.keys(purposes) as Operation[]).find((kind) => purposes[kind] === proof);
+        if (resumed) setOperation((current) => current ?? resumed);
     }, [security.data?.proofPurpose]);
-    const [password, setPassword] = useState('');
     const [code, setCode] = useState('');
     const [enrollment, setEnrollment] = useState<Enrollment>();
     const [backupCodes, setBackupCodes] = useState<string[]>();
     const [saved, setSaved] = useState(false);
-    const [confirmDisable, setConfirmDisable] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
-    const [success, setSuccess] = useState<string>();
-    const captureSecrets = useClearSecrets(() => {
-        setPassword(''); setCode(''); setEnrollment(undefined); setBackupCodes(undefined); setSaved(false); setConfirmDisable(false);
-    });
+    function clear() {
+        setOperation(undefined); setCode(''); setEnrollment(undefined); setBackupCodes(undefined); setSaved(false); setError(undefined); setBusy(false);
+    }
+    const captureSecrets = useClearSecrets(clear);
+    function choose(next: Operation) {
+        clear(); setOperation(next);
+    }
 
-    async function perform(action: 'enable' | 'verify' | 'disable' | 'regenerate') {
+    async function perform(action: Operation | 'verify', password = '') {
+        if (busy || !operation || (action === 'verify' && (!enrollment || !saved || !/^\d{6}$/.test(code.trim())))) return;
         const current = captureSecrets();
-        setBusy(true); setError(undefined); setSuccess(undefined);
+        setBusy(true); setError(undefined);
         try {
             if (action === 'enable') {
                 const result = await request<Enrollment>('/two-factor/enable', { password });
                 if (current()) { setEnrollment(result); setBackupCodes(result.backupCodes); setSaved(false); }
             } else if (action === 'regenerate') {
                 const result = await request<{ backupCodes: string[] }>('/two-factor/generate-backup-codes', { password });
-                if (current()) { setBackupCodes(result.backupCodes); setSuccess('mfa.resetSuccess'); }
+                if (current()) setBackupCodes(result.backupCodes);
             } else {
                 await request(action === 'verify' ? '/two-factor/verify-totp' : '/two-factor/disable', action === 'verify' ? { code: code.trim() } : { password });
                 if (!current()) return;
-                setEnrollment(undefined); setBackupCodes(undefined); setCode(''); setConfirmDisable(false);
                 await refresh();
-                setSuccess(action === 'verify' ? 'mfa.enabledSuccess' : 'mfa.disabledSuccess');
+                if (current()) { clear(); feedback.success(t(action === 'verify' ? 'mfa.enabledSuccess' : 'mfa.disabledSuccess')); }
             }
         } catch (cause) { if (current()) setError(actions.fail(cause)); }
-        finally { setBusy(false); setPassword(''); await actions.invalidate('security'); }
+        finally { if (current()) setBusy(false); await actions.invalidate('security'); }
     }
 
     function submit(event: FormEvent) {
         event.preventDefault();
-        if (!enrollment && enabled && !security.data?.hasPassword && operation === 'disable') setConfirmDisable(true);
-        else void perform(enrollment ? 'verify' : enabled ? 'regenerate' : 'enable');
+        if (enrollment) void perform('verify');
     }
 
     function downloadCodes() {
@@ -66,37 +70,35 @@ export function MfaSettings({ enabled, refresh }: { enabled: boolean; refresh: (
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    const errorKey = `errors.${error}`;
-    return <section className="card" aria-labelledby="mfa-title">
+    const showingCodes = operation === 'regenerate' && !!backupCodes;
+    const operationLabel = operation ? `mfa.${operation}` : 'mfa.title';
+    return <><section className="card" aria-labelledby="mfa-title">
         <div className="card-heading"><h2 id="mfa-title">{t('mfa.title')}</h2><p>{t('mfa.description')}</p></div>
         <div className="card-body stack-form">
             <p>{t(enabled ? 'mfa.enabled' : 'mfa.disabled')}</p>
-            {error && <div className="notice error" role="alert">{i18n.exists(errorKey) ? t(errorKey) : t('errors.UNKNOWN_ERROR')}</div>}
-            {success && <div className="notice success" role="status">{t(success)}</div>}
-            <form className="stack-form mfa-form" onSubmit={submit}>
-                {enrollment ? <>
-                    <p>{t('mfa.setup')}</p>
-                    <QRCodeSVG className="mfa-qr" value={enrollment.totpURI} size={224} marginSize={4} title={t('mfa.qr')} role="img" aria-label={t('mfa.qr')} />
-                    <TextField label={t('mfa.secret')} value={new URL(enrollment.totpURI).searchParams.get('secret') ?? ''} readOnly />
-                    <TextField label={t('mfa.code')} name="code" value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} required />
-                </> : <>
-                    {enabled && security.data && !security.data.hasPassword && <Select label={t('social.operation')} value={operation} options={[{ value: 'regenerate', label: t('mfa.regenerate') }, { value: 'disable', label: t('mfa.disable') }]} onChange={(value) => setOperation(value as 'regenerate' | 'disable')} />}
-                    <SecurityConfirmation purpose={!enabled ? 'two-factor/enable' : !security.data?.hasPassword && operation === 'disable' ? 'two-factor/disable' : 'two-factor/generate-backup-codes'} password={password} onPassword={setPassword} disabled={busy} passwordLabel={t('mfa.password')} />
-                    {enabled && <p className="muted">{t('mfa.regenerateHint')}</p>}
-                </>}
-                {enrollment && <Checkbox label={t('mfa.saved')} checked={saved} onCheckedChange={setSaved} />}
-                <div className="action-row">
-                    <Button type="submit" busy={busy} disabled={!!enrollment && !saved}>{t(enrollment ? 'mfa.confirm' : enabled ? !security.data?.hasPassword && operation === 'disable' ? 'mfa.disable' : 'mfa.regenerate' : 'mfa.enable')}</Button>
-                    {enabled && !enrollment && security.data?.hasPassword && <Button className="secondary" disabled={busy || !password} onClick={() => setConfirmDisable(true)}>{t('mfa.disable')}</Button>}
-                    {enrollment && <Button className="text-button" disabled={busy} onClick={() => { setEnrollment(undefined); setBackupCodes(undefined); setCode(''); }}>{t('cancel')}</Button>}
-                </div>
-            </form>
+            <div className="action-row">{enabled ? <>
+                <Button className="secondary" disabled={busy || !security.data} onClick={() => choose('regenerate')}>{t('mfa.regenerate')}</Button>
+                <Button className="text-button danger" disabled={busy || !security.data} onClick={() => choose('disable')}>{t('mfa.disable')}</Button>
+            </> : <Button disabled={busy || !security.data} onClick={() => choose('enable')}>{t('mfa.enable')}</Button>}</div>
+        </div>
+    </section>{operation && (enrollment || showingCodes ? <FormDialog title={t(showingCodes ? 'mfa.backupTitle' : operationLabel)} cancelLabel={t(showingCodes ? 'confirm' : 'cancel')} onCancel={() => { if (showingCodes) feedback.success(t('mfa.resetSuccess')); clear(); }} onSubmit={submit} busy={busy}
+            confirmLabel={enrollment ? t('mfa.confirm') : undefined} confirmDisabled={!saved || !/^\d{6}$/.test(code.trim())}>
+            <ErrorNotice code={error} />
+            {enrollment ? <>
+                <p>{t('mfa.setup')}</p>
+                <QRCodeSVG className="mfa-qr" value={enrollment.totpURI} size={224} marginSize={4} title={t('mfa.qr')} role="img" aria-label={t('mfa.qr')} />
+                <TextField label={t('mfa.secret')} value={new URL(enrollment.totpURI).searchParams.get('secret') ?? ''} readOnly />
+                <TextField label={t('mfa.code')} name="code" value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} required />
+            </> : null}
             {backupCodes && <div className="mfa-backup-codes">
                 <h3>{t('mfa.backupTitle')}</h3><p>{t('mfa.backupHint')}</p>
                 <ul aria-label={t('mfa.backupTitle')}>{backupCodes.map((value) => <li key={value}><code>{value}</code></li>)}</ul>
                 <Button className="secondary" onClick={downloadCodes}>{t('mfa.download')}</Button>
             </div>}
-        </div>
-        {confirmDisable && <ConfirmationDialog title={t('mfa.disable')} description={t('mfa.disableConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmDisable(false)} onConfirm={() => { void perform('disable'); }} />}
-    </section>;
+            {enrollment && <Checkbox label={t('mfa.saved')} checked={saved} onCheckedChange={setSaved} disabled={busy} />}
+        </FormDialog> : <SecurityDialog key={operation} title={t(operationLabel)} purpose={purposes[operation]} confirmLabel={t(operationLabel)} busy={busy} error={error} onCancel={clear}
+            onConfirm={(password) => { void perform(operation, password); }} danger={operation === 'disable'} passwordLabel={t('mfa.password')} onVerificationLost={() => { setCode(''); setError(undefined); }}>
+            {operation !== 'enable' && <p>{t(operation === 'disable' ? 'mfa.disableConfirm' : 'mfa.regenerateHint')}</p>}
+        </SecurityDialog>)}
+    </>;
 }

@@ -3,87 +3,81 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
-import type { PublicProvider, SecurityCapabilities, SecurityPurpose } from '../shared/social';
+import type { PublicProvider } from '../shared/social';
 import { inspectImage, maximumAvatarBytes } from '../shared/avatars';
 import { ApiError, errorCode, fetchJson, readResponse, request } from './api';
-import { Button, ConfirmationDialog, Select, TextField } from './material';
-import { ResourceFeedback, useDataActions, useResource } from './data';
-import { resolveLocale } from './locale';
+import { Button, TextField } from './material';
+import { ErrorNotice, useFeedback } from './feedback';
+import { useDataActions } from './data';
 import { oauthSearch } from './oauth';
 import { useClearSecrets } from './page-state';
 import { encodeWebP } from './image-encoding';
-
-export function SocialError({ code }: { code?: string }) {
-    const { t } = useTranslation();
-    return code ? <div className="notice error" role="alert">{t(`errors.${code}`, { defaultValue: t('errors.UNKNOWN_ERROR') })}</div> : null;
-}
-export function useSecurity() {
-    const query = useResource<SecurityCapabilities>('security', '/api/auth/social/security');
-    const expiresAt = query.data?.proofExpiresAt, refetch = query.refetch;
-    useEffect(() => {
-        if (!expiresAt) return;
-        const timer = setTimeout(() => { void refetch(); }, Math.max(0, expiresAt - Date.now()) + 50);
-        return () => clearTimeout(timer);
-    }, [expiresAt, refetch]);
-    return query;
-}
-export async function startSocial(connectionId: string, purpose: 'login' | 'link' | 'reauth' | 'test', extra: { password?: string; action?: SecurityPurpose; oauth_query?: string } = {}) {
-    const result = await request<{ url: string }>('/social/start', { connectionId, locale: resolveLocale(window.location.pathname), purpose, ...extra });
-    window.location.assign(result.url);
-}
+import { SecurityDialog, socialAuthorizationUrl, useSecurity, useSecurityIntent } from './security';
 export function SocialButtons({ locale }: { locale: Locale }) {
     const { t } = useTranslation();
     const location = useLocation();
     const providers = useQuery({ queryKey: ['social-providers'], queryFn: ({ signal }) => fetchJson<{ providers: PublicProvider[] }>('/api/social/providers', undefined, undefined, undefined, signal) });
     const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
-    return providers.data?.providers.length ? <div className="social-buttons"><SocialError code={error} />{providers.data.providers.map((provider) => <Button className="secondary full" key={provider.id} disabled={busy} lang={locale} onClick={() => {
+    const capture = useClearSecrets(() => { setBusy(false); setError(undefined); });
+    return providers.data?.providers.length ? <div className="social-buttons"><ErrorNotice code={error} />{providers.data.providers.map((provider) => <Button className="secondary full" key={provider.id} disabled={busy} lang={locale} onClick={() => {
         setBusy(true); setError(undefined);
-        void startSocial(provider.id, 'login', { oauth_query: oauthSearch(location.search) || undefined }).catch((cause) => { setError(errorCode(cause)); setBusy(false); });
+        const active = capture();
+        void socialAuthorizationUrl(provider.id, 'login', { oauth_query: oauthSearch(location.search) || undefined }).then((url) => { if (active()) window.location.assign(url); }).catch((cause) => { if (active()) { setError(errorCode(cause)); setBusy(false); } });
     }}>{t('social.continueWith', { name: provider.name })}</Button>)}</div> : null;
-}
-export function SecurityConfirmation({ purpose, password, onPassword, disabled = false, passwordLabel }: { purpose: SecurityPurpose; password: string; onPassword: (value: string) => void; disabled?: boolean; passwordLabel?: string }) {
-    const { t } = useTranslation();
-    const query = useSecurity();
-    const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
-    if (!query.data) return <ResourceFeedback query={query} />;
-    if (query.data.hasPassword) return <TextField label={passwordLabel ?? t('currentPassword')} type="password" autoComplete="current-password" value={password} onValueChange={onPassword} maxLength={128} required disabled={disabled} />;
-    const providers = query.data.identities.filter((item) => item.enabled);
-    return <div className="stack-form security-confirmation"><SocialError code={error} />{query.data.proofPurpose === purpose ? <p className="notice success" role="status">{t('social.confirmed')}</p> : <>
-        <p>{t('social.reauthDescription')}</p>{!providers.length && <p className="muted">{t('social.noAvailable')}</p>}
-        {providers.map((item) => <Button key={item.id} className="secondary" disabled={busy || disabled} onClick={() => {
-            setBusy(true); void startSocial(item.providerId, 'reauth', { action: purpose }).catch((cause) => { setError(errorCode(cause)); setBusy(false); });
-        }}>{t('social.continueWith', { name: item.name })}</Button>)}
-    </>}</div>;
 }
 export function SocialSettings() {
     const { t } = useTranslation();
-    const query = useSecurity(), actions = useDataActions();
-    const [action, setAction] = useState<'link' | 'unlink'>();
-    const [connectionId, setConnectionId] = useState(''), [accountId, setAccountId] = useState('');
-    const [password, setPassword] = useState(''), [busy, setBusy] = useState(false), [confirm, setConfirm] = useState(false), [error, setError] = useState<string>();
-    useClearSecrets(() => { setPassword(''); setConfirm(false); });
-    async function perform() {
+    const query = useSecurity(), actions = useDataActions(), feedback = useFeedback();
+    const { read, remember, clear } = useSecurityIntent('social');
+    type Action = { kind: 'link' | 'unlink'; id: string };
+    const [action, setAction] = useState<Action>();
+    const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
+    const capture = useClearSecrets(() => { setAction(undefined); setError(undefined); setBusy(false); });
+    const data = query.data;
+    const identities = data?.identities ?? [];
+    const providers = (data?.providers ?? []).filter((provider) => !identities.some((identity) => identity.providerId === provider.id));
+    const selected = action?.kind === 'link' ? providers.find((provider) => provider.id === action.id) : identities.find((identity) => identity.id === action?.id);
+    useEffect(() => {
+        if (action || !data) return;
+        const pending = read();
+        if (!pending?.targetId || !['link', 'unlink'].includes(pending.purpose) || data.proofPurpose !== pending.purpose) return;
+        const available = pending.purpose === 'link' ? data.providers.some((item) => item.id === pending.targetId && !data.identities.some((identity) => identity.providerId === item.id)) : data.identities.some((item) => item.id === pending.targetId);
+        if (available) setAction({ kind: pending.purpose as 'link' | 'unlink', id: pending.targetId });
+        else clear();
+    }, [action, data, read, clear]);
+    async function perform(currentPassword: string) {
+        const target = action;
+        if (busy || !target || !data) return;
+        if (data.hasPassword ? !currentPassword : data.proofPurpose !== target.kind || !data.proofExpiresAt || data.proofExpiresAt <= Date.now()) { setError('SOCIAL_REAUTH_REQUIRED'); return; }
+        const entry = target.kind === 'link' ? providers.find((provider) => provider.id === target.id) : identities.find((identity) => identity.id === target.id);
+        if (!entry) return;
+        const active = capture();
         setBusy(true); setError(undefined);
         try {
-            if (action === 'link') await startSocial(connectionId || query.data!.providers[0]!.id, 'link', { password });
-            else { await request('/social/unlink', { accountId, password }); setAction(undefined); setAccountId(''); await actions.invalidate('security'); }
-        } catch (cause) { setError(actions.fail(cause)); }
-        finally { setBusy(false); setPassword(''); setConfirm(false); await actions.invalidate('security'); }
+            if (target.kind === 'link') { const url = await socialAuthorizationUrl(target.id, 'link', { password: currentPassword }); if (active()) { clear(); window.location.assign(url); } }
+            else { await request('/social/unlink', { accountId: target.id, password: currentPassword }); if (active()) { clear(); setAction(undefined); feedback.success(t('social.unlinked', { name: entry.name })); } }
+        } catch (cause) { if (active()) setError(actions.fail(cause)); }
+        finally { if (active()) setBusy(false); await actions.invalidate('security'); }
     }
-    return <section className="card"><div className="card-heading"><h2>{t('social.linked')}</h2><p>{t('social.linkedDescription')}</p></div><div className="card-body stack-form">
-        <SocialError code={error} /><ResourceFeedback query={query} />
-        {query.data && <>{!query.data.identities.length && <p>{t('social.noIdentities')}</p>}
-            {query.data.identities.map((item) => <div className="social-identity" key={item.id}><div><strong>{item.name}</strong><p className="muted">{item.accountId}</p>{!item.enabled && <span className="badge">{t('social.unavailable')}</span>}</div><Button className="text-button danger" disabled={busy} onClick={() => { setAction('unlink'); setAccountId(item.id); setPassword(''); }}>{t('social.unlink')}</Button></div>)}
-            {!action && <div className="action-row"><Button className="secondary" onClick={() => setAction('link')}>{t('social.link')}</Button></div>}
-            {action && <form className="stack-form" onSubmit={(event) => { event.preventDefault(); if (action === 'unlink') setConfirm(true); else void perform(); }}>
-                <Select label={t('social.operation')} value={action} options={[{ value: 'link', label: t('social.link') }, { value: 'unlink', label: t('social.unlink') }]} onChange={(value) => { setAction(value as 'link' | 'unlink'); if (value === 'unlink' && !accountId) setAccountId(query.data?.identities[0]?.id ?? ''); setPassword(''); }} />
-                {action === 'link' && query.data.providers.length > 0 && <Select label={t('social.provider')} value={connectionId || query.data.providers[0]!.id} options={query.data.providers.map((item) => ({ value: item.id, label: item.name }))} onChange={setConnectionId} />}
-                {action === 'unlink' && query.data.identities.length > 0 && <Select label={t('social.linked')} value={accountId || query.data.identities[0]!.id} options={query.data.identities.map((item) => ({ value: item.id, label: `${item.name} · ${item.accountId}` }))} onChange={setAccountId} />}
-                <SecurityConfirmation purpose={action} password={password} onPassword={setPassword} disabled={busy} />
-                <div className="action-row"><Button type="submit" busy={busy} disabled={action === 'link' ? !query.data.providers.length : !accountId}>{t(`social.${action}`)}</Button><Button className="text-button" disabled={busy} onClick={() => setAction(undefined)}>{t('cancel')}</Button></div>
-            </form>}
-        </>}
-    </div>{confirm && <ConfirmationDialog title={t('social.unlink')} description={t('social.unlinkConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirm(false)} onConfirm={() => { void perform(); }} />}</section>;
+    function choose(target: Action) {
+        clear(); setAction(target); setError(undefined);
+    }
+    if (!data || (!identities.length && !providers.length)) return null;
+    return <><section className="card" aria-labelledby="social-accounts-title"><div className="card-heading"><h2 id="social-accounts-title">{t('social.accounts')}</h2><p>{t('social.accountsDescription')}</p></div><div className="card-body stack-form">
+        <div className="social-account-list">
+            {identities.map((item) => {
+                const lastMethod = !data.hasPassword && !identities.some((other) => other.id !== item.id && other.enabled);
+                return <div className="social-account" key={item.id}><div className="social-identity"><div><strong>{item.name}</strong><p className="muted">{t('social.connected')}{!item.enabled && <> · {t('social.unavailable')}</>}</p>{identities.filter((other) => other.providerId === item.providerId).length > 1 && <small className="muted break-all">{item.accountId}</small>}</div><Button className="text-button danger" aria-label={t('social.unlinkProvider', { name: item.name })} disabled={busy || lastMethod} onClick={() => choose({ kind: 'unlink', id: item.id })}>{t('social.unlink')}</Button></div>{lastMethod && <p className="muted social-login-hint">{t('social.keepLoginMethod')}</p>}</div>;
+            })}
+            {providers.map((provider) => <div className="social-account" key={provider.id}><div className="social-identity"><div><strong>{provider.name}</strong><p className="muted">{t('social.notLinked')}</p></div><Button className="secondary" aria-label={t('social.linkProvider', { name: provider.name })} disabled={busy} onClick={() => choose({ kind: 'link', id: provider.id })}>{t('social.link')}</Button></div></div>)}
+        </div>
+    </div></section>
+        {action && selected && <SecurityDialog key={`${action.kind}:${action.id}`} title={t(action.kind === 'link' ? 'social.linkProvider' : 'social.unlinkProvider', { name: selected.name })} purpose={action.kind}
+            confirmLabel={t(action.kind === 'link' ? 'social.continueLink' : 'social.confirmUnlink', { name: selected.name })} danger={action.kind === 'unlink'} busy={busy} error={error}
+            onCancel={() => { clear(); setAction(undefined); setError(undefined); }} onConfirm={(password) => { void perform(password); }} onVerificationLost={() => setError(undefined)} onReauthenticate={() => remember(action.kind, action.id)}>
+            {action.kind === 'unlink' && <p>{t('social.unlinkConfirm', { name: selected.name })}</p>}
+        </SecurityDialog>}
+    </>;
 }
 interface FlowStatus { stage: string; purpose: string; email?: string; hasAvatarSource?: boolean; profile?: { name: string; email?: string; subject: string } }
 export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh: () => Promise<void> }) {
@@ -137,7 +131,7 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
             } else { await request('/social/email', { email }); setStatus({ ...status!, stage: 'code', email }); }
         } catch (cause) { setError(errorCode(cause)); } finally { setBusy(false); }
     }
-    return <><h2>{t(status?.stage === 'tested' ? 'social.testResult' : 'social.complete')}</h2><SocialError code={error} />
+    return <><h2>{t(status?.stage === 'tested' ? 'social.testResult' : 'social.complete')}</h2><ErrorNotice code={error} />
         {!status && !error && <p role="status">{t('loading')}</p>}
         {status && ['email', 'code'].includes(status.stage) ? <form className="stack-form" onSubmit={(event) => { void verify(event); }}><p>{t('social.emailDescription')}</p>
             {status.stage === 'code' ? <><p role="status">{t('social.codeSent', { email: status.email })}</p><TextField label={t('emails.code')} value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} required /><Button className="text-button" disabled={busy} onClick={() => setStatus({ ...status, stage: 'email' })}>{t('social.sendCode')}</Button></> : <TextField label={t('email')} value={email} onValueChange={setEmail} type="email" maxLength={254} required />}

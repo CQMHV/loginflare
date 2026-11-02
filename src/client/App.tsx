@@ -21,8 +21,10 @@ import { ToolbarIcon } from './ToolbarIcon';
 import { BrandingUpdates, useBranding } from './branding';
 import { BrandingSettings } from './BrandingSettings';
 import { MfaSettings } from './MfaSettings';
-import { SecurityConfirmation, SocialButtons, SocialCompletion, SocialSettings, useSecurity } from './Social';
+import { SocialButtons, SocialCompletion, SocialSettings } from './Social';
+import { SecurityDialog, useSecurity } from './security';
 import { SocialConnectionsPage } from './SocialConnections';
+import { ErrorNotice, useFeedback } from './feedback';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -71,7 +73,7 @@ function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
     const location = useLocation();
     const navigate = useNavigate();
     const { t } = useTranslation();
-    const [error, setError] = useState<string>();
+    const feedback = useFeedback();
     const dataActions = useDataActions();
 
     async function changeLanguage(next: string) {
@@ -80,13 +82,13 @@ function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         const segments = location.pathname.split('/');
         segments[1] = localeToPath[next];
         navigate(`${segments.join('/')}${location.search}${location.hash}`);
-        setError(undefined);
         if (identity) {
             try {
                 await request('/update-user', { locale: next });
                 await dataActions.invalidate('profile', 'user', 'users');
             } catch (cause) {
-                setError(dataActions.fail(cause));
+                const code = dataActions.fail(cause);
+                feedback.error(t(`errors.${code}`, { lng: next, defaultValue: t('errors.UNKNOWN_ERROR', { lng: next }) }));
             }
         }
     }
@@ -96,7 +98,6 @@ function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         {compact
             ? <MenuButton label={t('language')} icon={<ToolbarIcon name="translate" />} options={options.map((option) => ({ ...option, selected: option.value === locale }))} onSelect={(next) => { void changeLanguage(next); }} />
             : <Select label={t('language')} value={locale} options={options} onChange={(next) => { void changeLanguage(next); }} />}
-        {error && <ErrorNotice code={error} />}
     </div>;
 }
 
@@ -121,17 +122,6 @@ function AccountMenu({ busy, onSignOut }: { busy: boolean; onSignOut: () => void
             if (value === 'signout') onSignOut();
             else if (value === 'profile') navigate(localizedPath(locale, 'account'));
         }} />;
-}
-
-function ErrorNotice({ code }: { code?: string }) {
-    const { t } = useTranslation();
-    if (!code) return null;
-    const key = `errors.${code}`;
-    return <div className="notice error" role="alert">{i18n.exists(key) ? t(key) : t('errors.UNKNOWN_ERROR')}</div>;
-}
-
-function SuccessNotice({ message }: { message?: string }) {
-    return message ? <div className="notice success" role="status"><Icon name="check" size={17} /><span>{message}</span></div> : null;
 }
 
 function Busy() {
@@ -244,7 +234,8 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const navigate = useNavigate();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
-    const [success, setSuccess] = useState<string>();
+    const [resetComplete, setResetComplete] = useState(false);
+    const feedback = useFeedback();
     const [captchaToken, setCaptchaToken] = useState('');
     const [captchaReset, setCaptchaReset] = useState(0);
     const [email, setEmail] = useState(() => new URLSearchParams(location.search).get('email') ?? '');
@@ -266,7 +257,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
 
     useEffect(() => {
         setError(undefined);
-        setSuccess(undefined);
+        setResetComplete(false);
         setPassword('');
         setConfirmPassword('');
         setRecoveryChallenge(undefined);
@@ -288,7 +279,6 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         event.preventDefault();
         const secretsCurrent = captureSecrets();
         setError(undefined);
-        setSuccess(undefined);
         if (needsCaptcha && !captchaToken) {
             setError('CAPTCHA_TOKEN_MISSING');
             return;
@@ -330,7 +320,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     break;
                 case 'verify-email':
                     await captchaRequest('/send-verification-email', { email, callbackURL }, captchaToken);
-                    setSuccess('emailRequested');
+                    feedback.success(t('emailRequested'));
                     break;
                 case 'forgot-password':
                     if (recoveryChallenge) {
@@ -339,13 +329,12 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     } else {
                         const result = await captchaRequest<{ challengeId: string }>('/emails/recovery/start', { identifier: loginIdentifier.trim(), email: email.trim() }, captchaToken);
                         if (secretsCurrent()) setRecoveryChallenge(result.challengeId);
-                        setSuccess('emails.recoveryRequested');
                     }
                     break;
                 case 'reset-password':
                     await request('/reset-password', { token, newPassword: password });
                     await refresh();
-                    setSuccess('resetDone');
+                    setResetComplete(true);
                     setPassword('');
                     setConfirmPassword('');
                     break;
@@ -363,13 +352,11 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         <h2>{t(titleKeys[mode])}</h2>
         <p className="section-description">{t(descriptionKeys[mode])}</p>
         {oauthQuery && <p className="oauth-context">{t('oauth.authorizationPending')}</p>}
-        <ErrorNotice code={urlError ? 'INVALID_TOKEN' : error === 'PASSWORD_MISMATCH' ? undefined : error} />
-        {error === 'PASSWORD_MISMATCH' && <div className="notice error" role="alert">{t('passwordMismatch')}</div>}
-        <SuccessNotice message={success ? t(success) : undefined} />
-        {mode === 'verified' && !urlError ? <ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
-            mode === 'reset-password' && (!token || urlError) ? <div className="notice error" role="alert">{t('invalidLink')}</div> :
-            mode === 'reset-password' && success ? <ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
-            mode !== 'verified' && <form onSubmit={(event) => { void submit(event); }} className="stack-form">
+        {mode === 'verified' ? urlError ? <ErrorNotice code="INVALID_TOKEN" /> : <ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
+            mode === 'reset-password' && (!token || urlError) ? <ErrorNotice message={t('invalidLink')} /> :
+            mode === 'reset-password' && resetComplete ? <><p className="section-description" role="status">{t('resetDone')}</p><ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink></> :
+            <form onSubmit={(event) => { void submit(event); }} className="stack-form">
+                <ErrorNotice code={urlError ? 'INVALID_TOKEN' : error === 'PASSWORD_MISMATCH' ? undefined : error} message={error === 'PASSWORD_MISMATCH' ? t('passwordMismatch') : undefined} />
                 {mode === 'signup' && <TextField label={t('name')} autoComplete="nickname" name="name" value={name} onValueChange={setName} placeholder={t('namePlaceholder')} maxLength={100} required />}
                 {mode === 'signup' && <TextField label={t('username')} autoComplete="username" name="username" value={username} onValueChange={setUsername} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={t('usernameHint')} required />}
                 {mode === 'login' && <TextField label={t('loginIdentifier')} autoComplete="username" type="text" name="identifier" value={loginIdentifier} onValueChange={setLoginIdentifier} placeholder={t('loginIdentifierPlaceholder')} maxLength={254} required />}
@@ -377,7 +364,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     <TextField label={t('emails.recoveryIdentifier')} autoComplete="username" name="identifier" value={loginIdentifier} onValueChange={setLoginIdentifier} placeholder={t('loginIdentifierPlaceholder')} maxLength={254} required />
                     <TextField label={t('emails.recoveryAddress')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} supportingText={t('emails.recoveryAddressHint')} required />
                 </>}
-                {mode === 'forgot-password' && recoveryChallenge && <TextField label={t('emails.code')} autoComplete="one-time-code" inputMode="numeric" name="code" value={recoveryCode} onValueChange={setRecoveryCode} pattern="[0-9]{6}" minLength={6} maxLength={6} supportingText={t('emails.codeHint')} required />}
+                {mode === 'forgot-password' && recoveryChallenge && <><p role="status">{t('emails.recoveryRequested')}</p><TextField label={t('emails.code')} autoComplete="one-time-code" inputMode="numeric" name="code" value={recoveryCode} onValueChange={setRecoveryCode} pattern="[0-9]{6}" minLength={6} maxLength={6} supportingText={t('emails.codeHint')} required /></>}
                 {(mode === 'signup' || mode === 'verify-email') && <TextField label={t('email')} autoComplete="email" type="email" name="email" value={email} onValueChange={setEmail} placeholder={t('emailPlaceholder')} maxLength={254} required />}
                 {['login', 'signup', 'reset-password'].includes(mode) && <TextField label={t(mode === 'reset-password' ? 'newPassword' : 'password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" name="password" value={password} onValueChange={setPassword} minLength={mode === 'login' ? undefined : 8} maxLength={128} supportingText={mode === 'login' ? undefined : t('passwordHint')} required />}
                 {(mode === 'signup' || mode === 'reset-password') && <TextField label={t('confirmPassword')} autoComplete="new-password" type="password" name="confirmPassword" value={confirmPassword} onValueChange={setConfirmPassword} minLength={8} maxLength={128} required />}
@@ -385,7 +372,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                 {needsCaptcha && <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />}
                 <Button type="submit" className="primary full" busy={busy} disabled={needsCaptcha && !captchaToken}>{busy ? t('working') : t(mode === 'login' ? 'login' : mode === 'signup' ? 'signup' : mode === 'verify-email' ? 'resend' : mode === 'forgot-password' ? recoveryChallenge ? 'emails.recoveryVerify' : 'emails.sendCode' : 'resetPassword')}<Icon name="arrow" size={18} /></Button>
                 {mode === 'forgot-password' && recoveryChallenge && <Button className="text-button" disabled={busy} onClick={() => {
-                    setRecoveryChallenge(undefined); setRecoveryCode(''); setSuccess(undefined); setError(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1);
+                    setRecoveryChallenge(undefined); setRecoveryCode(''); setError(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1);
                 }}>{t('emails.recoveryStartOver')}</Button>}
             </form>}
         {['login', 'signup'].includes(mode) && <SocialButtons locale={locale} />}
@@ -434,8 +421,8 @@ function TwoFactorPage() {
         <h2>{t('mfa.challengeTitle')}</h2>
         <p className="section-description">{t(backup ? 'mfa.backupDescription' : 'mfa.challengeDescription')}</p>
         {query && <p className="oauth-context">{t('oauth.authorizationPending')}</p>}
-        <ErrorNotice code={error} />
         <form className="stack-form" onSubmit={(event) => { void submit(event); }}>
+            <ErrorNotice code={error} />
             <TextField label={t(backup ? 'mfa.backupCode' : 'mfa.code')} name="code" value={code} onValueChange={setCode} autoComplete="one-time-code" inputMode={backup ? 'text' : 'numeric'} pattern={backup ? undefined : '[0-9]{6}'} minLength={backup ? undefined : 6} maxLength={backup ? 32 : 6} required />
             <Button type="submit" className="primary full" busy={busy}>{t('mfa.verify')}</Button>
             <Button className="text-button" disabled={busy} onClick={() => { setBackup(!backup); setCode(''); setError(undefined); }}>{t(backup ? 'mfa.useAuthenticator' : 'mfa.useBackup')}</Button>
@@ -473,7 +460,7 @@ function ConsentPage() {
     return <AuthLayout>
         <div className="auth-step-icon"><Icon name="shield" size={26} /></div>
         <h2>{t('oauth.consentTitle')}</h2>
-        <ErrorNotice code={consentError} />
+        {!consent && <ErrorNotice code={consentError} />}
         {!consent && !consentError && <Busy />}
         {consent && <>
             <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name })}</p>
@@ -481,9 +468,10 @@ function ConsentPage() {
             <p>{t('oauth.consentPermissions')}</p>
             <ul className="consent-permissions">{consent.scopes.map((scope) => <li key={scope}>{t(`oauth.scope_${scope}`)}</li>)}</ul>
             <p className="section-description">{t('oauth.consentNotice')}</p>
+            <ErrorNotice code={error} />
             <div className="action-row"><Button busy={busy} onClick={() => { void decide(true); }}>{t('oauth.allow')}</Button><Button className="secondary" disabled={busy} onClick={() => { void decide(false); }}>{t('oauth.deny')}</Button></div>
         </>}
-        {consentError && <p className="oauth-context">{t('oauth.restartAuthorization')}</p>}
+        {!consent && consentError && <p className="oauth-context">{t('oauth.restartAuthorization')}</p>}
     </AuthLayout>;
 }
 
@@ -526,7 +514,7 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string>();
+    const feedback = useFeedback();
     const dataActions = useDataActions();
 
     async function signOut() {
@@ -536,7 +524,8 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
             dataActions.signOut();
             navigate(localizedPath(locale, 'login'), { replace: true });
         } catch (cause) {
-            setError(dataActions.fail(cause));
+            const code = dataActions.fail(cause);
+            feedback.error(t(`errors.${code}`, { defaultValue: t('errors.UNKNOWN_ERROR') }));
         } finally {
             setBusy(false);
         }
@@ -550,7 +539,7 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
         </aside>
         <div className="app-content">
             <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><LanguageSwitcher compact /><ThemeSwitcher /><AccountMenu busy={busy} onSignOut={() => { void signOut(); }} /></div></header>
-            <main className="page-content"><ConnectionNotice /><ErrorNotice code={error} /><Outlet /></main>
+            <main className="page-content"><ConnectionNotice /><Outlet /></main>
             <footer className="app-footer">{brand.name} <span>·</span> {t('openSource')}</footer>
         </div>
     </div>;
@@ -592,13 +581,13 @@ function ProfilePage() {
     const dataActions = useDataActions();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
-    const [saved, setSaved] = useState(false);
+    const feedback = useFeedback();
     async function save(event: FormEvent) {
         event.preventDefault();
-        setBusy(true); setError(undefined); setSaved(false);
+        setBusy(true); setError(undefined);
         try {
             await request('/update-user', { ...(name.trim() ? { name } : {}), ...(username.trim() ? { username: username.trim() } : {}) });
-            await dataActions.invalidate('profile', 'user', 'users'); clearDraft(draft); setSaved(true);
+            await dataActions.invalidate('profile', 'user', 'users'); clearDraft(draft); feedback.success(t('saved'));
         } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
@@ -609,7 +598,7 @@ function ProfilePage() {
             <AvatarEditor name={identity?.user.name || identity?.user.email || ''} image={identity?.user.image} />
             <Divider />
             <form className="stack-form profile-form" onSubmit={(event) => { void save(event); }}>
-                <ErrorNotice code={error} /><SuccessNotice message={saved ? t('saved') : undefined} />
+                <ErrorNotice code={error} />
                 <TextField label={t('name')} name="name" autoComplete="nickname" value={name} onValueChange={(name) => setDraft({ ...draft, name })} maxLength={100} required={!!identity?.user.name} />
                 <TextField label={t('username')} name="username" autoComplete="username" value={username} onValueChange={(username) => setDraft({ ...draft, username })} placeholder={t('usernamePlaceholder')} minLength={3} maxLength={30} pattern="[a-zA-Z0-9_.]+" supportingText={`${t('usernameHint')}${identity?.user.username ? '' : ` ${t('usernameNotSetHint')}`}`} required={!!identity?.user.username} />
                 <div className="form-footer">{draft && <Button className="text-button" onClick={() => setDraft(undefined)}>{t('discardDraft')}</Button>}<Button className="primary" type="submit" busy={busy}>{t('save')}</Button></div>
@@ -626,36 +615,44 @@ function SecurityPage() {
     const security = useSecurity();
     const hasPassword = security.data?.hasPassword;
     const dataActions = useDataActions();
-    const [currentPassword, setCurrentPassword] = useState('');
+    const [editingPassword, setEditingPassword] = useState(false);
     const [newPassword, setNewPassword] = useState('');
     const [confirmation, setConfirmation] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
-    const [success, setSuccess] = useState(false);
-    useClearSecrets(() => { setCurrentPassword(''); setNewPassword(''); setConfirmation(''); });
-    async function submit(event: FormEvent) {
-        event.preventDefault();
-        setSuccess(false); setError(undefined);
+    const feedback = useFeedback();
+    function clear() { setEditingPassword(false); setNewPassword(''); setConfirmation(''); setError(undefined); }
+    const captureSecrets = useClearSecrets(clear);
+    useEffect(() => {
+        if (!hasPassword && security.data?.proofPurpose === 'set-password' && (security.data.proofExpiresAt ?? 0) > Date.now()) setEditingPassword(true);
+    }, [hasPassword, security.data?.proofPurpose, security.data?.proofExpiresAt]);
+    async function submit(verifiedPassword: string) {
+        if (busy || !editingPassword || !security.data) return;
+        setError(undefined);
+        if (hasPassword ? !verifiedPassword : security.data.proofPurpose !== 'set-password' || (security.data.proofExpiresAt ?? 0) <= Date.now()) { setError('SOCIAL_REAUTH_REQUIRED'); return; }
         if (newPassword !== confirmation) { setError('PASSWORD_MISMATCH'); return; }
+        const current = captureSecrets();
         setBusy(true);
         try {
-            if (hasPassword) await request('/change-password', { currentPassword, newPassword, revokeOtherSessions: true });
+            if (hasPassword) await request('/change-password', { currentPassword: verifiedPassword, newPassword, revokeOtherSessions: true });
             else await request('/social/set-password', { newPassword });
+            if (!current()) return;
             await dataActions.invalidate('sessions', 'security');
-            setCurrentPassword(''); setNewPassword(''); setConfirmation(''); setSuccess(true);
             await refresh();
-        } catch (cause) { setError(dataActions.fail(cause)); }
+            clear(); feedback.success(t('passwordChanged'));
+        } catch (cause) { if (current()) setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
-    return <><PageHeading title={t('securityTitle')} description={t('securityDescription')} /><ResourceFeedback query={security} />{security.data && <section className="card"><div className="card-heading"><h2>{t(hasPassword ? 'changePassword' : 'social.setPassword')}</h2><p>{t(hasPassword ? 'changePasswordDescription' : 'social.passwordless')}</p></div><form className="card-body stack-form" onSubmit={(event) => { void submit(event); }}>
-        <ErrorNotice code={error === 'PASSWORD_MISMATCH' ? undefined : error} />
-        {error === 'PASSWORD_MISMATCH' && <div className="notice error" role="alert">{t('passwordMismatch')}</div>}
-        <SuccessNotice message={success ? t('passwordChanged') : undefined} />
-        <SecurityConfirmation purpose="set-password" password={currentPassword} onPassword={setCurrentPassword} disabled={busy} />
-        <TextField label={t('newPassword')} type="password" name="newPassword" autoComplete="new-password" value={newPassword} onValueChange={setNewPassword} minLength={8} maxLength={128} required supportingText={t('passwordHint')} />
-        <TextField label={t('confirmPassword')} type="password" name="confirmPassword" autoComplete="new-password" value={confirmation} onValueChange={setConfirmation} minLength={8} maxLength={128} required />
-        <div className="form-footer"><Button type="submit" className="primary" busy={busy}>{t(hasPassword ? 'changePassword' : 'social.setPassword')}</Button></div>
-    </form></section>}<SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>;
+    const passwordTitle = t(hasPassword ? 'changePassword' : 'social.setPassword');
+    return <><PageHeading title={t('securityTitle')} description={t('securityDescription')} /><ResourceFeedback query={security} />{security.data && <section className="card"><div className="card-heading"><h2>{passwordTitle}</h2><p>{t(hasPassword ? 'changePasswordDescription' : 'social.passwordless')}</p></div><div className="card-body"><Button disabled={busy} onClick={() => { clear(); setEditingPassword(true); }}>{passwordTitle}</Button></div></section>}
+        {editingPassword && security.data && <SecurityDialog title={passwordTitle} purpose="set-password" confirmLabel={passwordTitle} busy={busy} error={error === 'PASSWORD_MISMATCH' ? undefined : error}
+            confirmDisabled={!newPassword || !confirmation} onConfirm={(verifiedPassword) => { void submit(verifiedPassword); }} onCancel={clear}
+            onVerificationLost={() => { setNewPassword(''); setConfirmation(''); setError(undefined); }}>
+            {error === 'PASSWORD_MISMATCH' && <ErrorNotice message={t('passwordMismatch')} />}
+            <TextField label={t('newPassword')} type="password" name="newPassword" autoComplete="new-password" value={newPassword} onValueChange={setNewPassword} minLength={8} maxLength={128} required supportingText={t('passwordHint')} />
+            <TextField label={t('confirmPassword')} type="password" name="confirmPassword" autoComplete="new-password" value={confirmation} onValueChange={setConfirmation} minLength={8} maxLength={128} required />
+        </SecurityDialog>}
+        <SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>;
 }
 
 function formatDate(value: string | undefined, locale: Locale): string {
@@ -680,25 +677,27 @@ function SessionsPage() {
     const sessionQuery = useResource<CursorPage<Session> & { hasOtherSessions: boolean }>('sessions', `/api/account/sessions?${query}`, query);
     const data = sessionQuery.data;
     const dataActions = useDataActions();
-    const [error, setError] = useState<string>();
-    const [success, setSuccess] = useState<string>();
+    const feedback = useFeedback();
     const [busy, setBusy] = useState(false);
     function navigatePage(nextCursor: string | null) {
         setParameters(nextCursor ? { cursor: nextCursor } : {});
     }
     async function revoke(session?: Session) {
-        setBusy(true); setError(undefined); setSuccess(undefined);
+        setBusy(true);
         try {
             if (session) await request('/revoke-session', { token: session.token });
             else await request('/revoke-other-sessions', {});
             await refresh();
             if (!session) navigatePage(null);
             await dataActions.invalidate('sessions');
-            setSuccess(session ? 'sessionRevoked' : 'othersRevoked');
-        } catch (cause) { setError(dataActions.fail(cause)); }
+            feedback.success(t(session ? 'sessionRevoked' : 'othersRevoked'));
+        } catch (cause) {
+            const code = dataActions.fail(cause);
+            feedback.error(t(`errors.${code}`, { defaultValue: t('errors.UNKNOWN_ERROR') }));
+        }
         finally { setBusy(false); }
     }
-    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ErrorNotice code={error} /><ResourceFeedback query={sessionQuery} />{(error || sessionQuery.error) && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<SuccessNotice message={success ? t(success) : undefined} /><section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!data?.hasOtherSessions} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
+    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ResourceFeedback query={sessionQuery} />{sessionQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!data?.hasOtherSessions} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
         {data?.items.length === 0 && <p className="empty-state">{t('sessionsEmpty')}</p>}
         {!!data?.items.length && <List className="session-list" label={t('activeSessions')}>{data.items.map((session, index) => <Fragment key={session.id}>
             {index > 0 && <Divider />}
@@ -754,22 +753,22 @@ function UserDetailPage() {
     const reason = reasonDraft ?? '';
     const dataActions = useDataActions();
     const [error, setError] = useState<string>();
-    const [success, setSuccess] = useState(false);
+    const feedback = useFeedback();
     const [busy, setBusy] = useState(false);
     const [confirmation, setConfirmation] = useState<'ban-user' | 'revoke-user-sessions'>();
     async function action(kind: 'ban-user' | 'unban-user' | 'revoke-user-sessions', confirmed = false) {
         if (!user || user.role === 'admin') return;
-        if (!confirmed && kind !== 'unban-user') { setConfirmation(kind); return; }
-        setBusy(true); setError(undefined); setSuccess(false);
+        if (!confirmed && kind !== 'unban-user') { setError(undefined); setConfirmation(kind); return; }
+        setBusy(true); setError(undefined);
         try {
             await request(`/admin/${kind}`, { userId: user.id, ...(kind === 'ban-user' && reason.trim() ? { banReason: reason.trim() } : {}) });
-            await dataActions.invalidate('user', 'users'); clearReason(reasonDraft); setSuccess(true);
+            await dataActions.invalidate('user', 'users'); clearReason(reasonDraft); setConfirmation(undefined); feedback.success(t('userUpdated'));
         } catch (cause) { setError(dataActions.fail(cause)); }
         finally { setBusy(false); }
     }
-    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} onCancel={() => setConfirmation(undefined)} onConfirm={() => { const kind = confirmation; setConfirmation(undefined); void action(kind, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''}>{user && <Avatar name={user.name} image={user.image} className="profile-avatar" />}</PageHeading><ErrorNotice code={error} /><SuccessNotice message={success ? t('userUpdated') : undefined} /><ResourceFeedback query={userQuery} />{user && <>
+    return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={busy} error={<ErrorNotice code={error} />} onCancel={() => { setConfirmation(undefined); setError(undefined); }} onConfirm={() => { void action(confirmation, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''}>{user && <Avatar name={user.name} image={user.image} className="profile-avatar" />}</PageHeading><ResourceFeedback query={userQuery} />{user && <>
         <section className="card"><div className="card-body user-detail-grid"><div><small>{t('name')}</small><strong>{user.name}</strong></div><div><small>{t('email')}</small><strong>{user.email}</strong></div><div><small>{t('status')}</small><UserStatus user={user} /></div><div><small>{t('role')}</small><strong>{t(user.role === 'admin' ? 'admin' : 'user')}</strong></div><div><small>{t('joined')}</small><strong>{formatDate(user.createdAt, locale)}</strong></div><div><small>{t('emailVerification')}</small><strong>{t(user.emailVerified ? 'verified' : 'unverified')}</strong></div><div className="full-width"><small>{t('accountId')}</small><code>{user.id}</code></div>{user.banReason && <div className="full-width"><small>{t('reason')}</small><strong>{user.banReason}</strong></div>}</div></section>
-        <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
+        <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!confirmation && <ErrorNotice code={error} />}{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
     </>}</>;
 }
 

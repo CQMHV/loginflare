@@ -45,6 +45,14 @@ test('manages email addresses and recovers the same account through a secondary 
         await page.getByRole('button', { name: 'Sign in', exact: true }).click();
         expect((await signedIn).status()).toBe(expectedStatus);
     }
+    const emailDialog = page.locator('md-dialog.form-dialog');
+    async function confirmIdentity(candidate: string) {
+        await emailDialog.getByLabel('Current password', { exact: true }).fill(candidate);
+        const verified = page.waitForResponse((response) => response.url() === `${testOrigin}/api/auth/verify-password`
+            && response.request().method() === 'POST');
+        await emailDialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+        expect((await verified).status()).toBe(200);
+    }
 
     await signIn(username, password);
     await expect(page).toHaveURL('/en-us/account');
@@ -53,16 +61,20 @@ test('manages email addresses and recovers the same account through a secondary 
     await expect(page).toHaveURL('/en-us/account/emails');
     await expect(page.getByRole('button', { name: `Remove email: ${primary}`, exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Add email address', exact: true }).click();
-    await page.getByLabel('New email address', { exact: true }).fill(secondary.toUpperCase());
-    await page.getByLabel('Current password', { exact: true }).fill(password);
+    await expect(emailDialog.getByLabel('New email address', { exact: true })).toHaveCount(0);
+    await expect(emailDialog.getByRole('button', { name: 'Send verification code', exact: true })).toHaveCount(0);
+    await confirmIdentity(password);
+    await expect(emailDialog.getByLabel('New email address', { exact: true })).toBeVisible();
+    await emailDialog.getByLabel('New email address', { exact: true }).fill(secondary.toUpperCase());
     const beforeAdd = await snapshotEmails();
-    await page.getByRole('button', { name: 'Send verification code', exact: true }).click();
-    await page.getByLabel('Verification code', { exact: true }).fill(await waitForCode(beforeAdd));
-    await page.getByRole('button', { name: 'Verify email', exact: true }).click();
+    await emailDialog.getByRole('button', { name: 'Send verification code', exact: true }).click();
+    await emailDialog.getByLabel('Verification code', { exact: true }).fill(await waitForCode(beforeAdd));
+    await emailDialog.getByRole('button', { name: 'Verify email', exact: true }).click();
     await expect(page.getByRole('button', { name: `Make primary: ${secondary}`, exact: true })).toBeVisible();
     await page.getByRole('button', { name: `Make primary: ${secondary}`, exact: true }).click();
-    await page.getByLabel('Current password', { exact: true }).fill(password);
-    await page.locator('.email-action').getByRole('button', { name: 'Make primary', exact: true }).click();
+    await expect(emailDialog.getByRole('button', { name: 'Make primary', exact: true })).toHaveCount(0);
+    await confirmIdentity(password);
+    await emailDialog.getByRole('button', { name: 'Make primary', exact: true }).click();
     await expect(page.getByRole('button', { name: `Remove email: ${primary}`, exact: true })).toBeVisible();
     const switched = await (await page.request.get('/api/auth/get-session')).json();
     expect(switched.user.id).toBe(original.user.id);
@@ -109,8 +121,9 @@ test('manages email addresses and recovers the same account through a secondary 
     expect((await (await page.request.get('/api/auth/get-session')).json()).user.id).toBe(original.user.id);
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await page.getByRole('button', { name: `Remove email: ${primary}`, exact: true }).click();
-    await page.getByLabel('Current password', { exact: true }).fill(recovered);
-    await page.locator('.email-action').getByRole('button', { name: 'Remove email', exact: true }).click();
+    await expect(emailDialog.getByRole('button', { name: 'Remove email', exact: true })).toHaveCount(0);
+    await confirmIdentity(recovered);
+    await emailDialog.getByRole('button', { name: 'Remove email', exact: true }).click();
     await expect(page.locator('.email-row')).toHaveCount(1);
     await expect(page.locator('.email-row')).toContainText(secondary);
 });

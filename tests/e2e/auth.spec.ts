@@ -99,9 +99,12 @@ test('completes registration, recovery, account management, and administrator co
     await page.getByLabel('Display name', { exact: true }).fill('Updated Browser Person');
     await page.getByLabel('Username', { exact: true }).fill(replacementUsername);
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Your changes have been saved.');
+    await expect(page.locator('.feedback-toast')).toContainText('Your changes have been saved.');
+    await expect(page.locator('.profile-form').getByRole('status')).toHaveCount(0);
     await expect(page.getByLabel('Username', { exact: true })).toHaveValue(replacementUsername);
     await page.screenshot({ path: test.info().outputPath('profile-desktop.png'), fullPage: true });
+    await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+    await expect(page.locator('.feedback-toast')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Account menu', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
@@ -151,10 +154,24 @@ test('completes registration, recovery, account management, and administrator co
     await page.getByRole('link', { name: '登录会话', exact: true }).click();
     await expect(page.getByText('当前会话', { exact: true })).toBeVisible();
     await page.getByRole('link', { name: '安全', exact: true }).click();
-    await page.getByLabel('当前密码', { exact: true }).fill('Browser-test-password-917!');
-    await page.getByLabel('新密码', { exact: true }).fill('Changed-browser-password-728!');
-    await page.getByLabel('确认密码', { exact: true }).fill('Changed-browser-password-728!');
+    await expect(page.getByLabel('新密码', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('确认密码', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: '修改密码', exact: true }).click();
+    const passwordDialog = page.locator('md-dialog.form-dialog');
+    await passwordDialog.getByLabel('当前密码', { exact: true }).fill('Wrong-browser-password-917!');
+    const rejectedPassword = page.waitForResponse((response) => response.url() === `${testOrigin}/api/auth/verify-password` && response.request().method() === 'POST');
+    await passwordDialog.getByRole('button', { name: '验证并继续', exact: true }).click();
+    expect((await rejectedPassword).status()).toBe(400);
+    await expect(passwordDialog.getByRole('alert')).toBeVisible();
+    await expect(passwordDialog.getByLabel('新密码', { exact: true })).toHaveCount(0);
+    await expect(passwordDialog.getByLabel('确认密码', { exact: true })).toHaveCount(0);
+    await passwordDialog.getByLabel('当前密码', { exact: true }).fill('Browser-test-password-917!');
+    await passwordDialog.getByRole('button', { name: '验证并继续', exact: true }).click();
+    await expect(passwordDialog.getByLabel('新密码', { exact: true })).toBeVisible();
+    await passwordDialog.getByLabel('新密码', { exact: true }).fill('Changed-browser-password-728!');
+    await passwordDialog.getByLabel('确认密码', { exact: true }).fill('Changed-browser-password-728!');
+    await passwordDialog.getByRole('button', { name: '修改密码', exact: true }).click();
+    await expect(passwordDialog).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: '密码已修改，其他会话已退出。' })).toBeVisible();
     await page.getByRole('button', { name: '账号菜单', exact: true }).click();
     await page.getByRole('menuitem', { name: '退出登录', exact: true }).click();
@@ -257,14 +274,21 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByRole('heading', { name: 'User details', exact: true })).toBeVisible();
     await page.getByLabel('Reason for suspension', { exact: true }).fill('Local browser-test fixture');
     await page.getByRole('button', { name: 'Suspend account', exact: true }).click();
-    const suspendDialog = page.getByRole('dialog', { name: 'Suspend account', exact: true });
+    const suspendDialog = page.locator('md-dialog.form-dialog');
     await expect(suspendDialog).toBeVisible();
     // Actions are slotted light-DOM children of the Material Web host.
     await page.locator('md-dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(suspendDialog).toHaveCount(0);
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Suspend account', exact: true }).click();
+    await page.route('**/api/auth/admin/ban-user', (route) => route.fulfill({ status: 500, json: { code: 'INTERNAL_SERVER_ERROR' } }));
     await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await expect(suspendDialog).toBeVisible();
+    await expect(suspendDialog.getByRole('alert')).toBeVisible();
+    await expect(page.locator('.page-content > [role="alert"]')).toHaveCount(0);
+    await page.unroute('**/api/auth/admin/ban-user');
+    await suspendDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+    await expect(suspendDialog).toHaveCount(0);
     await expect(page.getByText('Suspended', { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 1024 });
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -282,4 +306,12 @@ test('completes registration, recovery, account management, and administrator co
     await page.goto(`/en-us/admin/users/detail?id=${encodeURIComponent(administrator.user.id)}`);
     await expect(page.getByText('Administrator accounts cannot be managed from this interface.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Suspend account', exact: true })).toHaveCount(0);
+});
+
+test('shows one actionable error for an invalid password-reset link', async ({ page }) => {
+    await page.goto('/en-us/reset-password?token=expired&error=INVALID_TOKEN');
+    await expect(page.getByRole('alert')).toHaveCount(1);
+    await expect(page.getByRole('alert')).toHaveText('This link is invalid or has expired. Request a new one.');
+    await expect(page.getByRole('button', { name: 'Reset password', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Back to sign in', exact: true })).toBeVisible();
 });
