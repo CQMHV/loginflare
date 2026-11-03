@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { brandColors } from './src/shared/brand-colors.ts';
@@ -12,11 +12,16 @@ export default defineConfig({
         apply: 'serve',
         enforce: 'pre',
         configureServer(server) {
-            server.config.logger.info('Local API GET requests have an additional 1000 ms delay (except /api/health).');
+            const delayMs = Number(process.env.LOGINFLARE_API_DELAY_MS
+                ?? loadEnv(server.config.mode, server.config.envDir, 'LOGINFLARE_').LOGINFLARE_API_DELAY_MS ?? '3000');
+            if (!Number.isInteger(delayMs) || delayMs < 0 || delayMs > 30_000) {
+                throw new Error('LOGINFLARE_API_DELAY_MS must be an integer from 0 to 30000.');
+            }
+            server.config.logger.info(`Local API GET requests have an additional ${delayMs} ms delay (except /api/health).`);
             server.middlewares.use((request, response, next) => {
                 const path = request.url?.split('?', 1)[0] ?? '';
-                if (request.method === 'GET' && path.startsWith('/api/') && path !== '/api/health') {
-                    const timer = setTimeout(next, 1000);
+                if (delayMs > 0 && request.method === 'GET' && path.startsWith('/api/') && path !== '/api/health') {
+                    const timer = setTimeout(next, delayMs);
                     response.once('close', () => clearTimeout(timer));
                     return;
                 }
