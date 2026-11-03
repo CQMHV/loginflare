@@ -131,9 +131,9 @@ function ManagedApplicationsPage({ locale }: { locale: Locale }) {
     }
     return <>
         <div className="page-heading"><div><h1>{t('oauth.applicationsTitle')}</h1><p>{t('oauth.applicationsDescription')}</p></div></div>
-        <ResourceFeedback query={applicationQuery} />
         {applicationQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}
         <section className="card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'clientId', label: t('oauth.clientId') }, { value: 'name', label: t('oauth.applicationName') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('oauth.searchApplications')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
+        <ResourceFeedback query={applicationQuery} />
         {data && <><div className="table-scroll"><table>
             <thead><tr><th>{t('oauth.applicationName')}</th><th>{t('oauth.applicationType')}</th><th>{t('oauth.developer')}</th><th>{t('status')}</th><th>{t('created')}</th></tr></thead>
             <tbody>{data.items.map((application) => <tr key={application.clientId}>

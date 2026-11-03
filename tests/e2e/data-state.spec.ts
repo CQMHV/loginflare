@@ -84,6 +84,76 @@ async function visibility(page: Page, visible: boolean) {
     }, visible);
 }
 
+for (const [locale, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
+    test(`centers initial security loading without partially rendering settings in ${locale}`, async ({ page, context }) => {
+        await mockAccount(context);
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => { release = resolve; });
+        await context.route(`${testOrigin}/api/auth/social/security`, async (route) => {
+            await pending;
+            await route.fulfill({ json: { hasPassword: true, identities: [], providers: [{ id: 'test-google', name: 'Google', type: 'google' }] } });
+        });
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`/${locale}/account/security`);
+        const loading = page.locator('.page-content > .loading-state');
+        await expect(loading).toBeVisible();
+        await expect(page.locator('.page-content .card')).toHaveCount(0);
+        const placement = await page.evaluate(() => {
+            const main = document.querySelector('.page-content')!;
+            const heading = main.querySelector('.page-heading')!;
+            const loading = main.querySelector('.loading-state')!.getBoundingClientRect();
+            const top = heading.getBoundingClientRect().bottom + parseFloat(getComputedStyle(heading).marginBottom);
+            const bottom = main.getBoundingClientRect().bottom - parseFloat(getComputedStyle(main).paddingBottom);
+            return { actual: loading.top + loading.height / 2, expected: (top + bottom) / 2 };
+        });
+        expect(Math.abs(placement.actual - placement.expected)).toBeLessThan(2);
+        await page.screenshot({ path: test.info().outputPath(`security-loading-${locale}.png`) });
+        release();
+        await expect(loading).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: locale === 'zh-cn' ? '双重验证' : 'Two-factor authentication', exact: true })).toBeVisible();
+        await expect(page.getByRole('region', { name: locale === 'zh-cn' ? '第三方账号' : 'Third-party accounts', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: locale === 'zh-cn' ? '修改密码' : 'Change password', exact: true })).toBeEnabled();
+    });
+}
+
+for (const [path, endpoint] of [
+    ['account/sessions', '/api/account/sessions'],
+    ['admin/users', '/api/admin/users'],
+    ['admin/applications', '/api/admin/applications'],
+]) {
+    test(`keeps ${path} loading inside its data panel`, async ({ page, context }) => {
+        await mockAccount(context);
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => { release = resolve; });
+        await context.route(`${testOrigin}${endpoint}*`, async (route) => { await pending; await route.fallback(); });
+        await page.goto(`/en-us/${path}`);
+        const loading = page.locator('.page-content .card .loading-state');
+        await expect(loading).toBeVisible();
+        await expect(page.locator('.page-content > .loading-state')).toHaveCount(0);
+        await expect(page.locator('.page-heading')).toBeVisible();
+        release();
+        await expect(loading).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeVisible();
+    });
+}
+
+test('keeps security settings hidden after an initial read failure and recovers on retry', async ({ page, context }) => {
+    await mockAccount(context);
+    let failing = true;
+    await context.route(`${testOrigin}/api/auth/social/security`, async (route) => {
+        if (failing) await route.fulfill({ status: 503, json: { code: 'REQUEST_FAILED' } });
+        else await route.fallback();
+    });
+    await page.goto('/en-us/account/security');
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.locator('.page-content .card')).toHaveCount(0);
+    failing = false;
+    await page.getByRole('button', { name: 'Try again', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Change password', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Set up authenticator', exact: true })).toBeEnabled();
+});
+
 for (const locale of ['en-us', 'zh-cn'] as const) {
     test(`shows a rotated client secret in a modal at the current viewport in ${locale}`, async ({ page, context }) => {
         const server = await mockAccount(context);

@@ -657,15 +657,16 @@ function SecurityPage() {
         finally { setBusy(false); }
     }
     const passwordTitle = t(hasPassword ? 'changePassword' : 'social.setPassword');
-    return <><PageHeading title={t('securityTitle')} description={t('securityDescription')} /><ResourceFeedback query={security} />{security.data && <section className="card"><div className="card-heading"><h2>{passwordTitle}</h2><p>{t(hasPassword ? 'changePasswordDescription' : 'social.passwordless')}</p></div><div className="card-body"><Button disabled={busy} onClick={() => { clear(); setEditingPassword(true); }}>{passwordTitle}</Button></div></section>}
-        {editingPassword && security.data && <SecurityDialog title={passwordTitle} purpose="set-password" confirmLabel={passwordTitle} busy={busy} error={error === 'PASSWORD_MISMATCH' ? undefined : error}
+    return <><PageHeading title={t('securityTitle')} description={t('securityDescription')} /><ResourceFeedback query={security} />{security.data && <>
+        <section className="card"><div className="card-heading"><h2>{passwordTitle}</h2><p>{t(hasPassword ? 'changePasswordDescription' : 'social.passwordless')}</p></div><div className="card-body"><Button disabled={busy} onClick={() => { clear(); setEditingPassword(true); }}>{passwordTitle}</Button></div></section>
+        {editingPassword && <SecurityDialog title={passwordTitle} purpose="set-password" confirmLabel={passwordTitle} busy={busy} error={error === 'PASSWORD_MISMATCH' ? undefined : error}
             confirmDisabled={!newPassword || !confirmation} onConfirm={(verifiedPassword) => { void submit(verifiedPassword); }} onCancel={clear}
             onVerificationLost={() => { setNewPassword(''); setConfirmation(''); setError(undefined); }}>
             {error === 'PASSWORD_MISMATCH' && <ErrorNotice message={t('passwordMismatch')} />}
             <TextField label={t('newPassword')} type="password" name="newPassword" autoComplete="new-password" value={newPassword} onValueChange={setNewPassword} minLength={8} maxLength={128} required supportingText={t('passwordHint')} />
             <TextField label={t('confirmPassword')} type="password" name="confirmPassword" autoComplete="new-password" value={confirmation} onValueChange={setConfirmation} minLength={8} maxLength={128} required />
         </SecurityDialog>}
-        <SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>;
+        <SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>}</>;
 }
 
 function formatDate(value: string | undefined, locale: Locale): string {
@@ -710,7 +711,8 @@ function SessionsPage() {
         }
         finally { setBusy(false); }
     }
-    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} /><ResourceFeedback query={sessionQuery} />{sessionQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!data?.hasOtherSessions} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
+    return <><PageHeading title={t('sessionsTitle')} description={t('sessionsDescription')} />{sessionQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card"><div className="card-heading heading-with-action"><h2>{t('activeSessions')}</h2><Button className="secondary small" busy={busy} disabled={!data?.hasOtherSessions} onClick={() => { void revoke(); }}>{t('revokeOthers')}</Button></div>
+        <ResourceFeedback query={sessionQuery} />
         {data?.items.length === 0 && <p className="empty-state">{t('sessionsEmpty')}</p>}
         {!!data?.items.length && <List className="session-list" label={t('activeSessions')}>{data.items.map((session, index) => <Fragment key={session.id}>
             {index > 0 && <Divider />}
@@ -750,7 +752,8 @@ function UsersPage() {
         setParameters(next);
     }
     const userPath = (id: string) => listPath(localizedPath(locale, 'admin/users/detail'), location.search, { id });
-    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')} /><ResourceFeedback query={userQuery} />{userQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'email', label: t('email') }, { value: 'username', label: t('username') }, { value: 'id', label: t('accountId') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('searchUsers')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
+    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')} />{userQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'email', label: t('email') }, { value: 'username', label: t('username') }, { value: 'id', label: t('accountId') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('searchUsers')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
+        <ResourceFeedback query={userQuery} />
         {data && <><div className="table-scroll"><table><thead><tr><th>{t('user')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.items.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><Avatar name={user.name} image={user.image} className="table-avatar" /><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><ButtonLink variant="icon" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></ButtonLink></td></tr>)}</tbody></table>{data.items.length === 0 && <p className="empty-state">{t('usersEmpty')}</p>}</div><PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
     </section></>;
 }
