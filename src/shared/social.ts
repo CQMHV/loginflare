@@ -1,8 +1,9 @@
-export const connectionTypes = ['google', 'github', 'oidc', 'oauth2'] as const;
+export const connectionTypes = ['google', 'microsoft', 'github', 'discord', 'x', 'telegram', 'oidc', 'oauth2'] as const;
 export type ConnectionType = typeof connectionTypes[number];
 export const socialIconSize = 256;
 export interface ConnectionConfig {
     clientId: string;
+    tenantId?: string;
     issuer?: string;
     discoveryUrl?: string;
     authorizationUrl?: string;
@@ -26,8 +27,9 @@ export const securityPurposes = ['link', 'unlink', 'set-password', 'emails/add',
 export type SecurityPurpose = typeof securityPurposes[number];
 export function defaultConnectionConfig(type: ConnectionType): ConnectionConfig {
     return {
-        clientId: '', tokenAuth: type === 'github' ? 'client_secret_post' : 'client_secret_basic',
-        scopes: type === 'github' ? ['read:user', 'user:email'] : type === 'oauth2' ? [] : ['openid', 'profile', 'email'],
-        fields: { subject: type === 'oauth2' ? 'id' : 'sub', name: 'name', email: 'email', emailVerified: 'email_verified', image: 'picture' },
+        clientId: '', ...(type === 'microsoft' ? { tenantId: 'common' } : {}),
+        tokenAuth: ['github', 'microsoft', 'discord'].includes(type) ? 'client_secret_post' : 'client_secret_basic',
+        scopes: type === 'github' ? ['read:user', 'user:email'] : type === 'discord' ? ['identify', 'email'] : type === 'x' ? ['users.read', 'tweet.read'] : type === 'telegram' ? ['openid', 'profile'] : type === 'oauth2' ? [] : ['openid', 'profile', 'email'],
+        fields: { subject: ['oauth2', 'discord', 'x'].includes(type) ? 'id' : 'sub', name: 'name', email: 'email', emailVerified: 'email_verified', image: 'picture' },
     };
 }

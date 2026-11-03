@@ -20,3 +20,44 @@ Pinned artwork source:
 https://github.com/primer/octicons/blob/ea8e6bb79894cc7e85564ee9b53d86b418738d04/icons/mark-github-16.svg
 Logo guidelines:
 https://github.com/logos
+
+Microsoft:
+The unmodified four-color Microsoft symbol in src/client/assets/microsoft.svg
+is from Microsoft's official sign-in branding assets.
+Artwork source:
+https://learn.microsoft.com/en-us/entra/identity-platform/media/howto-add-branding-in-apps/ms-symbollockup_mssymbol_19.svg
+Sign-in branding and usage guidelines:
+https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-branding-in-apps
+Microsoft and the Microsoft logo are trademarks of the Microsoft group of companies.
+
+Discord:
+The unmodified Blurple Clyde symbol in src/client/assets/discord.svg is from
+Discord's official brand-assets page, displayed beside the provider's name.
+Artwork source:
+https://cdn.prod.website-files.com/6257adef93867e50d84d30e2/66e3d80db9971f10a9757c99_Symbol.svg
+Branding and usage guidelines:
+https://discord.com/branding
+Discord and the Clyde logo are trademarks of Discord Inc.
+
+X:
+The transparent black X PNG in src/client/assets/x.png is copied unchanged from
+X's official brand toolkit. Its geometry and proportions are retained. The site
+displays its white color treatment in dark mode as described in X's guidelines.
+Artwork source:
+https://about.x.com/content/dam/about-twitter/x/brand-toolkit/logo-black.png.twimg.1920.png
+Branding and usage guidelines:
+https://about.x.com/content/dam/about-twitter/x/brand-toolkit/x-brand-guidelines.pdf
+X and the X logo are trademarks of X Corp.
+
+Telegram:
+The unchanged gradient-blue circle and white paper-plane SVG in
+src/client/assets/telegram.svg is Logo.svg from Telegram's official press pack.
+Artwork source:
+https://telegram.org/file/464001088/1/bI7AJLo7oX4.287931.zip/374fe3b0a59dc60005
+Logo download and usage statement:
+https://telegram.org/tour/screenshots
+Telegram permits use of these logos for identification, illustrations and
+buttons provided users do not mistake the site for an official Telegram service.
+Telegram and the Telegram logo remain the property of their respective owners.
+
+All icons are bundled locally; rendering them makes no external requests.

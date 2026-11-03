@@ -15,8 +15,8 @@ import { ProviderIcon } from './ProviderIcon';
 import { ToolbarIcon } from './ToolbarIcon';
 
 type Draft = Pick<SocialConnection, 'name' | 'type' | 'config' | 'enabled' | 'archived' | 'revision' | 'iconId' | 'iconUrl'> & { id?: string; callbackURL?: string; linkedAccounts?: number; identityLocked?: boolean };
-const providerNames = { google: 'Google', github: 'GitHub', oidc: 'OpenID Connect', oauth2: 'OAuth 2.0' };
-const guides = { google: 'https://developers.google.com/identity/protocols/oauth2/web-server#creatingcred', github: 'https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app', oidc: 'https://openid.net/specs/openid-connect-discovery-1_0.html', oauth2: 'https://www.rfc-editor.org/rfc/rfc6749' };
+const providerNames = { google: 'Google', github: 'GitHub', microsoft: 'Microsoft', discord: 'Discord', x: 'X', telegram: 'Telegram', oidc: 'OpenID Connect', oauth2: 'OAuth 2.0' };
+const guides = { google: 'https://developers.google.com/identity/protocols/oauth2/web-server#creatingcred', github: 'https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app', microsoft: 'https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app', discord: 'https://discord.com/developers/docs/topics/oauth2', x: 'https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code', telegram: 'https://core.telegram.org/bots/telegram-login', oidc: 'https://openid.net/specs/openid-connect-discovery-1_0.html', oauth2: 'https://www.rfc-editor.org/rfc/rfc6749' };
 
 function SortableConnection({ item, index, disabled, editDisabled, onEdit }: { item: SocialConnection; index: number; disabled: boolean; editDisabled: boolean; onEdit: () => void }) {
     const { t } = useTranslation();
@@ -124,6 +124,7 @@ export function SocialConnectionsPage() {
             <section className="social-connection-section" aria-labelledby="connection-authentication-title">
                 <div className="social-connection-section-heading"><h3 id="connection-authentication-title">{t('social.authenticationSettings')}</h3><a href={guides[draft.type]} target="_blank" rel="noreferrer">{t('social.guide')}</a></div>
                 {locked && <p className="muted">{t('social.identityLocked')}</p>}
+                {draft.type === 'microsoft' && <TextField label={t('social.tenantId')} value={draft.config.tenantId ?? 'common'} onValueChange={(tenantId) => config({ tenantId })} maxLength={100} required disabled={disabled || locked} />}
                 {draft.type === 'oidc' && (['issuer', 'discoveryUrl'] as const).map((key) => <TextField key={key} label={t(`social.${key}`)} value={draft.config[key] ?? ''} onValueChange={(value) => config({ [key]: value })} maxLength={2048} required disabled={disabled || locked} />)}
                 {draft.type === 'oauth2' && (['authorizationUrl', 'tokenUrl', 'userInfoUrl'] as const).map((key) => <TextField key={key} label={t(`social.${key}`)} value={draft.config[key] ?? ''} onValueChange={(value) => config({ [key]: value })} maxLength={2048} required disabled={disabled || locked} />)}
                 <div className="social-connection-fields">

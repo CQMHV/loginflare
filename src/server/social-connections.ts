@@ -20,6 +20,7 @@ const url = z.string().max(2048).refine((value) => { try { publicUrl(value); ret
 const field = z.string().max(100).regex(/^(?:[A-Za-z_][A-Za-z0-9_]*)(?:\.[A-Za-z_][A-Za-z0-9_]*)*$|^$/).refine((value) => !value.split('.').some((part) => ['__proto__', 'prototype', 'constructor'].includes(part)));
 const configSchema = z.object({
     clientId: z.string().trim().min(1).max(512), issuer: url.optional(), discoveryUrl: url.optional(),
+    tenantId: z.string().regex(/^(?:common|organizations|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/).optional(),
     authorizationUrl: url.optional(), tokenUrl: url.optional(), userInfoUrl: url.optional(),
     tokenAuth: z.enum(['client_secret_basic', 'client_secret_post']),
     scopes: z.array(z.string().min(1).max(200).regex(/^\S+$/)).max(20),
@@ -31,7 +32,9 @@ const inputSchema = z.object({
     revision: z.number().int().nonnegative(),
     iconId: z.string().regex(avatarIdPattern).nullable().optional(),
 }).strict().refine((value) => value.type !== 'oidc' || !!value.config.issuer && !!value.config.discoveryUrl)
-    .refine((value) => value.type !== 'oauth2' || !!value.config.authorizationUrl && !!value.config.tokenUrl && !!value.config.userInfoUrl);
+    .refine((value) => value.type !== 'oauth2' || !!value.config.authorizationUrl && !!value.config.tokenUrl && !!value.config.userInfoUrl)
+    .refine((value) => value.type !== 'telegram' || value.config.scopes.includes('openid') && value.config.scopes.every((scope) => ['openid', 'profile'].includes(scope)))
+    .refine((value) => value.type !== 'x' || ['users.read', 'tweet.read'].every((scope) => value.config.scopes.includes(scope)) && value.config.scopes.every((scope) => ['users.read', 'tweet.read'].includes(scope)));
 
 export async function connection(env: Env, id: string, testing = false): Promise<LoadedConnection | null> {
     const row = await env.DB.prepare('SELECT * FROM "socialConnection" WHERE "id" = ? AND "archived" = 0').bind(id).first<ConnectionRow>();
@@ -52,7 +55,7 @@ function present(env: Env, row: ConnectionRow): SocialConnection {
 }
 function identityConfig(value: { type: string; config: ConnectionConfig }) {
     const c = value.config;
-    return JSON.stringify([value.type, c.clientId, c.issuer, c.discoveryUrl, c.authorizationUrl, c.tokenUrl, c.userInfoUrl, c.fields.subject]);
+    return JSON.stringify([value.type, c.clientId, c.tenantId, c.issuer, c.discoveryUrl, c.authorizationUrl, c.tokenUrl, c.userInfoUrl, c.fields.subject]);
 }
 type Identity = NonNullable<Awaited<ReturnType<ReturnType<typeof createAuth>['api']['getSession']>>>;
 export const socialConnections = new Hono<{ Bindings: Env; Variables: { identity: Identity } }>();

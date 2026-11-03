@@ -357,6 +357,7 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 .provider-icon[slot='icon'] { width: 20px; height: 20px; color: inherit; }
 .provider-icon > img, .provider-icon > svg { display: block; width: 100%; height: 100%; object-fit: contain; }
 .provider-icon-github { color: var(--md-sys-color-on-surface); }
+[data-theme='dark'] .provider-icon-x { filter: invert(1); }
 .social-provider-details { display: flex; align-items: center; gap: 14px; }
 .social-provider-details > div { min-width: 0; overflow-wrap: anywhere; }
 .social-icon-editor { display: grid; gap: 8px; min-width: 0; }

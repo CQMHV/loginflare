@@ -33,6 +33,8 @@ async function icons(context: BrowserContext) {
         { id: 'google', name: 'Google', type: 'google', iconUrl },
         { id: 'oidc', name: 'OIDC', type: 'oidc', iconUrl: null },
         { id: 'github', name: 'GitHub', type: 'github', iconUrl: `/social/icons/${brokenIconId}` },
+        { id: 'x', name: 'X', type: 'x', iconUrl: null },
+        { id: 'telegram', name: 'Telegram', type: 'telegram', iconUrl: null },
         { id: 'untrusted', name: 'External metadata', type: 'oauth2', iconUrl: 'https://untrusted.example.test/tracker.svg' },
     ];
     context.on('request', (request) => { if (request.url().includes('untrusted.example.test')) state.externalIcons.push(request.url()); });
@@ -140,11 +142,26 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
                 await expect(host.locator('.provider-icon img:not(.provider-icon-google)')).toHaveCount(0);
                 if (name === 'GitHub') await expect(host.locator('.provider-icon-github')).toBeVisible();
             }
+            for (const [name, type] of [['X', 'x'], ['Telegram', 'telegram']]) {
+                const button = page.getByRole('button', { name: chinese ? `使用 ${name} 继续` : `Continue with ${name}`, exact: true });
+                await expect(page.locator('md-outlined-button').filter({ has: button }).locator(`.provider-icon-${type}`)).toBeVisible();
+            }
+            for (const css of ['.provider-icon-x', '.provider-icon-telegram']) {
+                await expect.poll(() => page.locator(css).evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+            }
+            await expect(page.locator('.provider-icon-x')).toHaveCSS('filter', 'none');
+            await page.emulateMedia({ colorScheme: 'dark' });
+            await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+            await expect(page.locator('.provider-icon-x')).toHaveCSS('filter', 'invert(1)');
             await page.screenshot({ path: test.info().outputPath(`social-icons-${path}-${locale}.png`), fullPage: true });
         }
         expect(state.externalIcons).toHaveLength(0);
         state.actor = actor;
         await page.goto(`/${locale}/account/security`);
+        for (const [name, type] of [['X', 'x'], ['Telegram', 'telegram']]) {
+            const row = page.locator('.social-account').filter({ has: page.getByRole('button', { name: chinese ? `绑定 ${name}` : `Link ${name}`, exact: true }) });
+            await expect(row.locator(`.provider-icon-${type}`)).toBeVisible();
+        }
         const linked = page.locator('.social-account').filter({ hasText: 'Google' });
         await expect(linked.locator('.provider-icon img:not(.provider-icon-google)')).toHaveAttribute('src', iconUrl);
         await page.getByRole('button', { name: chinese ? '绑定 OIDC' : 'Link OIDC', exact: true }).click();

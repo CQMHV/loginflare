@@ -35,11 +35,12 @@ async function admin() {
     await b.request('/api/auth/sign-in/email', { email: 'admin@example.test', password });
     return b;
 }
-async function connector(b: ReturnType<typeof browser>, type: ConnectionType = 'oauth2') {
+async function connector(b: ReturnType<typeof browser>, type: ConnectionType = 'oauth2', tenantId?: string) {
     const config = defaultConnectionConfig(type);
     Object.assign(config, { clientId: 'test-client', issuer: 'https://idp.example.com', discoveryUrl: 'https://idp.example.com/.well-known/openid-configuration',
         authorizationUrl: 'https://idp.example.com/authorize', tokenUrl: 'https://idp.example.com/token', userInfoUrl: 'https://idp.example.com/userinfo' });
     if (type === 'oauth2') config.fields.subject = 'sub';
+    if (type === 'microsoft' && tenantId) config.tenantId = tenantId;
     const input = { name: `Test ${type}`, type, config, clientSecret: 'upstream-client-secret', enabled: false, archived: false, revision: 0 };
     const created = await b.request('/api/admin/social-connections', input);
     expect(created.status, await created.clone().text()).toBe(201);
@@ -74,21 +75,27 @@ beforeEach(async () => {
         if (url.hostname === 'challenges.cloudflare.com') return Response.json({ success: true });
         if (url.hostname === 'cdn.example.com') return new Response(Uint8Array.from(atob(sourcePng), (value) => value.charCodeAt(0)), { headers: { 'Content-Type': 'image/png' } });
         if (url.pathname.endsWith('openid-configuration')) return Response.json({ issuer: 'https://idp.example.com', authorization_endpoint: 'https://idp.example.com/authorize', token_endpoint: 'https://idp.example.com/token', userinfo_endpoint: 'https://idp.example.com/userinfo', jwks_uri: 'https://idp.example.com/jwks' });
-        if (url.pathname.endsWith('/jwks') || url.pathname.endsWith('/certs')) return Response.json({ keys: [{ ...await exportJWK(key.publicKey), kid: 'test', use: 'sig', alg: 'RS256' }] });
+        if (url.pathname.endsWith('/jwks') || url.pathname.endsWith('/jwks.json') || url.pathname.endsWith('/certs') || url.pathname.endsWith('/discovery/v2.0/keys')) return Response.json({ keys: [{ ...await exportJWK(key.publicKey), kid: 'test', use: 'sig', alg: 'RS256' }] });
         if (url.pathname.endsWith('/token') || url.pathname.endsWith('/access_token')) {
             const body = new URLSearchParams(await request.text()), code = body.get('code')!, issued = codes.get(code);
             if (!issued || !body.get('code_verifier')) return Response.json({ error: 'invalid_grant' }, { status: 400 });
+            if (['x', 'telegram'].includes(issued.type)) expect(request.headers.get('authorization')).toBe(`Basic ${btoa('test-client:upstream-client-secret')}`);
             codes.delete(code);
             const token = crypto.randomUUID(); access.set(token, issued.profile);
-            let idToken = await new SignJWT({ ...issued.profile, nonce: tokenFault === 'nonce' ? 'wrong' : issued.nonce }).setProtectedHeader({ alg: 'RS256', kid: 'test' })
-                .setIssuer(tokenFault === 'issuer' ? 'https://wrong.example.com' : issued.type === 'google' ? 'https://accounts.google.com' : 'https://idp.example.com')
-                .setAudience(tokenFault === 'audience' ? 'wrong' : 'test-client').setIssuedAt().setExpirationTime('10m').sign(key.privateKey);
+            let idToken = await new SignJWT({ ...issued.profile, ...(issued.type === 'microsoft' ? { oid: `oid-${issued.profile.sub}`, tid: '9188040d-6c67-4c5b-b112-36a304b66dad' } : {}), nonce: tokenFault === 'nonce' ? 'wrong' : issued.nonce }).setProtectedHeader({ alg: 'RS256', kid: 'test' })
+                .setIssuer(tokenFault === 'issuer' ? 'https://wrong.example.com' : issued.type === 'google' ? 'https://accounts.google.com' : issued.type === 'microsoft' ? 'https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0' : issued.type === 'telegram' ? 'https://oauth.telegram.org' : 'https://idp.example.com')
+                .setAudience(tokenFault === 'audience' ? 'wrong' : 'test-client').setIssuedAt().setExpirationTime(tokenFault === 'expired' ? Math.floor(Date.now() / 1000) - 60 : '10m').sign(key.privateKey);
             if (tokenFault === 'signature') idToken = idToken.slice(0, -15) + 'xxxxxxxxxxxxxxx';
             if (tokenFault === 'missing') idToken = '';
             if (tokenFault === 'upstream') return new Response('Unavailable', { status: 503 });
             return Response.json({ access_token: token, token_type: 'Bearer', expires_in: 600, id_token: idToken || undefined, scope: 'openid profile email' });
         }
         const profile = access.get(request.headers.get('authorization')?.replace(/^Bearer /i, '') ?? '');
+        if (url.hostname === 'api.x.com' && url.pathname === '/2/users/me') {
+            if (tokenFault === 'profile-unavailable') return new Response('Unavailable', { status: 503 });
+            return Response.json({ data: { id: tokenFault === 'profile-subject' ? undefined : profile?.sub, name: profile?.name, profile_image_url: profile?.picture, verified: true, email: profile?.email } });
+        }
+        if (url.hostname === 'discord.com' && decodeURIComponent(url.pathname) === '/api/users/@me') return Response.json({ id: profile?.sub, username: 'discord-user', global_name: profile?.name, email: profile?.email, verified: profile?.email_verified, avatar: 'test-avatar' });
         if (url.hostname === 'api.github.com') {
             if (url.pathname === '/user/emails') return Response.json(profile?.email ? [{ email: profile.email, verified: profile.email_verified, primary: true }] : []);
             return Response.json({ id: profile?.sub, login: 'github-login-fallback', name: profile?.name, email: profile?.email, avatar_url: profile?.picture });
@@ -99,7 +106,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 
-it.each(['google', 'github', 'oidc', 'oauth2'] as const)('registers and signs in through %s, preserves identity and stores no upstream tokens', async (type) => {
+it.each(['google', 'github', 'microsoft', 'discord', 'oidc', 'oauth2'] as const)('registers and signs in through %s, preserves identity and stores no upstream tokens', async (type) => {
     const a = await admin(), row = await connector(a, type), b = browser(a.client);
     expect(await env.DB.prepare('SELECT "secret" FROM "socialConnection"').first('secret')).not.toBe('upstream-client-secret');
     await login(b, row, { sub: 'stable-subject', email: 'social@example.com', email_verified: true, name: 'Social Person' });
@@ -117,6 +124,112 @@ it('does not initialize any providers for ordinary session reads', async () => {
     const b = await admin(); await connector(b, 'oidc'); requests = [];
     await b.request('/api/auth/get-session');
     expect(requests).toEqual([]);
+});
+
+it.each(['microsoft', 'discord'] as const)('stages an unverified %s email without creating an account or session', async (type) => {
+    const a = await admin(), row = await connector(a, type), b = browser(a.client);
+    const url = await start(b, row);
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('code_challenge')).toBeTruthy();
+    expect(url.searchParams.get('scope')).toBe(type === 'microsoft' ? 'openid profile email' : 'identify email');
+    if (type === 'microsoft') expect(url.searchParams.get('nonce')).toBeTruthy();
+    await callback(b, row, url, { sub: 'unverified-provider', email: 'unverified@example.com' });
+    expect(await session(b.client, b.cookie())).toBeNull();
+    expect(await (await b.request('/api/auth/social/flow')).json()).toMatchObject({ stage: 'email' });
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "account" WHERE "providerId" = ?').bind(row.id).first('n')).toBe(0);
+});
+
+it.each(['x', 'telegram'] as const)('completes %s registration with a locally verified email and preserves the stable identity on return', async (type) => {
+    const a = await admin(), row = await connector(a, type), b = browser(a.client);
+    const url = await start(b, row);
+    expect(url.origin).toBe(type === 'x' ? 'https://x.com' : 'https://oauth.telegram.org');
+    expect(url.pathname).toBe(type === 'x' ? '/i/oauth2/authorize' : '/auth');
+    expect(url.searchParams.get('scope')).toBe(type === 'x' ? 'users.read tweet.read' : 'openid profile');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('code_challenge')).toBeTruthy();
+    if (type === 'telegram') expect(url.searchParams.get('nonce')).toBeTruthy();
+    // X has no OIDC contract. Ignore even a forged optional token; only its
+    // protected user endpoint can establish the external identity.
+    if (type === 'x') tokenFault = 'signature';
+    await callback(b, row, url, { sub: 'provider-subject', email: 'provider-claim@example.com', email_verified: true, name: 'Provider Person' });
+    expect(await session(b.client, b.cookie())).toBeNull();
+    expect(await (await b.request('/api/auth/social/flow')).json()).toMatchObject({ stage: 'email' });
+    expect(await env.DB.prepare('SELECT COUNT(*) FROM "account" WHERE "providerId" = ?').bind(row.id).first('COUNT(*)')).toBe(0);
+    expect(await env.DB.prepare('SELECT COUNT(*) FROM "user"').first('COUNT(*)')).toBe(1);
+    expect((await b.request('/api/auth/social/email', { email: `${type}@example.com` })).status).toBe(200);
+    expect((await b.request('/api/auth/social/verify-email', { code: mailCode(a.client.messages.at(-1)) })).status).toBe(200);
+    const identity = await session(b.client, b.cookie());
+    expect(identity?.user).toMatchObject({ email: `${type}@example.com`, name: 'Provider Person' });
+    expect(await env.DB.prepare('SELECT * FROM "account" WHERE "providerId" = ?').bind(row.id).first()).toMatchObject({ accountId: 'provider-subject', accessToken: null, refreshToken: null, idToken: null, password: null });
+    await b.request('/api/auth/social/finish', {}); await b.request('/api/auth/sign-out', {});
+    tokenFault = '';
+    await login(b, row, { sub: 'provider-subject', name: 'Updated upstream name' });
+    expect((await session(b.client, b.cookie()))?.user).toMatchObject({ id: identity!.user.id, email: `${type}@example.com`, name: 'Provider Person' });
+    expect(requests.some((request) => request.includes('confirmed_email'))).toBe(false);
+    expect(requests.some((request) => request.startsWith('https://idp.example.com/'))).toBe(false);
+});
+
+it.each(['x', 'telegram'] as const)('links %s without an upstream email and requires local MFA when signing in', async (type) => {
+    const a = await admin(), row = await connector(a, type), identity = (await session(a.client, a.cookie()))!;
+    const linking = await start(a, row, { purpose: 'link', password });
+    expect((await callback(a, row, linking, { sub: 'linked-provider-owner' })).headers.get('location')).not.toContain('error=');
+    expect((await a.request('/api/auth/social/finish', {})).status).toBe(200);
+    expect(await env.DB.prepare('SELECT "userId", "accountId" FROM "account" WHERE "providerId" = ?').bind(row.id).first()).toEqual({ userId: identity.user.id, accountId: 'linked-provider-owner' });
+    const enabled = await a.request('/api/auth/two-factor/enable', { password });
+    expect(enabled.status).toBe(200);
+    const enrollment = await enabled.json<{ totpURI: string; backupCodes: string[] }>();
+    expect((await a.request('/api/auth/two-factor/verify-totp', { code: await authenticatorCode(enrollment.totpURI) })).status).toBe(200);
+    await a.request('/api/auth/sign-out', {});
+    const b = browser(a.client), response = await login(b, row, { sub: 'linked-provider-owner' });
+    expect(response.headers.get('location')).toContain('two-factor?social=1');
+    expect(await session(b.client, b.cookie())).toBeNull();
+    expect((await b.request('/api/auth/two-factor/verify-backup-code', { code: enrollment.backupCodes[0] })).status).toBe(200);
+    expect((await session(b.client, b.cookie()))?.user.id).toBe(identity.user.id);
+});
+
+it.each(['x', 'telegram'] as const)('keeps %s scopes and protocol parameters within the authentication preset', async (type) => {
+    const a = await admin(), row = await connector(a, type);
+    const { id, callbackURL, hasSecret, linkedAccounts, identityLocked, iconUrl, position, ...input } = row;
+    const invalidScopes = type === 'x' ? [['users.read', 'tweet.read', 'offline.access'], ['users.read', 'tweet.write'], ['users.read', 'tweet.read', 'users.email']]
+        : [['openid', 'phone'], ['openid', 'telegram:bot_access'], ['profile']];
+    for (const scopes of invalidScopes) expect((await a.request(`/api/admin/social-connections/${id}`, { ...input, config: { ...input.config, scopes } }, 'PATCH')).status).toBe(400);
+    for (const extra of [{ scopes: ['offline.access'] }, { authorizationUrl: 'https://attacker.example.com' }, { callbackURL: 'https://attacker.example.com' }]) {
+        expect((await a.request('/api/auth/social/start', { connectionId: row.id, locale: 'en-US', ...extra })).status).toBe(400);
+    }
+    requests = [];
+    await a.request('/api/auth/get-session');
+    expect(requests).toEqual([]);
+});
+
+it.each(['x', 'telegram'] as const)('rejects replay and cancellation for %s without issuing a session', async (type) => {
+    const a = await admin(), row = await connector(a, type), b = browser(a.client), url = await start(b, row);
+    await callback(b, row, url, { sub: 'unregistered-provider' });
+    const replay = await callback(b, row, url, { sub: 'unregistered-provider' });
+    expect(replay.headers.get('location')).toContain('error=');
+    expect(await session(b.client, b.cookie())).toBeNull();
+    const c = browser(a.client), cancelURL = await start(c, row);
+    const cancelled = await c.request(`/api/auth/callback/${row.id}?${new URLSearchParams({ state: cancelURL.searchParams.get('state')!, error: 'access_denied' })}`);
+    expect(cancelled.headers.get('location')).toContain('SOCIAL_AUTH_CANCELLED');
+    expect(await session(c.client, c.cookie())).toBeNull();
+    expect(await env.DB.prepare('SELECT COUNT(*) FROM "account" WHERE "providerId" = ?').bind(row.id).first('COUNT(*)')).toBe(0);
+});
+
+it.each(['profile-subject', 'profile-unavailable'])('rejects an invalid X %s response without trusting its ID token', async (fault) => {
+    const a = await admin(), row = await connector(a, 'x'), b = browser(a.client), url = await start(b, row);
+    tokenFault = fault;
+    expect((await callback(b, row, url, { sub: 'not-a-verified-profile', email: 'invalid@example.com', email_verified: true })).headers.get('location')).toContain('error=');
+    expect(await session(b.client, b.cookie())).toBeNull();
+    expect(await env.DB.prepare('SELECT COUNT(*) FROM "account" WHERE "providerId" = ?').bind(row.id).first('COUNT(*)')).toBe(0);
+});
+
+it('rejects a Microsoft personal account when the connection accepts only organizations', async () => {
+    const a = await admin(), row = await connector(a, 'microsoft', 'organizations'), b = browser(a.client);
+    const url = await start(b, row);
+    expect(url.pathname).toBe('/organizations/oauth2/v2.0/authorize');
+    const response = await callback(b, row, url, { sub: 'personal-account', email: 'personal@example.com', email_verified: true });
+    expect(response.headers.get('location')).toContain('error=');
+    expect(await session(b.client, b.cookie())).toBeNull();
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "account" WHERE "providerId" = ?').bind(row.id).first('n')).toBe(0);
 });
 
 it('keeps missing GitHub names unset instead of storing the provider login fallback', async () => {
@@ -224,8 +337,8 @@ it('tests a disabled connector without creating accounts and restricts administr
     expect(await env.DB.prepare('SELECT COUNT(*) FROM "account" WHERE "providerId" = ?').bind(row.id).first('COUNT(*)')).toBe(0);
 });
 
-it.each(['nonce', 'issuer', 'audience', 'signature', 'missing', 'upstream'])('rejects OIDC %s errors before account/session creation', async (fault) => {
-    const a = await admin(), row = await connector(a, 'oidc'), b = browser(a.client);
+it.each((['oidc', 'microsoft', 'telegram'] as const).flatMap((type) => [...['nonce', 'issuer', 'audience', 'signature', 'missing', 'upstream'], ...(type === 'telegram' ? ['expired'] : [])].map((fault) => ({ type, fault }))))('rejects $type $fault errors before account/session creation', async ({ type, fault }) => {
+    const a = await admin(), row = await connector(a, type), b = browser(a.client);
     const url = await start(b, row); tokenFault = fault;
     const response = await callback(b, row, url, { sub: 'invalid', email: 'invalid@example.com', email_verified: true });
     expect(response.headers.get('location')).toContain('error=');

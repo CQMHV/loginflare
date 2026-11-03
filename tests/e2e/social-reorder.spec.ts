@@ -151,3 +151,33 @@ test.describe('touch sorting', () => {
         } finally { await session.detach(); }
     });
 });
+
+test('offers branded presets while keeping sorting out of the connection editor', async ({ page, context }) => {
+    const state = await connections(context);
+    await page.goto('/en-us/admin/social-connections');
+    await page.getByRole('button', { name: 'Create connection', exact: true }).click();
+    const editor = page.locator('md-dialog.form-dialog');
+    await expect(editor.getByLabel('Display order', { exact: true })).toHaveCount(0);
+    for (const [name, css, scopes] of [
+        ['Microsoft', '.provider-icon-microsoft', 'openid profile email'],
+        ['Discord', '.provider-icon-discord', 'identify email'],
+        ['X', '.provider-icon-x', 'users.read tweet.read'],
+        ['Telegram', '.provider-icon-telegram', 'openid profile'],
+    ] as const) {
+        const combobox = page.getByRole('combobox', { name: 'Provider type', exact: true });
+        await combobox.click();
+        await Promise.all([
+            editor.locator('md-outlined-select').filter({ has: combobox }).evaluate((element) => new Promise<void>((resolve) => element.addEventListener('closed', () => resolve(), { once: true }))),
+            editor.getByRole('option', { name, exact: true }).click(),
+        ]);
+        await expect(editor.locator(css)).toBeVisible();
+        await expect(editor.getByLabel('Scopes (space separated)', { exact: true })).toHaveValue(scopes);
+        await expect(editor.getByLabel('Client ID', { exact: true })).toBeVisible();
+        await expect(editor.getByLabel('Authorization endpoint', { exact: true })).toHaveCount(0);
+        await expect(editor.getByLabel('Token endpoint', { exact: true })).toHaveCount(0);
+        await expect(editor.getByLabel('Discovery URL', { exact: true })).toHaveCount(0);
+        await expect(editor.getByLabel('Issuer', { exact: true })).toHaveCount(0);
+    }
+    await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(state.writes).toHaveLength(0); expect(state.otherWrites).toHaveLength(0);
+});

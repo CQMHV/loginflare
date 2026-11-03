@@ -277,3 +277,59 @@ test('snapshots refuse non-local bindings before creating output', async (t) => 
         assert.equal(existsSync(output), false);
     }
 });
+
+
+for (const upgrade of [
+    { file: '0014_social_provider_presets.sql', existingType: 'google', types: ['microsoft', 'discord'] },
+    { file: '0015_social_x_telegram.sql', existingType: 'microsoft', types: ['google', 'github', 'microsoft', 'discord', 'x', 'telegram', 'oidc', 'oauth2'] },
+]) test(`${upgrade.file} preserves connection identities, icons, sessions and pending authentication`, (t) => {
+    const database = new DatabaseSync(':memory:');
+    t.after(() => database.close());
+    database.exec('PRAGMA foreign_keys = ON');
+    for (const file of migrationFiles.filter((file) => file < upgrade.file)) database.exec(readFileSync(join(root, 'migrations', file), 'utf8'));
+    addUser(database);
+    database.prepare('INSERT INTO "socialIcon" VALUES (?, ?, NULL)').run('kept-icon', timestamp);
+    const config = JSON.stringify({ clientId: 'existing-client', tenantId: 'common', fields: { subject: 'sub' } });
+    database.prepare('INSERT INTO "socialConnection" ("id", "name", "type", "config", "secret", "enabled", "position", "revision", "createdAt", "updatedAt", "iconId") VALUES (?, ?, ?, ?, ?, 1, 3, 7, ?, ?, ?)')
+        .run('kept-connection', 'Existing connection', upgrade.existingType, config, 'encrypted-secret', iso, iso, 'kept-icon');
+    database.prepare('INSERT INTO "account" ("id", "accountId", "providerId", "userId", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)')
+        .run('kept-identity', 'stable-subject', 'kept-connection', 'fixture-user', iso, iso);
+    database.prepare('INSERT INTO "session" ("id", "expiresAt", "token", "createdAt", "updatedAt", "userId") VALUES (?, ?, ?, ?, ?, ?)')
+        .run('kept-session', '2099-01-01T00:00:00.000Z', 'kept-token', iso, iso, 'fixture-user');
+    database.prepare('INSERT INTO "socialFlow" ("id", "connectionId", "revision", "browserHash", "purpose", "stage", "data", "expiresAt") VALUES (?, ?, 7, ?, ?, ?, ?, ?)')
+        .run('kept-flow', 'kept-connection', 'browser-hash', 'login', 'authorization', 'encrypted-flow', Date.now() + 600_000);
+    const names = ['socialConnection', 'account', 'socialIcon', 'session', 'socialFlow'];
+    const snapshot = () => names.map((name) => database.prepare('SELECT * FROM "' + name + '" ORDER BY "id"').all());
+    const before = snapshot();
+    database.exec('BEGIN');
+    database.exec(readFileSync(join(root, 'migrations', upgrade.file), 'utf8'));
+    database.exec('COMMIT');
+    assert.deepEqual(snapshot(), before);
+    assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+    for (const type of upgrade.types) {
+        database.prepare('INSERT INTO "socialConnection" ("id", "name", "type", "config", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)')
+            .run(type, type, type, JSON.stringify({ clientId: 'new-client', tenantId: 'common', fields: { subject: 'sub' } }), iso, iso);
+    }
+    database.prepare('INSERT INTO "account" ("id", "accountId", "providerId", "userId", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)')
+        .run('microsoft-identity', 'microsoft-subject', 'microsoft', 'fixture-user', iso, iso);
+    assert.equal(database.prepare('SELECT "identityLocked" FROM "socialConnection" WHERE "id" = ?').get('microsoft').identityLocked, 1);
+    assert.throws(() => database.prepare('UPDATE "socialConnection" SET "config" = json_set("config", ?, ?) WHERE "id" = ?').run('$.tenantId', 'organizations', 'microsoft'), /SOCIAL_IDENTITY_CONFIG_LOCKED/);
+    if (upgrade.file === '0015_social_x_telegram.sql') {
+        for (const type of ['x', 'telegram']) {
+            database.prepare('INSERT INTO "account" ("id", "accountId", "providerId", "userId", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)')
+                .run(`${type}-identity`, `${type}-subject`, type, 'fixture-user', iso, iso);
+            assert.equal(database.prepare('SELECT "identityLocked" FROM "socialConnection" WHERE "id" = ?').get(type).identityLocked, 1);
+            assert.throws(() => database.prepare('UPDATE "socialConnection" SET "type" = ? WHERE "id" = ?').run('google', type), /SOCIAL_IDENTITY_CONFIG_LOCKED/);
+            assert.throws(() => database.prepare('UPDATE "socialConnection" SET "config" = json_set("config", ?, ?) WHERE "id" = ?').run('$.clientId', 'replacement-client', type), /SOCIAL_IDENTITY_CONFIG_LOCKED/);
+            assert.throws(() => database.prepare('UPDATE "socialConnection" SET "config" = json_set("config", ?, ?) WHERE "id" = ?').run('$.fields.subject', 'other-id', type), /SOCIAL_IDENTITY_CONFIG_LOCKED/);
+        }
+        const insertSession = database.prepare('INSERT INTO "session" ("id", "expiresAt", "token", "createdAt", "updatedAt", "userId", "socialFlowId") VALUES (?, ?, ?, ?, ?, ?, ?)');
+        assert.throws(() => insertSession.run('premature-session', '2099-01-01T00:00:00.000Z', 'premature-token', iso, iso, 'fixture-user', 'kept-flow'), /SOCIAL_FLOW_EXPIRED/);
+        database.prepare('UPDATE "socialFlow" SET "stage" = ? WHERE "id" = ?').run('verified-email', 'kept-flow');
+        insertSession.run('completed-session', '2099-01-01T00:00:00.000Z', 'completed-token', iso, iso, 'fixture-user', 'kept-flow');
+        assert.equal(database.prepare('SELECT "socialFlowId" FROM "session" WHERE "id" = ?').get('completed-session').socialFlowId, 'kept-flow');
+        assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+    }
+    database.prepare('UPDATE "socialConnection" SET "iconId" = NULL WHERE "id" = ?').run('kept-connection');
+    assert.ok(database.prepare('SELECT "deleteAfter" FROM "socialIcon" WHERE "id" = ?').get('kept-icon').deleteAfter > Date.now());
+});
