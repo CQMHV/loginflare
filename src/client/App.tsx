@@ -377,7 +377,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                 }}>{t('emails.recoveryStartOver')}</Button>}
             </form>}
         {['login', 'signup'].includes(mode) && <SocialButtons locale={locale} />}
-        {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p><Link className="resend-link" to={authPath('verify-email', loginIdentifier.includes('@') ? { email: loginIdentifier.trim() } : undefined)}>{t('resend')}</Link></>}
+        {mode === 'login' && <p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p>}
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
         {mode === 'signup' && error && <Link className="resend-link" to={authPath('verify-email', { email })}>{t('resend')}</Link>}
         {['verify-email', 'forgot-password', 'reset-password'].includes(mode) && <Link className="back-link" to={authPath('login')}><Icon name="back" size={15} />{t('backToLogin')}</Link>}
