@@ -47,7 +47,7 @@ test('manages a connector and completes social registration, step-up, MFA and do
         await page.getByRole('checkbox', { name: 'Enabled', exact: true }).check();
         await page.getByRole('button', { name: 'Save changes', exact: true }).click();
         await expect(page.getByText('Your changes have been saved.', { exact: true })).toBeVisible();
-        const secondInput = { name: secondConnectionName, type: 'google', config: { ...defaultConnectionConfig('google'), clientId: 'isolated-social-client' }, clientSecret: 'isolated-social-secret', enabled: false, archived: false, revision: 0, position: 1 };
+        const secondInput = { name: secondConnectionName, type: 'google', config: { ...defaultConnectionConfig('google'), clientId: 'isolated-social-client' }, clientSecret: 'isolated-social-secret', enabled: false, archived: false, revision: 0 };
         const secondCreated = await context.request.post('/api/admin/social-connections', { headers: { Origin: testOrigin }, data: secondInput });
         expect(secondCreated.status(), await secondCreated.text()).toBe(201);
         secondConnectionId = (await secondCreated.json()).id;

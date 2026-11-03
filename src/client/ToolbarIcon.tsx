@@ -12,8 +12,9 @@ import settings from '@material-symbols/svg-500/rounded/settings.svg?raw';
 import check from '@material-symbols/svg-500/rounded/check.svg?raw';
 import error from '@material-symbols/svg-500/rounded/error.svg?raw';
 import close from '@material-symbols/svg-500/rounded/close.svg?raw';
+import drag_indicator from '@material-symbols/svg-500/rounded/drag_indicator.svg?raw';
 
-const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt, settings, check, error, close };
+const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt, settings, check, error, close, drag_indicator };
 
 export function ToolbarIcon({ name }: { name: keyof typeof symbols }) {
     // Only fixed Material Symbols assets from the pinned package enter this markup.

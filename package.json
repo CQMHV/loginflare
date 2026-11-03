@@ -30,6 +30,8 @@
     },
     "dependencies": {
         "@better-auth/oauth-provider": "1.7.13",
+        "@dnd-kit/dom": "0.5.3",
+        "@dnd-kit/react": "0.5.3",
         "@fontsource-variable/noto-sans-sc": "5.3.1",
         "@fontsource-variable/roboto": "5.3.0",
         "@material-symbols/svg-500": "0.45.8",

@@ -23,7 +23,7 @@ test('completes email verification before creating a passwordless social account
         await page.goto(await waitForMail(before, 'verify'));
         expect((await context.request.post('/api/auth/sign-in/email', { headers: { Origin: testOrigin, 'x-captcha-response': 'isolated-e2e-captcha-token' }, data: { email: administrator, password } })).status()).toBe(200);
         executeLocal(`UPDATE "user" SET "role" = 'admin' WHERE "email" = '${administrator}';`);
-        const input = { name, type: 'google', config: { ...defaultConnectionConfig('google'), clientId: 'isolated-email-client' }, clientSecret: 'isolated-email-secret', enabled: false, archived: false, position: 0, revision: 0 };
+        const input = { name, type: 'google', config: { ...defaultConnectionConfig('google'), clientId: 'isolated-email-client' }, clientSecret: 'isolated-email-secret', enabled: false, archived: false, revision: 0 };
         const created = await context.request.post('/api/admin/social-connections', { headers: { Origin: testOrigin }, data: input });
         expect(created.status(), await created.text()).toBe(201); connectionId = (await created.json()).id;
         expect((await context.request.patch(`/api/admin/social-connections/${connectionId}`, { headers: { Origin: testOrigin }, data: { ...input, enabled: true } })).status()).toBe(200);

@@ -365,3 +365,19 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 .social-account:last-child { padding-bottom: 0; }
 .social-login-hint { margin: 8px 0 0; font-size: 13px; }
 .break-all, .auth-form-container dd { overflow-wrap: anywhere; }
+.social-provider-details { display: flex; align-items: center; gap: 14px; }
+.social-provider-details > div { min-width: 0; overflow-wrap: anywhere; }
+.social-sortable-row { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.social-sortable-row > .social-provider-details { flex: 1; min-width: 0; }
+.social-sortable-row > md-outlined-button { flex-shrink: 0; }
+.social-sortable-row p { margin: 6px 0 0; }
+.social-drag-handle { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; padding: 10px; border: 0; border-radius: 50%; background: transparent; color: var(--md-sys-color-on-surface-variant); cursor: grab; touch-action: none; }
+.social-drag-handle:hover { background: var(--md-sys-color-surface-container-high); }
+.social-drag-handle:focus-visible { outline: 3px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.social-drag-handle:active { cursor: grabbing; }
+.social-drag-handle[aria-disabled='true'] { cursor: default; opacity: .38; }
+.social-sortable-connection.is-dragging { box-shadow: 0 4px 16px rgb(0 0 0 / .15); }
+@media (max-width: 600px) {
+    .social-sortable-row { gap: 8px; padding: 16px 12px; }
+    .social-sortable-row .social-provider-details { gap: 10px; }
+}

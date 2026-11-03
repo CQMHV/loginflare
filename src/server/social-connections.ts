@@ -25,7 +25,7 @@ const configSchema = z.object({
 const inputSchema = z.object({
     name: z.string().trim().min(1).max(100), type: z.enum(connectionTypes), config: configSchema,
     clientSecret: z.string().min(1).max(4096).optional(), enabled: z.boolean(), archived: z.boolean(),
-    position: z.number().int().min(0).max(10000), revision: z.number().int().nonnegative(),
+    revision: z.number().int().nonnegative(),
 }).strict().refine((value) => value.type !== 'oidc' || !!value.config.issuer && !!value.config.discoveryUrl)
     .refine((value) => value.type !== 'oauth2' || !!value.config.authorizationUrl && !!value.config.tokenUrl && !!value.config.userInfoUrl);
 
@@ -47,12 +47,14 @@ function identityConfig(value: { type: string; config: ConnectionConfig }) {
     const c = value.config;
     return JSON.stringify([value.type, c.clientId, c.issuer, c.discoveryUrl, c.authorizationUrl, c.tokenUrl, c.userInfoUrl, c.fields.subject]);
 }
-export const socialConnections = new Hono<{ Bindings: Env }>();
+type Identity = NonNullable<Awaited<ReturnType<ReturnType<typeof createAuth>['api']['getSession']>>>;
+export const socialConnections = new Hono<{ Bindings: Env; Variables: { identity: Identity } }>();
 socialConnections.get('/api/social/providers', async (c) => c.json({ providers: await publicProviders(c.env) }));
 socialConnections.use('/api/admin/social-connections/*', async (c, next) => {
     const identity = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
     if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
     if (identity.user.banned || !identity.user.emailVerified || identity.user.role !== 'admin') return c.json({ code: 'FORBIDDEN' }, 403);
+    c.set('identity', identity);
     if (c.req.method !== 'GET') {
         if (c.req.header('origin') !== c.env.AUTH_URL) return c.json({ code: 'INVALID_ORIGIN' }, 403);
         if (!c.req.header('content-type')?.startsWith('application/json')) return c.json({ code: 'INVALID_INPUT' }, 400);
@@ -61,8 +63,36 @@ socialConnections.use('/api/admin/social-connections/*', async (c, next) => {
     }
     await next();
 });
+const administrator = `EXISTS (SELECT 1 FROM "user" u JOIN "session" s ON s."userId" = u."id" WHERE u."id" = ? AND u."role" = 'admin' AND COALESCE(u."banned", 0) = 0 AND u."emailVerified" = 1 AND s."id" = ? AND s."expiresAt" > ?)`;
+async function isAdministrator(env: Env, identity: Identity) {
+    return !!await env.DB.prepare(`SELECT 1 WHERE ${administrator}`).bind(identity.user.id, identity.session.id, new Date().toISOString()).first();
+}
 const select = `SELECT c.*, (SELECT COUNT(*) FROM "account" a WHERE a."providerId" = c."id") AS "linkedAccounts" FROM "socialConnection" c`;
 socialConnections.get('/api/admin/social-connections', async (c) => {
+    const rows = await c.env.DB.prepare(`${select} ORDER BY "position", "id"`).all<ConnectionRow>();
+    return c.json({ connections: rows.results.map((row) => present(c.env, row)) });
+});
+socialConnections.post('/api/admin/social-connections/reorder', async (c) => {
+    const ids = z.array(z.string().uuid()).min(1).max(100);
+    const parsed = z.object({ order: ids, previousOrder: ids }).strict().refine(({ order, previousOrder }) => {
+        const previous = new Set(previousOrder);
+        return new Set(order).size === order.length && previous.size === previousOrder.length
+            && order.length === previousOrder.length && order.every((id) => previous.has(id));
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ code: 'INVALID_INPUT' }, 400);
+    const identity = c.get('identity');
+    // Materialize the old order before updating any row so every position is
+    // committed together, only if the caller's complete snapshot still matches.
+    const result = await c.env.DB.prepare(`WITH currentOrder AS MATERIALIZED (
+        SELECT json_group_array("id") AS ids FROM (SELECT "id" FROM "socialConnection" ORDER BY "position", "id")
+    ), allowed AS MATERIALIZED (SELECT 1 FROM currentOrder WHERE ids = ? AND ${administrator})
+        UPDATE "socialConnection" SET "position" = (SELECT CAST("key" AS INTEGER) FROM json_each(?) WHERE "value" = "socialConnection"."id")
+        WHERE EXISTS (SELECT 1 FROM allowed)`)
+        .bind(JSON.stringify(parsed.data.previousOrder), identity.user.id, identity.session.id, new Date().toISOString(), JSON.stringify(parsed.data.order)).run();
+    if (!result.meta.changes) {
+        if (!await isAdministrator(c.env, identity)) return c.json({ code: 'UNAUTHORIZED' }, 401);
+        return c.json({ code: 'SOCIAL_CONNECTION_CONFLICT' }, 409);
+    }
     const rows = await c.env.DB.prepare(`${select} ORDER BY "position", "id"`).all<ConnectionRow>();
     return c.json({ connections: rows.results.map((row) => present(c.env, row)) });
 });
@@ -82,8 +112,8 @@ socialConnections.post('/api/admin/social-connections', async (c) => {
     if ((count ?? 0) >= 100) return c.json({ code: 'SOCIAL_CONNECTION_LIMIT' }, 400);
     const value = parsed.data, id = crypto.randomUUID(), now = new Date().toISOString();
     const secret = await symmetricEncrypt({ key: c.env.BETTER_AUTH_SECRET, data: value.clientSecret! });
-    await c.env.DB.prepare(`INSERT INTO "socialConnection" ("id", "name", "type", "config", "secret", "position", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(id, value.name, value.type, JSON.stringify(value.config), secret, value.position, now, now).run();
+    await c.env.DB.prepare(`INSERT INTO "socialConnection" ("id", "name", "type", "config", "secret", "position", "createdAt", "updatedAt") SELECT ?, ?, ?, ?, ?, COALESCE((SELECT MAX("position") FROM "socialConnection"), -1) + 1, ?, ?`)
+        .bind(id, value.name, value.type, JSON.stringify(value.config), secret, now, now).run();
     return c.json(present(c.env, (await c.env.DB.prepare(`${select} WHERE c."id" = ?`).bind(id).first<ConnectionRow>())!), 201);
 });
 socialConnections.patch('/api/admin/social-connections/:id', async (c) => {
@@ -95,8 +125,8 @@ socialConnections.patch('/api/admin/social-connections/:id', async (c) => {
     const changingIdentity = identityConfig({ type: row.type, config: JSON.parse(row.config) as ConnectionConfig }) !== identityConfig(value);
     if (row.archived || (row.identityLocked && changingIdentity)) return c.json({ code: 'SOCIAL_IDENTITY_CONFIG_LOCKED' }, 409);
     const secret = value.clientSecret ? await symmetricEncrypt({ key: c.env.BETTER_AUTH_SECRET, data: value.clientSecret }) : row.secret;
-    const result = await c.env.DB.prepare(`UPDATE "socialConnection" SET "name" = ?, "type" = ?, "config" = ?, "secret" = ?, "enabled" = ?, "archived" = ?, "position" = ?, "revision" = "revision" + 1, "updatedAt" = ? WHERE "id" = ? AND "revision" = ? AND ("identityLocked" = 0 OR ? = 0)`)
-        .bind(value.name, value.type, JSON.stringify(value.config), secret, Number(value.enabled && !value.archived), Number(value.archived), value.position, new Date().toISOString(), row.id, value.revision, Number(changingIdentity)).run();
+    const result = await c.env.DB.prepare(`UPDATE "socialConnection" SET "name" = ?, "type" = ?, "config" = ?, "secret" = ?, "enabled" = ?, "archived" = ?, "revision" = "revision" + 1, "updatedAt" = ? WHERE "id" = ? AND "revision" = ? AND ("identityLocked" = 0 OR ? = 0)`)
+        .bind(value.name, value.type, JSON.stringify(value.config), secret, Number(value.enabled && !value.archived), Number(value.archived), new Date().toISOString(), row.id, value.revision, Number(changingIdentity)).run();
     if (!result.meta.changes) return c.json({ code: 'SOCIAL_CONNECTION_CONFLICT' }, 409);
     return c.json(present(c.env, (await c.env.DB.prepare(`${select} WHERE c."id" = ?`).bind(row.id).first<ConnectionRow>())!));
 });

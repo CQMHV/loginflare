@@ -29,6 +29,7 @@ async function administrator(context: BrowserContext) {
         const existing = state.connections.find((connection) => connection.id === id);
         const saved: SocialConnection = {
             ...body, id: id ?? 'new-connection', revision: (existing?.revision ?? 0) + 1,
+            position: existing?.position ?? state.connections.length,
             hasSecret: true, identityLocked: existing?.identityLocked ?? false, linkedAccounts: existing?.linkedAccounts ?? 0,
             callbackURL: existing?.callbackURL ?? `${testOrigin}/api/auth/callback/new-connection`,
         };

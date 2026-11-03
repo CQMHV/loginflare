@@ -40,7 +40,7 @@ async function connector(b: ReturnType<typeof browser>, type: ConnectionType = '
     Object.assign(config, { clientId: 'test-client', issuer: 'https://idp.example.com', discoveryUrl: 'https://idp.example.com/.well-known/openid-configuration',
         authorizationUrl: 'https://idp.example.com/authorize', tokenUrl: 'https://idp.example.com/token', userInfoUrl: 'https://idp.example.com/userinfo' });
     if (type === 'oauth2') config.fields.subject = 'sub';
-    const input = { name: `Test ${type}`, type, config, clientSecret: 'upstream-client-secret', enabled: false, archived: false, revision: 0, position: 0 };
+    const input = { name: `Test ${type}`, type, config, clientSecret: 'upstream-client-secret', enabled: false, archived: false, revision: 0 };
     const created = await b.request('/api/admin/social-connections', input);
     expect(created.status, await created.clone().text()).toBe(201);
     const row = await created.json<SocialConnection>();
@@ -259,7 +259,7 @@ it('binds different-email identities explicitly and rejects cross-user/concurren
         expect((await a.request('/api/auth/social/unlink', { accountId: identities.identities[0]!.id, password })).status).toBe(200);
         expect(await env.DB.prepare('SELECT "identityLocked" FROM "socialConnection" WHERE "id" = ?').bind(row.id).first('identityLocked')).toBe(1);
     }
-    const { id, callbackURL, hasSecret, linkedAccounts, identityLocked, ...input } = row;
+    const { id, callbackURL, hasSecret, linkedAccounts, identityLocked, position, ...input } = row;
     expect((await a.request(`/api/admin/social-connections/${id}`, { ...input, config: { ...input.config, clientId: 'replacement' } }, 'PATCH')).status).toBe(409);
 });
 
