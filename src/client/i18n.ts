@@ -103,8 +103,10 @@ const enUS = {
     accountMenu: 'Account menu',
     switchArea: 'Switch area',
     adminConsole: 'Administration',
+    developerCenter: 'Developer center',
     accountNavigation: 'Account navigation',
     adminNavigation: 'Administration navigation',
+    developerNavigation: 'Developer navigation',
     signout: 'Sign out',
     profileTitle: 'Your profile',
     profileDescription: 'A little about you. Keep your account details up to date.',
@@ -255,6 +257,9 @@ const enUS = {
         INVALID_OAUTH_QUERY: 'This sign-in request is invalid or has expired. Return to the application and start again.',
         APPLICATION_NOT_FOUND: 'This application could not be found.',
         APPLICATION_DISABLED: 'This application is disabled. Contact its administrator.',
+        APPLICATION_SUSPENDED: 'An administrator has disabled this application. Contact an administrator before making changes.',
+        APPLICATION_CONFLICT: 'This application changed. Review its latest status and try again.',
+        APPLICATION_LIMIT: 'You have reached the limit of 20 applications.',
     },
 };
 
@@ -354,8 +359,10 @@ const zhCN: typeof enUS = {
     accountMenu: '账号菜单',
     switchArea: '切换区域',
     adminConsole: '管理后台',
+    developerCenter: '开发者中心',
     accountNavigation: '账号导航',
     adminNavigation: '管理导航',
+    developerNavigation: '开发者导航',
     signout: '退出登录',
     profileTitle: '个人资料',
     profileDescription: '在这里查看并更新你的账号信息。',
@@ -506,6 +513,9 @@ const zhCN: typeof enUS = {
         INVALID_OAUTH_QUERY: '此登录请求无效或已过期，请返回应用重新发起登录。',
         APPLICATION_NOT_FOUND: '找不到此应用。',
         APPLICATION_DISABLED: '此应用已停用，请联系其管理员。',
+        APPLICATION_SUSPENDED: '管理员已停用此应用，请联系管理员解除限制后再操作。',
+        APPLICATION_CONFLICT: '应用状态已发生变化，请检查最新状态后重试。',
+        APPLICATION_LIMIT: '你创建的应用已达到 20 个上限。',
     },
 };
 

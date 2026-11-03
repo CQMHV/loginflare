@@ -475,35 +475,39 @@ function ConsentPage() {
     </AuthLayout>;
 }
 
-function Protected({ adminOnly = false }: { adminOnly?: boolean }) {
+function Protected({ adminOnly = false, developerOnly = false }: { adminOnly?: boolean; developerOnly?: boolean }) {
     const { identity, locale } = useApp();
     if (identity === undefined) return <Busy />;
     if (!identity) return <Navigate to={localizedPath(locale, 'login')} replace />;
     if (adminOnly && identity.user.role !== 'admin') return <StatePage forbidden />;
+    if (developerOnly && (identity.user.banned || !identity.user.emailVerified)) return <StatePage forbidden />;
     return <Outlet />;
 }
 
+type AppArea = 'account' | 'developer' | 'admin';
+
 interface AppFrameProps {
-    area: 'account' | 'admin';
+    area: AppArea;
     title: string;
     home: string;
     navigationLabel: string;
     navigation: React.ReactNode;
 }
 
-function AreaSwitcher({ area, title }: { area: 'account' | 'admin'; title: string }) {
+function AreaSwitcher({ area, title }: { area: AppArea; title: string }) {
     const { identity, locale } = useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const icon = <Icon name={area === 'admin' ? 'shield' : 'profile'} />;
+    const icon = <Icon name={area === 'admin' ? 'shield' : area === 'developer' ? 'globe' : 'profile'} />;
+    const options = [
+        { value: 'account', label: t('accountCenter'), icon: <Icon name="profile" size={24} />, selected: area === 'account' },
+        ...(identity?.user.emailVerified && !identity.user.banned ? [{ value: 'developer', label: t('developerCenter'), icon: <Icon name="globe" size={24} />, selected: area === 'developer' }] : []),
+        ...(identity?.user.role === 'admin' ? [{ value: 'admin', label: t('adminConsole'), icon: <Icon name="shield" size={24} />, selected: area === 'admin' }] : []),
+    ];
     return <div className="area-selector">
-        {identity?.user.role === 'admin' ? <MenuButton variant="navigation" placement="above" label={t('switchArea')} description={title} icon={icon}
-            options={[
-                { value: 'account', label: t('accountCenter'), icon: <Icon name="profile" size={24} />, selected: area === 'account' },
-                { value: 'admin', label: t('adminConsole'), icon: <Icon name="shield" size={24} />, selected: area === 'admin' },
-            ]}
+        {options.length > 1 ? <MenuButton variant="navigation" placement="above" label={t('switchArea')} description={title} icon={icon} options={options}
             onSelect={(next) => {
-                if (next !== area && (next === 'account' || next === 'admin')) navigate(localizedPath(locale, next === 'admin' ? 'admin/users' : 'account'));
+                if (next !== area && options.some((option) => option.value === next)) navigate(localizedPath(locale, next === 'admin' ? 'admin/users' : next === 'developer' ? 'developer/applications' : 'account'));
             }} /> : <div className="area-label">{icon}<span>{title}</span></div>}
     </div>;
 }
@@ -565,6 +569,13 @@ function AdminLayout() {
             <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink></>} />;
+}
+
+function DeveloperLayout() {
+    const { locale } = useApp();
+    const { t } = useTranslation();
+    return <AppFrame area="developer" title={t('developerCenter')} home={localizedPath(locale, 'developer/applications')} navigationLabel={t('developerNavigation')}
+        navigation={<NavigationLink to={localizedPath(locale, 'developer/applications')}><Icon name="globe" />{t('oauth.myApplications')}</NavigationLink>} />;
 }
 
 function PageHeading({ title, description, children }: PropsWithChildren<{ title: string; description: string }>) {
@@ -802,6 +813,14 @@ function LocaleRoutes() {
                     <Route path="account/security" element={<SecurityPage />} />
                     <Route path="account/sessions" element={<SessionsPage />} />
                 </Route>
+                <Route element={<Protected developerOnly />}>
+                    <Route element={<DeveloperLayout />}>
+                        <Route path="developer" element={<Navigate to={localizedPath(locale, 'developer/applications')} replace />} />
+                        <Route path="developer/applications" element={<ApplicationsPage locale={locale} area="developer" />} />
+                        <Route path="developer/applications/new" element={<ApplicationEditor key="developer:new" locale={locale} area="developer" create />} />
+                        <Route path="developer/applications/detail" element={<ApplicationEditor key={`developer:${new URLSearchParams(search).get('clientId') ?? ''}`} locale={locale} area="developer" />} />
+                    </Route>
+                </Route>
                 <Route element={<Protected adminOnly />}>
                     <Route element={<AdminLayout />}>
                         <Route path="admin" element={<Navigate to={localizedPath(locale, 'admin/users')} replace />} />
@@ -810,8 +829,7 @@ function LocaleRoutes() {
                         <Route path="admin/social-connections" element={<SocialConnectionsPage />} />
                         <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
-                        <Route path="admin/applications/new" element={<ApplicationEditor key="new" locale={locale} create />} />
-                        <Route path="admin/applications/detail" element={<ApplicationEditor key={new URLSearchParams(search).get('clientId') ?? ''} locale={locale} />} />
+                        <Route path="admin/applications/detail" element={<ApplicationEditor key={`admin:${new URLSearchParams(search).get('clientId') ?? ''}`} locale={locale} />} />
                     </Route>
                 </Route>
             </Route>

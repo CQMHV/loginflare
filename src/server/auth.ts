@@ -10,8 +10,9 @@ import { emailManagement } from './emails';
 import { databaseRateLimit } from './rate-limit';
 import { socialAuthentication } from './social-auth';
 import type { LoadedConnection } from './social-connections';
+import { applicationPolicy, applicationPrivileges, type ApplicationManagement } from './application-policy';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection) {
+export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
     const multifactor = twoFactor({ issuer: 'Loginflare', allowPasswordless: true });
@@ -98,6 +99,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             },
         },
         plugins: [
+            applicationPolicy(management),
             policy.plugin,
             emailManagement(env, schedule),
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
@@ -118,7 +120,12 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                 allowDynamicClientRegistration: false,
                 allowUnauthenticatedClientRegistration: false,
                 clientReference: () => 'loginflare',
-                clientPrivileges: ({ user }) => user?.role === 'admin' && !user?.banned,
+                clientPrivileges: async ({ user, session, action, clientId }) => {
+                    if (!management) return user?.role === 'admin' && !user.banned && user.emailVerified;
+                    if (!user || !session || user.id !== management.userId || session.id !== management.sessionId
+                        || action === 'delete' || action === 'configure-client-credentials-scopes') return false;
+                    return applicationPrivileges(env, management, clientId, ['create', 'update', 'rotate'].includes(action));
+                },
             }),
             captcha({
                 provider: 'cloudflare-turnstile',

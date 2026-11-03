@@ -75,7 +75,7 @@ test('completes registration, recovery, account management, and administrator co
     for (const name of ['Profile', 'Email addresses', 'Security', 'Sessions']) {
         await expect(accountNavigation.getByRole('link', { name, exact: true })).toBeVisible();
     }
-    await expect(page.getByRole('button', { name: /^Switch area:/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Switch area:/ })).toHaveAccessibleName('Switch area: Account center');
     await expect(page.getByRole('navigation', { name: 'Administration navigation', exact: true })).toHaveCount(0);
     await expect(page.getByLabel('Email address', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Verified', { exact: true })).toHaveCount(0);
@@ -146,7 +146,7 @@ test('completes registration, recovery, account management, and administrator co
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true }).getByRole('link')).toHaveCount(4);
     await expect(page.getByRole('navigation', { name: '管理导航', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^切换区域:/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^切换区域:/ })).toHaveAccessibleName('切换区域: 账号中心');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('profile-mobile-zh-cn.png') });
     await page.setViewportSize({ width: 1280, height: 720 });

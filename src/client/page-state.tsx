@@ -59,7 +59,7 @@ function ScrollRestoration() {
         [...parameters].filter(([name]) => ['cursor', 'lookupField', 'lookupValue', 'id', 'clientId'].includes(name)).sort(([a], [b]) => a.localeCompare(b))
     );
     useLayoutEffect(() => {
-        if (!/^(account|admin)(?:\/|\?)/.test(key)) return;
+        if (!/^(account|developer|admin)(?:\/|\?)/.test(key)) return;
         const position = store.positions.get(key) ?? { x: 0, y: 0 };
         const previous = history.scrollRestoration;
         history.scrollRestoration = 'manual';

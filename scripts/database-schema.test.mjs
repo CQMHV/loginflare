@@ -333,3 +333,41 @@ for (const upgrade of [
     database.prepare('UPDATE "socialConnection" SET "iconId" = NULL WHERE "id" = ?').run('kept-connection');
     assert.ok(database.prepare('SELECT "deleteAfter" FROM "socialIcon" WHERE "id" = ?').get('kept-icon').deleteAfter > Date.now());
 });
+
+test('developer application upgrade preserves instance registrations, secrets, grants and disabled state', (t) => {
+    const database = new DatabaseSync(':memory:');
+    t.after(() => database.close());
+    database.exec('PRAGMA foreign_keys = ON');
+    const upgrade = '0016_developer_applications.sql';
+    for (const file of migrationFiles.filter((file) => file < upgrade)) database.exec(readFileSync(join(root, 'migrations', file), 'utf8'));
+    addUser(database);
+    addClient(database, { id: 'kept-client', metadata: { loginflareRedirectOrigins: ['https://example.test'], unrelated: { retained: true } } });
+    addClient(database, { id: 'disabled-client', metadata: { loginflareRedirectOrigins: ['https://example.test'] } });
+    database.prepare('UPDATE "oauthClient" SET "clientSecret" = ?, "disabled" = 1 WHERE "id" = ?').run('existing-secret-hash', 'disabled-client');
+    database.prepare('INSERT INTO "session" ("id", "expiresAt", "token", "createdAt", "updatedAt", "userId") VALUES (?, ?, ?, ?, ?, ?)')
+        .run('kept-session', '2099-01-01T00:00:00.000Z', 'kept-session-token', iso, iso, 'fixture-user');
+    database.prepare('INSERT INTO "oauthRefreshToken" ("id", "token", "clientId", "userId", "sessionId", "authorizationCodeId", "scopes", "expiresAt", "createdAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run('kept-refresh', 'kept-refresh-token', 'kept-client', 'fixture-user', 'kept-session', 'kept-code', '["openid","profile"]', '2099-01-01T00:00:00.000Z', iso);
+    database.prepare('INSERT INTO "oauthAccessToken" ("id", "token", "clientId", "userId", "sessionId", "authorizationCodeId", "refreshId", "scopes", "expiresAt", "createdAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run('kept-access', 'kept-access-token', 'kept-client', 'fixture-user', 'kept-session', 'kept-code', 'kept-refresh', '["openid","profile"]', '2099-01-01T00:00:00.000Z', iso);
+    database.prepare('INSERT INTO "oauthConsent" ("id", "clientId", "userId", "scopes", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)')
+        .run('kept-consent', 'kept-client', 'fixture-user', '["openid","profile"]', iso, iso);
+    const clients = database.prepare('SELECT * FROM "oauthClient" ORDER BY "id"').all();
+    const tables = ['oauthClientUri', 'oauthAccessToken', 'oauthRefreshToken', 'oauthGrantPolicy', 'oauthConsent', 'session'];
+    const snapshot = () => tables.map((table) => database.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all());
+    const before = snapshot();
+    database.exec('BEGIN');
+    database.exec(readFileSync(join(root, 'migrations', upgrade), 'utf8'));
+    database.exec('COMMIT');
+    assert.deepEqual(snapshot(), before);
+    for (const original of clients) {
+        const upgraded = database.prepare('SELECT * FROM "oauthClient" WHERE "id" = ?').get(original.id);
+        assert.deepEqual(Object.fromEntries(Object.keys(original).map((key) => [key, upgraded[key]])), Object.fromEntries(Object.entries(original)));
+        assert.equal(upgraded.ownerId, null);
+        assert.equal(upgraded.ownerDisabled, 0);
+        assert.equal(upgraded.adminSuspended, original.disabled ?? 0);
+        assert.equal(upgraded.managementUserId, null);
+        assert.equal(upgraded.managementSessionId, null);
+    }
+    assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+});

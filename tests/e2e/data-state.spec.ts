@@ -31,7 +31,7 @@ async function mockAccount(context: BrowserContext) {
         if (url.search) pageCounts.set(key + url.search, (pageCounts.get(key + url.search) ?? 0) + 1);
         let result: unknown = {};
         let status = 200;
-        const application = () => ({ clientId, name: state.applicationName, type: 'web', disabled: false,
+        const application = () => ({ clientId, name: state.applicationName, type: 'web', disabled: false, ownerId: state.actor?.user.id ?? null, ownerDisabled: false, adminSuspended: false,
             redirectUris: ['https://app.example.test/callback'], postLogoutRedirectUris: ['https://app.example.test/'], scopes: ['openid', 'profile'] });
         if (url.pathname === '/api/auth/get-session') result = structuredClone(state.actor);
         else if (url.pathname === '/api/auth/social/security') result = { hasPassword: true, identities: [], providers: [] };
@@ -57,16 +57,16 @@ async function mockAccount(context: BrowserContext) {
         else if (url.pathname === '/api/admin/users') result = { items: rows.slice(0, 20), pageInfo: { nextCursor: null, previousCursor: null } };
         else if (url.pathname === '/api/auth/admin/get-user') {
             if (state.forbiddenUser) { status = 403; result = { code: 'YOU_ARE_NOT_ALLOWED_TO_GET_USER' }; }
-            else result = rows.find((row) => row.id === url.searchParams.get('id'));
+            else result = rows.find((row) => row.id === url.searchParams.get('id')) ?? (url.searchParams.get('id') === state.actor?.user.id ? state.actor.user : undefined);
         }
-        else if (url.pathname === '/api/admin/applications') {
-            if (state.forbiddenApplications) { status = 403; result = { code: 'FORBIDDEN' }; }
+        else if (['/api/admin/applications', '/api/developer/applications'].includes(url.pathname)) {
+            if (state.forbiddenApplications && url.pathname.includes('/admin/')) { status = 403; result = { code: 'FORBIDDEN' }; }
             else result = { items: [{ ...application(), createdAt: new Date().toISOString() }], pageInfo: { nextCursor: null, previousCursor: null }, issuer: `${testOrigin}/api/auth` };
         } else if (url.pathname.endsWith('/rotate-secret')) {
             await state.writeGate;
             result = { clientSecret: 'test-only-one-time-application-secret' };
         }
-        else if (url.pathname === `/api/admin/applications/${clientId}`) {
+        else if ([`/api/admin/applications/${clientId}`, `/api/developer/applications/${clientId}`].includes(url.pathname)) {
             if (req.method() === 'PATCH') state.applicationName = req.postDataJSON().name ?? state.applicationName;
             result = { application: application(), issuer: `${testOrigin}/api/auth` };
         } else { status = 404; result = { code: 'NOT_FOUND' }; }
@@ -88,7 +88,7 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         const server = await mockAccount(context);
         const chinese = locale === 'zh-cn';
         await page.setViewportSize({ width: chinese ? 375 : 1280, height: 600 });
-        await page.goto(`/${locale}/admin/applications/detail?clientId=${server.clientId}`);
+        await page.goto(`/${locale}/developer/applications/detail?clientId=${server.clientId}`);
         const rotate = page.getByRole('button', { name: chinese ? '轮换客户端密钥' : 'Rotate client secret', exact: true });
         await rotate.click();
         await page.locator('md-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
@@ -103,14 +103,14 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         await expect(dialog).toHaveCount(0);
         await expect(page.getByLabel(chinese ? '客户端密钥' : 'Client secret', { exact: true })).toHaveCount(0);
         await expect(rotate).toBeFocused();
-        expect(server.count(page, `/api/admin/applications/${server.clientId}/rotate-secret`, 'POST')).toBe(1);
+        expect(server.count(page, `/api/developer/applications/${server.clientId}/rotate-secret`, 'POST')).toBe(1);
     });
 
     test(`brings long-form submission errors into view in ${locale}`, async ({ page, context }) => {
         const server = await mockAccount(context);
         const chinese = locale === 'zh-cn';
         await page.setViewportSize({ width: chinese ? 375 : 1280, height: 600 });
-        for (const endpoint of ['/api/auth/update-user', `/api/admin/applications/${server.clientId}`]) {
+        for (const endpoint of ['/api/auth/update-user', `/api/developer/applications/${server.clientId}`]) {
             await context.route(`${testOrigin}${endpoint}`, (route) => route.request().method() === 'GET' ? route.fallback() : route.fulfill({ status: 503, json: { code: 'REQUEST_FAILED' } }));
         }
         await context.route(`${testOrigin}/api/admin/branding`, (route) => route.fulfill(route.request().method() === 'GET'
@@ -118,7 +118,7 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
             : { status: 503, json: { code: 'REQUEST_FAILED' } }));
         for (const [path, label] of [
             ['account', chinese ? '显示名称' : 'Display name'],
-            [`admin/applications/detail?clientId=${server.clientId}`, chinese ? '应用名称' : 'Application name'],
+            [`developer/applications/detail?clientId=${server.clientId}`, chinese ? '应用名称' : 'Application name'],
             ['admin/branding', chinese ? '品牌名' : 'Brand name'],
         ]) {
             await page.goto(`/${locale}/${path}`);
@@ -219,8 +219,11 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
             await expect(area).toHaveAccessibleName('Switch area: Administration');
             await expect(page.getByRole('navigation', { name: 'Account navigation', exact: true })).toHaveCount(0);
         } else {
-            await expect(area).toHaveCount(0);
-            await expect(page.locator('.area-label')).toHaveText('Account center');
+            await expect(area).toHaveAccessibleName('Switch area: Account center');
+            await area.click();
+            await expect(page.getByRole('menuitem', { name: 'Developer center', exact: true })).toBeVisible();
+            await expect(page.getByRole('menuitem', { name: 'Administration', exact: true })).toHaveCount(0);
+            await page.keyboard.press('Escape');
         }
         await expect(page.getByRole('navigation', { name: role === 'admin' ? 'Administration navigation' : 'Account navigation', exact: true })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -246,13 +249,15 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
         ['users', '/en-us/admin/users', 'tbody tr'],
         ['user', '/en-us/admin/users/detail?id=row-0', '.user-detail-grid'],
         ['applications', '/en-us/admin/applications', '.application-name'],
-        ['application', `/en-us/admin/applications/detail?clientId=${server.clientId}`, '.scope-options'],
+        ['application', `/en-us/admin/applications/detail?clientId=${server.clientId}`, '.application-details'],
+        ['developer-applications', '/en-us/developer/applications', '.developer-application-card'],
+        ['developer-application', `/en-us/developer/applications/detail?clientId=${server.clientId}`, '.scope-options'],
     ]) {
         await page.goto(path);
         await expect(page.locator(ready).first()).toBeVisible();
         await expect(page.getByRole('button', { name: /^(Refresh data|刷新数据)$/ })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
-        const positions = () => page.locator('.page-content > .page-heading, .page-content > .card').evaluateAll((elements) =>
+        const positions = () => page.locator('.page-content > .page-heading, .page-content > .card, .developer-applications-grid').evaluateAll((elements) =>
             elements.map((element) => { const rect = element.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));
         const before = await positions();
         let release!: () => void;
@@ -306,18 +311,19 @@ test('reuses account and administration reads, preserves drafts and scroll, and 
     await expect.poll(() => page.evaluate((position) => Math.abs(window.scrollY - position), scroll)).toBeLessThanOrEqual(5);
     expect(server.count(page, '/api/admin/users')).toBe(1);
 
-    await page.getByRole('link', { name: 'Applications', exact: true }).click();
+    await switchArea(page, 'Developer center');
+    await page.getByRole('link', { name: 'My applications', exact: true }).click();
     await page.getByRole('link', { name: 'Cache application', exact: true }).click();
     await page.getByLabel('Application name', { exact: true }).fill('Unsaved application');
     await page.getByRole('link', { name: 'Back to applications', exact: true }).click();
     await page.getByRole('link', { name: 'Cache application', exact: true }).click();
     await expect(page.getByLabel('Application name', { exact: true })).toHaveValue('Unsaved application');
-    expect(server.count(page, `/api/admin/applications/${server.clientId}`)).toBe(1);
+    expect(server.count(page, `/api/developer/applications/${server.clientId}`)).toBe(1);
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Application updated');
     await page.getByRole('link', { name: 'Back to applications', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Unsaved application', exact: true })).toBeVisible();
-    expect(server.count(page, '/api/admin/applications')).toBe(2);
+    expect(server.count(page, '/api/developer/applications')).toBe(2);
 });
 
 test('retains stale data during refresh and failures, merges focus/reconnect work, and reloads on F5', async ({ page, context }) => {
@@ -476,8 +482,8 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Second revision');
     await page.reload();
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('First revision');
-    await switchArea(page, 'Administration');
-    await page.getByRole('link', { name: 'Applications', exact: true }).click();
+    await switchArea(page, 'Developer center');
+    await page.getByRole('link', { name: 'My applications', exact: true }).click();
     await page.getByRole('link', { name: 'Cache application', exact: true }).click();
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
     await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
@@ -487,7 +493,7 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     server.state.writeGate = new Promise<void>((resolve) => { release = resolve; });
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
     await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect.poll(() => server.count(page, `/api/admin/applications/${server.clientId}/rotate-secret`, 'POST')).toBe(2);
+    await expect.poll(() => server.count(page, `/api/developer/applications/${server.clientId}/rotate-secret`, 'POST')).toBe(2);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
     release(); server.state.writeGate = undefined;
     await expect(page.getByRole('button', { name: 'Rotate client secret', exact: true })).toBeEnabled();
