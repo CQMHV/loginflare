@@ -6,7 +6,7 @@ import type { SecurityCapabilities } from '../../src/shared/social';
 
 const google = { id: '00000000-0000-4000-8000-000000000001', name: 'Google', type: 'google' as const };
 const github = { id: '00000000-0000-4000-8000-000000000002', name: 'GitHub', type: 'github' as const };
-const linkedGoogle = { id: 'google-account', providerId: google.id, accountId: 'private-subject', name: google.name, enabled: true };
+const linkedGoogle = { id: 'google-account', providerId: google.id, accountId: 'private-subject', name: google.name, type: google.type, enabled: true };
 async function account(context: BrowserContext, security: SecurityCapabilities) {
     const now = new Date().toISOString();
     const identity: Identity = {

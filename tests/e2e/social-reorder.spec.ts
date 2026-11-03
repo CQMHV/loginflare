@@ -18,7 +18,7 @@ async function connections(context: BrowserContext) {
             id: `sorting-${type}`, name: `${type} preview`, type, position, revision: position + 1,
             config: { ...defaultConnectionConfig(type), clientId: `${type}-sorting-client` },
             hasSecret: true, enabled: position === 0, archived: position === 2, identityLocked: false, linkedAccounts: 0,
-            callbackURL: `${testOrigin}/api/auth/callback/sorting-${type}`,
+            callbackURL: `${testOrigin}/api/auth/callback/sorting-${type}`, iconId: null, iconUrl: null,
         })),
         fail: false, writes: [] as Reorder[], otherWrites: [] as string[],
     };

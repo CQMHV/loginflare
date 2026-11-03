@@ -63,6 +63,7 @@ for (const name of Object.keys(metadata.dependencies)) {
     if (!packagePath) throw new Error(`Install dependencies before generating notices: ${name}`);
     await collect(packagePath);
 }
+notices.push((await Promise.all(['NOTICE', 'LICENSE.github'].map((name) => readFile(join(root, 'third-party/social-icons', name), 'utf8')))).join('\n\n'));
 await mkdir(join(root, 'public/assets'), { recursive: true });
 await writeFile(join(root, 'public/assets/third-party-notices.txt'), [
     'Loginflare — Third-party notices',

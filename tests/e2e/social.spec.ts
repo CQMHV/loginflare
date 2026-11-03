@@ -33,6 +33,17 @@ test('manages a connector and completes social registration, step-up, MFA and do
         await page.getByLabel('Display name', { exact: true }).fill(connectionName);
         await page.getByLabel('Client ID', { exact: true }).fill('isolated-social-client');
         await page.getByLabel('Client secret', { exact: true }).fill('isolated-social-secret');
+        const iconChooser = page.waitForEvent('filechooser');
+        await page.getByRole('button', { name: 'Edit connection icon', exact: true }).click();
+        await (await iconChooser).setFiles({ name: 'provider.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#6750a4"/></svg>') });
+        const iconEditor = page.locator('md-dialog.image-crop-dialog');
+        await expect(iconEditor.getByRole('button', { name: 'Use icon', exact: true })).toBeEnabled();
+        await iconEditor.getByRole('button', { name: 'Use icon', exact: true }).click();
+        await expect(iconEditor).toHaveCount(0);
+        const iconPreview = page.locator('.provider-icon-preview img');
+        await expect(iconPreview).toHaveAttribute('src', /^\/social\/icons\/[a-f0-9-]+$/);
+        const iconUrl = (await iconPreview.getAttribute('src'))!;
+        expect((await context.request.get(iconUrl)).status()).toBe(200);
         await page.getByRole('button', { name: 'Save changes', exact: true }).click();
         await expect(page.getByLabel('Callback URL')).toHaveValue(/\/api\/auth\/callback\/[a-f0-9-]+$/);
         connectionId = (await page.getByLabel('Callback URL').inputValue()).split('/').at(-1)!;
@@ -47,6 +58,8 @@ test('manages a connector and completes social registration, step-up, MFA and do
         await page.getByRole('checkbox', { name: 'Enabled', exact: true }).check();
         await page.getByRole('button', { name: 'Save changes', exact: true }).click();
         await expect(page.getByText('Your changes have been saved.', { exact: true })).toBeVisible();
+        const providers = await (await context.request.get('/api/social/providers')).json();
+        expect(providers.providers.find((provider: { id: string }) => provider.id === connectionId)?.iconUrl).toBe(iconUrl);
         const secondInput = { name: secondConnectionName, type: 'google', config: { ...defaultConnectionConfig('google'), clientId: 'isolated-social-client' }, clientSecret: 'isolated-social-secret', enabled: false, archived: false, revision: 0 };
         const secondCreated = await context.request.post('/api/admin/social-connections', { headers: { Origin: testOrigin }, data: secondInput });
         expect(secondCreated.status(), await secondCreated.text()).toBe(201);
@@ -66,6 +79,7 @@ test('manages a connector and completes social registration, step-up, MFA and do
         expect(signedIn.user.email).toBe(email); expect(signedIn.user.username).toBeFalsy();
         await page.goto('/en-us/account/security');
         const initialIdentities = page.getByRole('region', { name: 'Third-party accounts', exact: true });
+        await expect(initialIdentities.locator('.social-account').filter({ hasText: connectionName }).locator('.provider-icon img')).toHaveAttribute('src', iconUrl);
         await initialIdentities.getByRole('button', { name: `Link ${secondConnectionName}`, exact: true }).click();
         const bindingDialog = page.locator('md-dialog.form-dialog');
         await expect(bindingDialog.getByRole('button', { name: `Continue linking ${secondConnectionName}`, exact: true })).toHaveCount(0);

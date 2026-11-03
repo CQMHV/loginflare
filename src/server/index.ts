@@ -101,7 +101,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 function logPath(path: string): string {
     if (/^\/api\/auth\/callback\/[^/]+$/.test(path)) return '/api/auth/callback/:id';
-    if (path === '/api/social/providers' || path === '/api/admin/social-connections') return path;
+    if (path === '/api/social/providers' || path === '/api/admin/social-connections' || path === '/api/admin/social-connections/icon') return path;
     if (/^\/api\/admin\/social-connections\/[^/]+$/.test(path)) return '/api/admin/social-connections/:id';
     if (['/api/health', '/api/config', '/api/branding', '/api/admin/branding', '/api/admin/branding/logo'].includes(path)) return path;
     if (path === '/api/admin/users' || path === '/api/account/sessions') return path;
@@ -146,7 +146,7 @@ const developmentHeaders = secureHeaders({
     },
 });
 app.use('*', (c, next) => {
-    if (/^\/branding\/logos\/[^/]+$/.test(c.req.path)) return brandingHeaders(c, next);
+    if (/^\/(branding\/logos|social\/icons)\/[^/]+$/.test(c.req.path)) return brandingHeaders(c, next);
     if (/^\/avatars\/[^/]+$/.test(c.req.path)) return avatarHeaders(c, next);
     if (c.req.path === '/api/auth/oauth2/end-session' || c.req.path === '/api/auth/oauth2/end-session/confirm') return logoutHeaders(c, next);
     return (c.env.APP_ENV === 'development' ? developmentHeaders : productionHeaders)(c, next);
@@ -163,7 +163,7 @@ app.use('/api/*', async (c, next) => {
     }
 });
 app.use('/api/*', (c, next) => {
-    const imageUpload = c.req.method === 'POST' && ['/api/account/avatar', '/api/admin/branding/logo'].includes(c.req.path);
+    const imageUpload = c.req.method === 'POST' && ['/api/account/avatar', '/api/admin/branding/logo', '/api/admin/social-connections/icon'].includes(c.req.path);
     return bodyLimit({
         maxSize: imageUpload ? maximumImageBytes : 16_384,
         onError: (c) => c.json({ code: imageUpload ? 'IMAGE_UPLOAD_TOO_LARGE' : 'PAYLOAD_TOO_LARGE' }, 413),

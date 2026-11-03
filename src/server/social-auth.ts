@@ -6,10 +6,10 @@ import { generateState, parseState, generateIdTokenNonce, handleOAuthUserInfo, l
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider';
 import { z } from 'zod';
 import type { Env } from './config';
-import { connection, publicProviders, type LoadedConnection } from './social-connections';
+import { connection, publicProviders, socialIconUrl, type LoadedConnection } from './social-connections';
 import { buildSocialProvider } from './social-provider';
 import { requireSecurity, securityGuard, type SecurityAuthorization } from './security-proof';
-import { securityPurposes, type SecurityPurpose } from '../shared/social';
+import { securityPurposes, type ConnectionType, type SecurityPurpose } from '../shared/social';
 import { locales, localizedPath, type Locale } from '../shared/locales';
 import { sendEmailCode } from './mail';
 import { consumeEmailQuota } from './email-operations';
@@ -317,9 +317,9 @@ export function socialAuthentication(env: Env, selected?: LoadedConnection) {
             }),
             socialSecurity: createAuthEndpoint('/social/security', { method: 'GET', use: [sessionMiddleware] }, async (ctx) => {
                 const user = ctx.context.session.user;
-                const identities = (await env.DB.prepare(`SELECT a."id", a."providerId", a."accountId", c."name", (c."enabled" = 1 AND c."archived" = 0) AS "enabled"
+                const identities = (await env.DB.prepare(`SELECT a."id", a."providerId", a."accountId", c."name", c."type", c."iconId", (c."enabled" = 1 AND c."archived" = 0) AS "enabled"
                     FROM "account" a JOIN "socialConnection" c ON c."id" = a."providerId" WHERE a."userId" = ? ORDER BY c."position", c."id"`).bind(user.id)
-                    .all<{ id: string; providerId: string; accountId: string; name: string; enabled: number }>()).results.map((item) => ({ ...item, enabled: !!item.enabled }));
+                    .all<{ id: string; providerId: string; accountId: string; name: string; type: ConnectionType; iconId: string | null; enabled: number }>()).results.map(({ iconId, ...item }) => ({ ...item, enabled: !!item.enabled, iconUrl: socialIconUrl(iconId) }));
                 const credential = await ctx.context.internalAdapter.findCredentialAccount(user.id);
                 const cookie = ctx.context.createAuthCookie('security_proof'), proofId = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
                 const proof = proofId ? await env.DB.prepare('SELECT "purpose", "expiresAt" FROM "securityProof" WHERE "id" = ? AND "userId" = ? AND "sessionId" = ? AND "used" = 0 AND "expiresAt" > ?')

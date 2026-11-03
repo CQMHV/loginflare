@@ -1,0 +1,22 @@
+Provider brand icons in src/client/ProviderIcon.tsx
+Reviewed 2026-11-03. These marks identify the corresponding sign-in providers.
+Brand trademarks remain the property of their respective owners.
+
+Google:
+The gradient G PNG in src/client/assets/google.png is copied unchanged from
+Google's official sign-in branding guidelines. Its original colors, proportions
+and transparent background are retained. No button frame is added to the icon.
+Artwork source:
+https://developers.google.com/static/identity/images/g-logo.png
+Branding and usage guidelines:
+https://developers.google.com/identity/branding-guidelines
+Google and the Google logo are trademarks of Google LLC.
+
+GitHub:
+The mark-github-16 vector path is from GitHub's Primer Octicons, distributed
+under the MIT license reproduced in LICENSE.github. Its monochrome fill follows
+the site's light/dark theme. No runtime icon-library dependency is required.
+Pinned artwork source:
+https://github.com/primer/octicons/blob/ea8e6bb79894cc7e85564ee9b53d86b418738d04/icons/mark-github-16.svg
+Logo guidelines:
+https://github.com/logos

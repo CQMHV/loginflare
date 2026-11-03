@@ -353,20 +353,25 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 .mfa-backup-codes ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 0; list-style: none; }
 .mfa-backup-codes code { overflow-wrap: anywhere; user-select: all; }
 .social-buttons { display: grid; gap: 12px; margin-top: 24px; }
+.provider-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; color: var(--md-sys-color-on-surface-variant); }
+.provider-icon[slot='icon'] { width: 20px; height: 20px; color: inherit; }
+.provider-icon > img, .provider-icon > svg { display: block; width: 100%; height: 100%; object-fit: contain; }
+.provider-icon-github { color: var(--md-sys-color-on-surface); }
+.social-provider-details { display: flex; align-items: center; gap: 14px; }
+.social-provider-details > div { min-width: 0; overflow-wrap: anywhere; }
+.social-icon-editor { display: grid; gap: 8px; min-width: 0; }
+.social-connection-display { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 16px 24px; min-width: 0; }
+.social-connection-display > .image-picker { flex-shrink: 0; }
+/* Align the 56px input with the 80px picker; the counter stays below it. */
+.social-connection-name { flex: 1 1 240px; min-width: 0; padding-block-start: calc((80px - 56px) / 2); }
+.social-connection-name > md-outlined-text-field { width: 100%; }
+.social-connection-icon-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.provider-icon-preview { width: 100%; height: 100%; padding: 12px; border-radius: 16px; background: var(--md-sys-color-surface-container); }
 .social-identity { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; flex-wrap: wrap; }
 .social-identity > div { min-width: 0; overflow-wrap: anywhere; }
 .social-identity p { margin: 6px 0; }
 .social-connection-list { display: grid; gap: 12px; margin-bottom: 24px; }
 .social-connection-list .card { margin-bottom: 0; }
-.social-account-list { display: grid; }
-.social-account + .social-account { border-top: 1px solid var(--md-sys-color-outline-variant); }
-.social-account { padding: 16px 0; }
-.social-account:first-child { padding-top: 0; }
-.social-account:last-child { padding-bottom: 0; }
-.social-login-hint { margin: 8px 0 0; font-size: 13px; }
-.break-all, .auth-form-container dd { overflow-wrap: anywhere; }
-.social-provider-details { display: flex; align-items: center; gap: 14px; }
-.social-provider-details > div { min-width: 0; overflow-wrap: anywhere; }
 .social-sortable-row { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .social-sortable-row > .social-provider-details { flex: 1; min-width: 0; }
 .social-sortable-row > md-outlined-button { flex-shrink: 0; }
@@ -377,7 +382,26 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 .social-drag-handle:active { cursor: grabbing; }
 .social-drag-handle[aria-disabled='true'] { cursor: default; opacity: .38; }
 .social-sortable-connection.is-dragging { box-shadow: 0 4px 16px rgb(0 0 0 / .15); }
+.social-connection-dialog { width: 640px; max-width: calc(100vw - 48px); max-height: min(880px, calc(100dvh - 48px)); }
+.social-connection-section { display: grid; gap: 24px; min-width: 0; }
+.social-connection-section + .social-connection-section { padding-top: 24px; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.social-connection-section h3 { font-size: 16px; font-weight: 500; line-height: 1.5; margin: 0; }
+.social-connection-section p { margin: 0; font-size: 13px; line-height: 1.6; }
+.social-connection-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; }
+.social-connection-section-heading a { font-size: 13px; line-height: 1.6; }
+.social-connection-fields, .social-connection-status { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 24px; min-width: 0; }
+.social-connection-fields > *, .social-connection-status > * { min-width: 0; }
+.social-connection-maintenance { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 @media (max-width: 600px) {
     .social-sortable-row { gap: 8px; padding: 16px 12px; }
     .social-sortable-row .social-provider-details { gap: 10px; }
+    .social-connection-dialog { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+    .social-connection-section-heading { align-items: flex-start; }
 }
+.social-account-list { display: grid; }
+.social-account + .social-account { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.social-account { padding: 16px 0; }
+.social-account:first-child { padding-top: 0; }
+.social-account:last-child { padding-bottom: 0; }
+.social-login-hint { margin: 8px 0 0; font-size: 13px; }
+.break-all, .auth-form-container dd { overflow-wrap: anywhere; }

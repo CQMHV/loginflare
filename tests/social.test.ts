@@ -259,7 +259,7 @@ it('binds different-email identities explicitly and rejects cross-user/concurren
         expect((await a.request('/api/auth/social/unlink', { accountId: identities.identities[0]!.id, password })).status).toBe(200);
         expect(await env.DB.prepare('SELECT "identityLocked" FROM "socialConnection" WHERE "id" = ?').bind(row.id).first('identityLocked')).toBe(1);
     }
-    const { id, callbackURL, hasSecret, linkedAccounts, identityLocked, position, ...input } = row;
+    const { id, callbackURL, hasSecret, linkedAccounts, identityLocked, iconUrl, position, ...input } = row;
     expect((await a.request(`/api/admin/social-connections/${id}`, { ...input, config: { ...input.config, clientId: 'replacement' } }, 'PATCH')).status).toBe(409);
 });
 

@@ -1,5 +1,6 @@
 export const connectionTypes = ['google', 'github', 'oidc', 'oauth2'] as const;
 export type ConnectionType = typeof connectionTypes[number];
+export const socialIconSize = 256;
 export interface ConnectionConfig {
     clientId: string;
     issuer?: string;
@@ -16,9 +17,10 @@ export interface SocialConnection {
     hasSecret: boolean; enabled: boolean; archived: boolean; position: number; revision: number;
     identityLocked: boolean;
     callbackURL: string; linkedAccounts: number;
+    iconId?: string | null; iconUrl?: string | null;
 }
-export interface PublicProvider { id: string; name: string; type: ConnectionType }
-export interface LinkedIdentity { id: string; providerId: string; accountId: string; name: string; enabled: boolean }
+export interface PublicProvider { id: string; name: string; type: ConnectionType; iconUrl?: string | null }
+export interface LinkedIdentity { id: string; providerId: string; accountId: string; name: string; type: ConnectionType; enabled: boolean; iconUrl?: string | null }
 export interface SecurityCapabilities { hasPassword: boolean; identities: LinkedIdentity[]; providers: PublicProvider[]; proofPurpose?: SecurityPurpose; proofExpiresAt?: number }
 export const securityPurposes = ['link', 'unlink', 'set-password', 'emails/add', 'emails/resend', 'emails/set-primary', 'emails/remove', 'two-factor/enable', 'two-factor/disable', 'two-factor/generate-backup-codes'] as const;
 export type SecurityPurpose = typeof securityPurposes[number];

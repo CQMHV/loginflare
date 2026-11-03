@@ -175,9 +175,9 @@ export function MenuButton({ label, description, icon, options, onSelect, classN
     </div>;
 }
 
-export function FormDialog({ title, children, cancelLabel, confirmLabel, onCancel, onSubmit, busy = false, confirmDisabled = false, danger = false }: PropsWithChildren<{
+export function FormDialog({ title, children, cancelLabel, confirmLabel, onCancel, onSubmit, busy = false, confirmDisabled = false, danger = false, className }: PropsWithChildren<{
     title: string; cancelLabel: string; confirmLabel?: string; onCancel: () => void; onSubmit?: (event: React.FormEvent<HTMLFormElement>) => void;
-    busy?: boolean; confirmDisabled?: boolean; danger?: boolean;
+    busy?: boolean; confirmDisabled?: boolean; danger?: boolean; className?: string;
 }>) {
     const dialog = useRef<MdDialog>(null);
     const form = useRef<HTMLFormElement>(null);
@@ -199,7 +199,7 @@ export function FormDialog({ title, children, cancelLabel, confirmLabel, onCance
         onCancel();
     }
     cancelAction.current = cancel;
-    return createElement('md-dialog', { ref: dialog, className: 'form-dialog', 'aria-label': title },
+    return createElement('md-dialog', { ref: dialog, className: className ? `form-dialog ${className}` : 'form-dialog', 'aria-label': title },
         <div slot="headline">{title}</div>,
         <form ref={form} slot="content" className="stack-form dialog-form" onSubmit={(event) => { event.preventDefault(); if (!busy && !closing.current && !confirmDisabled && confirmLabel) onSubmit?.(event); }}>{children}</form>,
         <div slot="actions"><Button className="text-button" disabled={busy} onClick={() => { void cancel(); }}>{cancelLabel}</Button>{confirmLabel && <Button className={danger ? 'danger-button' : 'primary'} busy={busy} disabled={confirmDisabled} onClick={() => form.current?.requestSubmit()}>{confirmLabel}</Button>}</div>,

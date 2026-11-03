@@ -13,6 +13,7 @@ import { oauthSearch } from './oauth';
 import { useClearSecrets } from './page-state';
 import { encodeWebP } from './image-encoding';
 import { SecurityDialog, socialAuthorizationUrl, useSecurity, useSecurityIntent } from './security';
+import { ProviderIcon } from './ProviderIcon';
 export function SocialButtons({ locale }: { locale: Locale }) {
     const { t } = useTranslation();
     const location = useLocation();
@@ -23,7 +24,7 @@ export function SocialButtons({ locale }: { locale: Locale }) {
         setBusy(true); setError(undefined);
         const active = capture();
         void socialAuthorizationUrl(provider.id, 'login', { oauth_query: oauthSearch(location.search) || undefined }).then((url) => { if (active()) window.location.assign(url); }).catch((cause) => { if (active()) { setError(errorCode(cause)); setBusy(false); } });
-    }}>{t('social.continueWith', { name: provider.name })}</Button>)}</div> : null;
+    }}><ProviderIcon slot="icon" type={provider.type} iconUrl={provider.iconUrl} />{t('social.continueWith', { name: provider.name })}</Button>)}</div> : null;
 }
 export function SocialSettings() {
     const { t } = useTranslation();
@@ -67,9 +68,9 @@ export function SocialSettings() {
         <div className="social-account-list">
             {identities.map((item) => {
                 const lastMethod = !data.hasPassword && !identities.some((other) => other.id !== item.id && other.enabled);
-                return <div className="social-account" key={item.id}><div className="social-identity"><div><strong>{item.name}</strong><p className="muted">{t('social.connected')}{!item.enabled && <> · {t('social.unavailable')}</>}</p>{identities.filter((other) => other.providerId === item.providerId).length > 1 && <small className="muted break-all">{item.accountId}</small>}</div><Button className="text-button danger" aria-label={t('social.unlinkProvider', { name: item.name })} disabled={busy || lastMethod} onClick={() => choose({ kind: 'unlink', id: item.id })}>{t('social.unlink')}</Button></div>{lastMethod && <p className="muted social-login-hint">{t('social.keepLoginMethod')}</p>}</div>;
+                return <div className="social-account" key={item.id}><div className="social-identity"><div className="social-provider-details"><ProviderIcon type={item.type} iconUrl={item.iconUrl} /><div><strong>{item.name}</strong><p className="muted">{t('social.connected')}{!item.enabled && <> · {t('social.unavailable')}</>}</p>{identities.filter((other) => other.providerId === item.providerId).length > 1 && <small className="muted break-all">{item.accountId}</small>}</div></div><Button className="text-button danger" aria-label={t('social.unlinkProvider', { name: item.name })} disabled={busy || lastMethod} onClick={() => choose({ kind: 'unlink', id: item.id })}>{t('social.unlink')}</Button></div>{lastMethod && <p className="muted social-login-hint">{t('social.keepLoginMethod')}</p>}</div>;
             })}
-            {providers.map((provider) => <div className="social-account" key={provider.id}><div className="social-identity"><div><strong>{provider.name}</strong><p className="muted">{t('social.notLinked')}</p></div><Button className="secondary" aria-label={t('social.linkProvider', { name: provider.name })} disabled={busy} onClick={() => choose({ kind: 'link', id: provider.id })}>{t('social.link')}</Button></div></div>)}
+            {providers.map((provider) => <div className="social-account" key={provider.id}><div className="social-identity"><div className="social-provider-details"><ProviderIcon type={provider.type} iconUrl={provider.iconUrl} /><div><strong>{provider.name}</strong><p className="muted">{t('social.notLinked')}</p></div></div><Button className="secondary" aria-label={t('social.linkProvider', { name: provider.name })} disabled={busy} onClick={() => choose({ kind: 'link', id: provider.id })}>{t('social.link')}</Button></div></div>)}
         </div>
     </div></section>
         {action && selected && <SecurityDialog key={`${action.kind}:${action.id}`} title={t(action.kind === 'link' ? 'social.linkProvider' : 'social.unlinkProvider', { name: selected.name })} purpose={action.kind}

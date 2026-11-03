@@ -9,6 +9,7 @@ import { Button, FormDialog, TextField } from './material';
 import { ErrorNotice } from './feedback';
 import { resolveLocale } from './locale';
 import { useClearSecrets } from './page-state';
+import { ProviderIcon } from './ProviderIcon';
 
 export function useSecurity() {
     const query = useResource<SecurityCapabilities>('security', '/api/auth/social/security');
@@ -111,7 +112,7 @@ export function SecurityDialog({ title, purpose, children, confirmLabel, onConfi
             <p>{t('social.confirmFor', { action: title })}</p><ErrorNotice code={verificationError} />
             {data.hasPassword ? <TextField label={passwordLabel ?? t('currentPassword')} type="password" autoComplete="current-password" value={password} onValueChange={setPassword} maxLength={128} required disabled={busy || checking} /> : <>
                 <p>{t('social.reauthDescription')}</p>
-                {data.identities.filter((item) => item.enabled).map((item) => <Button key={item.id} className="secondary" disabled={busy || checking} onClick={() => { void reauthenticate(item.providerId); }}>{t('social.continueWith', { name: item.name })}</Button>)}
+                {data.identities.filter((item) => item.enabled).map((item) => <Button key={item.id} className="secondary" disabled={busy || checking} onClick={() => { void reauthenticate(item.providerId); }}><ProviderIcon slot="icon" type={item.type} iconUrl={item.iconUrl} />{t('social.continueWith', { name: item.name })}</Button>)}
                 {!data.identities.some((item) => item.enabled) && <><p>{t('social.noAvailable')}</p><Link to={localizedPath(resolveLocale(window.location.pathname), 'forgot-password')}>{t('forgotPassword')}</Link></>}
             </>}
         </>}

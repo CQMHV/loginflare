@@ -1596,6 +1596,53 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ========================================================================
+Provider brand icons in src/client/ProviderIcon.tsx
+Reviewed 2026-11-03. These marks identify the corresponding sign-in providers.
+Brand trademarks remain the property of their respective owners.
+
+Google:
+The gradient G PNG in src/client/assets/google.png is copied unchanged from
+Google's official sign-in branding guidelines. Its original colors, proportions
+and transparent background are retained. No button frame is added to the icon.
+Artwork source:
+https://developers.google.com/static/identity/images/g-logo.png
+Branding and usage guidelines:
+https://developers.google.com/identity/branding-guidelines
+Google and the Google logo are trademarks of Google LLC.
+
+GitHub:
+The mark-github-16 vector path is from GitHub's Primer Octicons, distributed
+under the MIT license reproduced in LICENSE.github. Its monochrome fill follows
+the site's light/dark theme. No runtime icon-library dependency is required.
+Pinned artwork source:
+https://github.com/primer/octicons/blob/ea8e6bb79894cc7e85564ee9b53d86b418738d04/icons/mark-github-16.svg
+Logo guidelines:
+https://github.com/logos
+
+
+MIT License
+
+Copyright (c) 2026 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================================
 better-auth@1.7.13
 License: MIT
 LICENSE.md

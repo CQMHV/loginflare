@@ -54,11 +54,25 @@ for (const [locale, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
             await expect(dialog.getByLabel(chinese ? '客户端 ID' : 'Client ID', { exact: true })).toBeDisabled();
             await expect(dialog.getByLabel(chinese ? '回调地址' : 'Callback URL', { exact: true })).toHaveValue(connection.callbackURL);
             await expect(page.locator('.social-connection-list form')).toHaveCount(0);
-            const bounds = await page.getByRole('dialog').boundingBox();
-            expect(bounds).not.toBeNull();
-            expect(bounds!.y).toBeGreaterThanOrEqual(0);
-            expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(813);
+            await expect.poll(async () => {
+                const bounds = await page.getByRole('dialog').boundingBox();
+                return !!bounds && bounds.y >= 0 && bounds.y + bounds.height <= 813;
+            }).toBe(true);
+            expect(await dialog.locator('form').evaluate((form) => form.scrollWidth <= form.clientWidth)).toBe(true);
             expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+            const display = await dialog.locator('.social-connection-display').evaluate((row) => {
+                const icon = row.querySelector('.image-picker')!.getBoundingClientRect();
+                const input = row.querySelector('md-outlined-text-field')!.shadowRoot!.querySelector('md-outlined-field')!.shadowRoot!.querySelector('.container')!.getBoundingClientRect();
+                return { icon: { left: icon.left, top: icon.top, width: icon.width, height: icon.height }, input: { left: input.left, top: input.top, height: input.height } };
+            });
+            expect(display.icon.width).toBeCloseTo(80, 1);
+            expect(display.icon.height).toBeCloseTo(80, 1);
+            if (width === 1280) expect(Math.abs(display.icon.top + display.icon.height / 2 - display.input.top - display.input.height / 2)).toBeLessThanOrEqual(1);
+            else {
+                expect(display.input.left).toBeCloseTo(display.icon.left, 1);
+                expect(display.input.top).toBeGreaterThan(display.icon.top + display.icon.height);
+            }
+            await page.screenshot({ path: test.info().outputPath(`connection-layout-${connection.type}-${locale}.png`) });
             await page.keyboard.press('Escape');
             await expect(dialog).toHaveCount(0);
             await expect(trigger).toBeFocused();

@@ -3,16 +3,19 @@ import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStart
 import { isSortable, useSortable } from '@dnd-kit/react/sortable';
 import { Accessibility, defaultPreset } from '@dnd-kit/dom';
 import { useTranslation } from 'react-i18next';
-import { connectionTypes, defaultConnectionConfig, type ConnectionConfig, type ConnectionType, type SocialConnection } from '../shared/social';
-import { fetchJson } from './api';
+import { connectionTypes, defaultConnectionConfig, socialIconSize, type ConnectionConfig, type ConnectionType, type SocialConnection } from '../shared/social';
+import { ApiError, fetchJson, readResponse } from './api';
 import { Button, Checkbox, ConfirmationDialog, FormDialog, Select, TextField } from './material';
 import { ResourceFeedback, useDataActions, useResource } from './data';
 import { useClearSecrets } from './page-state';
 import { ErrorNotice, useFeedback } from './feedback';
 import { resolveLocale } from './locale';
+import { ImagePicker } from './ImagePicker';
+import { ProviderIcon } from './ProviderIcon';
 import { ToolbarIcon } from './ToolbarIcon';
 
-type Draft = Pick<SocialConnection, 'name' | 'type' | 'config' | 'enabled' | 'archived' | 'revision'> & { id?: string; callbackURL?: string; linkedAccounts?: number; identityLocked?: boolean };
+type Draft = Pick<SocialConnection, 'name' | 'type' | 'config' | 'enabled' | 'archived' | 'revision' | 'iconId' | 'iconUrl'> & { id?: string; callbackURL?: string; linkedAccounts?: number; identityLocked?: boolean };
+const providerNames = { google: 'Google', github: 'GitHub', oidc: 'OpenID Connect', oauth2: 'OAuth 2.0' };
 const guides = { google: 'https://developers.google.com/identity/protocols/oauth2/web-server#creatingcred', github: 'https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app', oidc: 'https://openid.net/specs/openid-connect-discovery-1_0.html', oauth2: 'https://www.rfc-editor.org/rfc/rfc6749' };
 
 function SortableConnection({ item, index, disabled, editDisabled, onEdit }: { item: SocialConnection; index: number; disabled: boolean; editDisabled: boolean; onEdit: () => void }) {
@@ -21,7 +24,7 @@ function SortableConnection({ item, index, disabled, editDisabled, onEdit }: { i
     return <div ref={ref} role="listitem" data-connection-id={item.id} className={`card social-sortable-connection${isDragSource ? ' is-dragging' : ''}`}>
         <div className="card-body social-sortable-row">
             <button ref={handleRef} type="button" className="social-drag-handle" aria-label={t('social.reorder', { name: item.name })} aria-roledescription={t('social.sortable')} aria-disabled={disabled} tabIndex={disabled ? -1 : 0}><ToolbarIcon name="drag_indicator" /></button>
-            <div className="social-provider-details"><div><strong>{item.name}</strong><p className="muted">{item.type.toUpperCase()} · {t(item.archived ? 'social.archived' : item.enabled ? 'social.enabled' : 'social.unavailable')}</p></div></div>
+            <div className="social-provider-details"><ProviderIcon type={item.type} iconUrl={item.iconUrl} /><div><strong>{item.name}</strong><p className="muted">{providerNames[item.type]} · {t(item.archived ? 'social.archived' : item.enabled ? 'social.enabled' : 'social.unavailable')}</p></div></div>
             <Button className="secondary" disabled={editDisabled} onClick={onEdit}>{t('social.edit')}</Button>
         </div>
     </div>;
@@ -34,6 +37,7 @@ export function SocialConnectionsPage() {
     const [draft, setDraft] = useState<Draft>(), [secret, setSecret] = useState('');
     const [scopes, setScopes] = useState('');
     const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [archive, setArchive] = useState(false);
+    const [uploading, setUploading] = useState(false);
     const [localOrder, setLocalOrder] = useState<SocialConnection[]>();
     const [dragging, setDragging] = useState(false);
     const dragSnapshot = useRef<SocialConnection[]>([]);
@@ -46,21 +50,27 @@ export function SocialConnectionsPage() {
             dragend: ({ canceled, operation: { source } }: DragEndEvent) => source ? t(canceled ? 'social.sortCancelled' : 'social.sortDropped', { name: source.data.name }) : undefined,
         },
     })], [t]);
-    const capture = useClearSecrets(() => setSecret(''));
+    const capture = useClearSecrets(() => { setSecret(''); setUploading(false); });
     function edit(value: Partial<Draft>) { setDraft((current) => current && { ...current, ...value }); setError(undefined); }
     function config(value: Partial<ConnectionConfig>) { if (draft) edit({ config: { ...draft.config, ...value } }); }
     function open(value?: SocialConnection) {
-        setDraft(value ?? { name: '', type: 'google', config: defaultConnectionConfig('google'), enabled: false, archived: false, revision: 0 });
+        setDraft(value ?? { name: '', type: 'google', config: defaultConnectionConfig('google'), enabled: false, archived: false, revision: 0, iconId: null, iconUrl: null });
         setSecret(''); setError(undefined); setArchive(false);
         setScopes((value?.config ?? defaultConnectionConfig('google')).scopes.join(' '));
     }
     function closeEditor() { setDraft(undefined); setSecret(''); setError(undefined); setArchive(false); }
+    async function uploadIcon(source: Blob) {
+        const active = capture();
+        const response = await fetch('/api/admin/social-connections/icon', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': source.type, Accept: 'application/json' }, body: source }).catch(() => { throw new ApiError('NETWORK_ERROR', 0); });
+        const icon = await readResponse<Pick<SocialConnection, 'iconId' | 'iconUrl'>>(response);
+        if (active()) edit(icon);
+    }
     async function save(archived = false) {
-        if (!draft || busy) return;
+        if (!draft || busy || uploading) return;
         setBusy(true); setError(undefined);
         try {
-            const { id, name, type, config, enabled, revision } = draft;
-            const result = await fetchJson<SocialConnection>(`/api/admin/social-connections${id ? `/${id}` : ''}`, { name, type, config: { ...config, scopes: scopes.trim().split(/\s+/).filter(Boolean) }, enabled, revision, archived, ...(secret ? { clientSecret: secret } : {}) }, undefined, id ? 'PATCH' : 'POST');
+            const { id, name, type, config, enabled, revision, iconId } = draft;
+            const result = await fetchJson<SocialConnection>(`/api/admin/social-connections${id ? `/${id}` : ''}`, { name, type, config: { ...config, scopes: scopes.trim().split(/\s+/).filter(Boolean) }, iconId: iconId ?? null, enabled, revision, archived, ...(secret ? { clientSecret: secret } : {}) }, undefined, id ? 'PATCH' : 'POST');
             if (archived) closeEditor();
             else { setDraft(result); setSecret(''); }
             await actions.socialSaved(); feedback.success(t('saved'));
@@ -86,28 +96,56 @@ export function SocialConnectionsPage() {
         } finally { if (active()) { setLocalOrder(undefined); setBusy(false); } }
     }
     function submit(event: FormEvent) { event.preventDefault(); void save(); }
-    const locked = !!draft?.identityLocked, disabled = busy || !!draft?.archived;
-    return <><div className="page-heading"><div><h1>{t('social.title')}</h1><p>{t('social.description')}</p></div><Button disabled={busy || dragging} onClick={() => open()}>{t('social.create')}</Button></div>
+    const locked = !!draft?.identityLocked, disabled = busy || uploading || !!draft?.archived;
+    return <><div className="page-heading"><div><h1>{t('social.title')}</h1><p>{t('social.description')}</p></div><Button disabled={busy || uploading || dragging} onClick={() => open()}>{t('social.create')}</Button></div>
         <ResourceFeedback query={query} />
         {query.data && !query.data.connections.length && !draft && <p className="empty-state">{t('social.noConnections')}</p>}
-        {query.data && <DragDropProvider plugins={dragPlugins} onBeforeDragStart={(event) => { if (busy || draft) event.preventDefault(); }} onDragStart={() => { dragSnapshot.current = connections; setLocalOrder(connections); setDragging(true); }} onDragEnd={(event) => { void reorder(event); }}>
-            <section className="social-connection-list" role="list" aria-label={t('social.title')} aria-busy={busy}>{connections.map((item, index) => <SortableConnection key={item.id} item={item} index={index} disabled={busy || !!draft || connections.length < 2} editDisabled={busy || dragging} onEdit={() => open(item)} />)}</section>
+        {query.data && <DragDropProvider plugins={dragPlugins} onBeforeDragStart={(event) => { if (busy || uploading || draft) event.preventDefault(); }} onDragStart={() => { dragSnapshot.current = connections; setLocalOrder(connections); setDragging(true); }} onDragEnd={(event) => { void reorder(event); }}>
+            <section className="social-connection-list" role="list" aria-label={t('social.title')} aria-busy={busy}>{connections.map((item, index) => <SortableConnection key={item.id} item={item} index={index} disabled={busy || uploading || !!draft || connections.length < 2} editDisabled={busy || uploading || dragging} onEdit={() => open(item)} />)}</section>
         </DragDropProvider>}
-        {draft && !archive && <FormDialog title={t(draft.id ? 'social.edit' : 'social.create')} cancelLabel={t('cancel')} confirmLabel={draft.archived ? undefined : t('save')} onCancel={closeEditor} onSubmit={submit} busy={busy} confirmDisabled={disabled}>
-            {!draft.id && <p>{t('social.disabledDefault')}</p>}
+        {draft && !archive && <FormDialog className="social-connection-dialog" title={t(draft.id ? 'social.edit' : 'social.create')} cancelLabel={t('cancel')} confirmLabel={draft.archived ? undefined : t('save')} onCancel={closeEditor} onSubmit={submit} busy={busy || uploading} confirmDisabled={disabled}>
             <ErrorNotice code={error} />
-            {locked && <p>{t('social.identityLocked')}</p>}
-            <TextField label={t('social.name')} value={draft.name} onValueChange={(name) => edit({ name })} maxLength={100} required disabled={disabled} />
-            <Select label={t('social.type')} value={draft.type} options={connectionTypes.map((type) => ({ value: type, label: type === 'oauth2' ? 'OAuth 2.0' : type === 'oidc' ? 'OpenID Connect' : type === 'google' ? 'Google' : 'GitHub' }))} disabled={disabled || locked} onChange={(value) => { const type = value as ConnectionType; edit({ type, config: defaultConnectionConfig(type) }); setScopes(defaultConnectionConfig(type).scopes.join(' ')); }} />
-            <a href={guides[draft.type]} target="_blank" rel="noreferrer">{t('social.guide')}</a>
-            <TextField label={t('social.clientId')} value={draft.config.clientId} onValueChange={(clientId) => config({ clientId })} maxLength={512} required disabled={disabled || locked} />
-            <TextField label={t('social.secret')} value={secret} onValueChange={setSecret} type="password" autoComplete="new-password" maxLength={4096} required={!draft.id} disabled={disabled} supportingText={t('social.secretHint')} />
-            {draft.type === 'oidc' && <>{(['issuer', 'discoveryUrl'] as const).map((key) => <TextField key={key} label={t(`social.${key}`)} value={draft.config[key] ?? ''} onValueChange={(value) => config({ [key]: value })} maxLength={2048} required disabled={disabled || locked} />)}</>}
-            {draft.type === 'oauth2' && <>{(['authorizationUrl', 'tokenUrl', 'userInfoUrl'] as const).map((key) => <TextField key={key} label={t(`social.${key}`)} value={draft.config[key] ?? ''} onValueChange={(value) => config({ [key]: value })} maxLength={2048} required disabled={disabled || locked} />)}<h3>{t('social.fields')}</h3>{(['subject', 'name', 'email', 'emailVerified', 'image'] as const).map((key) => <TextField key={key} label={t(`social.${key === 'name' ? 'profileName' : key}`)} value={draft.config.fields[key]} onValueChange={(value) => config({ fields: { ...draft.config.fields, [key]: value } })} maxLength={100} required={key === 'subject'} disabled={disabled || locked && key === 'subject'} />)}</>}
-            <TextField label={t('social.scopes')} value={scopes} onValueChange={setScopes} maxLength={4000} disabled={disabled} />
-            {['oidc', 'oauth2'].includes(draft.type) && <Select label={t('social.tokenAuth')} value={draft.config.tokenAuth} options={['client_secret_basic', 'client_secret_post'].map((value) => ({ value, label: value }))} onChange={(value) => config({ tokenAuth: value as ConnectionConfig['tokenAuth'] })} disabled={disabled} />}
-            {draft.id && <><TextField label={t('social.callback')} value={draft.callbackURL ?? ''} readOnly supportingText={t('social.callbackHint')} /><Checkbox label={t('social.enabled')} checked={draft.enabled} onCheckedChange={(enabled) => edit({ enabled })} disabled={disabled} /></>}
-            {draft.id && !draft.archived && <div className="action-row"><Button className="secondary" disabled={disabled} onClick={() => { setBusy(true); setError(undefined); void fetchJson<{ url: string }>(`/api/admin/social-connections/${draft.id}/test`, { locale: resolveLocale(window.location.pathname) }).then((result) => window.location.assign(result.url)).catch((cause) => { setError(actions.fail(cause)); setBusy(false); }); }}>{t('social.test')}</Button><Button className="text-button danger" disabled={disabled} onClick={() => { setError(undefined); setArchive(true); }}>{t('social.archive')}</Button></div>}
+            <section className="social-connection-section" aria-labelledby="connection-basic-title">
+                <h3 id="connection-basic-title">{t('social.basicSettings')}</h3>
+                <Select label={t('social.type')} value={draft.type} options={connectionTypes.map((type) => ({ value: type, label: providerNames[type] }))} disabled={disabled || locked} onChange={(value) => { const type = value as ConnectionType; edit({ type, config: defaultConnectionConfig(type) }); setScopes(defaultConnectionConfig(type).scopes.join(' ')); }} />
+                <div className="social-icon-editor">
+                    <div className="social-connection-display">
+                        <ImagePicker inputLabel={t('social.chooseIcon')} changeLabel={t('social.chooseIcon')} editLabel={t('social.editIcon')} accept="image/svg+xml,image/png,image/jpeg,image/webp" shape="rounded" allowSvg busy={uploading} disabled={busy || !!draft.archived} outputSize={socialIconSize}
+                            editorLabels={{ title: t('social.cropIcon'), position: t('social.iconPosition'), preview: t('social.iconPreview'), save: t('social.useIcon') }} onSave={uploadIcon} onError={actions.fail} onErrorChange={setError} onBusyChange={setUploading}>
+                            <ProviderIcon type={draft.type} iconUrl={draft.iconUrl} className="provider-icon-preview" />
+                        </ImagePicker>
+                        <div className="social-connection-name">
+                            <TextField label={t('social.name')} value={draft.name} onValueChange={(name) => edit({ name })} maxLength={100} required disabled={disabled} />
+                        </div>
+                    </div>
+                    {draft.iconId && <div className="social-connection-icon-tools"><Button className="text-button" disabled={disabled} onClick={() => edit({ iconId: null, iconUrl: null })}>{t('social.removeIcon')}</Button></div>}
+                </div>
+            </section>
+            <section className="social-connection-section" aria-labelledby="connection-authentication-title">
+                <div className="social-connection-section-heading"><h3 id="connection-authentication-title">{t('social.authenticationSettings')}</h3><a href={guides[draft.type]} target="_blank" rel="noreferrer">{t('social.guide')}</a></div>
+                {locked && <p className="muted">{t('social.identityLocked')}</p>}
+                {draft.type === 'oidc' && (['issuer', 'discoveryUrl'] as const).map((key) => <TextField key={key} label={t(`social.${key}`)} value={draft.config[key] ?? ''} onValueChange={(value) => config({ [key]: value })} maxLength={2048} required disabled={disabled || locked} />)}
+                {draft.type === 'oauth2' && (['authorizationUrl', 'tokenUrl', 'userInfoUrl'] as const).map((key) => <TextField key={key} label={t(`social.${key}`)} value={draft.config[key] ?? ''} onValueChange={(value) => config({ [key]: value })} maxLength={2048} required disabled={disabled || locked} />)}
+                <div className="social-connection-fields">
+                    <TextField label={t('social.clientId')} value={draft.config.clientId} onValueChange={(clientId) => config({ clientId })} maxLength={512} required disabled={disabled || locked} />
+                    <TextField label={t('social.secret')} value={secret} onValueChange={setSecret} type="password" autoComplete="new-password" maxLength={4096} required={!draft.id} disabled={disabled} supportingText={draft.id ? t('social.secretHint') : undefined} />
+                </div>
+                <TextField label={t('social.scopes')} value={scopes} onValueChange={setScopes} maxLength={4000} disabled={disabled} />
+                {['oidc', 'oauth2'].includes(draft.type) && <Select label={t('social.tokenAuth')} value={draft.config.tokenAuth} options={['client_secret_basic', 'client_secret_post'].map((value) => ({ value, label: value }))} onChange={(value) => config({ tokenAuth: value as ConnectionConfig['tokenAuth'] })} disabled={disabled} />}
+                {draft.id && <TextField label={t('social.callback')} value={draft.callbackURL ?? ''} readOnly supportingText={t('social.callbackHint')} />}
+            </section>
+            {draft.type === 'oauth2' && <section className="social-connection-section" aria-labelledby="connection-fields-title">
+                <h3 id="connection-fields-title">{t('social.fields')}</h3>
+                <TextField label={t('social.subject')} value={draft.config.fields.subject} onValueChange={(subject) => config({ fields: { ...draft.config.fields, subject } })} maxLength={100} required disabled={disabled || locked} />
+                <div className="social-connection-fields">{(['name', 'email', 'emailVerified', 'image'] as const).map((key) => <TextField key={key} label={t(`social.${key === 'name' ? 'profileName' : key}`)} value={draft.config.fields[key]} onValueChange={(value) => config({ fields: { ...draft.config.fields, [key]: value } })} maxLength={100} disabled={disabled} />)}</div>
+            </section>}
+            <section className="social-connection-section" aria-labelledby="connection-status-title">
+                <h3 id="connection-status-title">{t('social.statusSettings')}</h3>
+                <div className="social-connection-status">
+                    {draft.id ? <Checkbox label={t('social.enabled')} checked={draft.enabled} onCheckedChange={(enabled) => edit({ enabled })} disabled={disabled} /> : <p className="muted">{t('social.disabledDefault')}</p>}
+                </div>
+                {draft.id && !draft.archived && <div className="social-connection-maintenance"><Button className="secondary" disabled={disabled} onClick={() => { setBusy(true); setError(undefined); void fetchJson<{ url: string }>(`/api/admin/social-connections/${draft.id}/test`, { locale: resolveLocale(window.location.pathname) }).then((result) => window.location.assign(result.url)).catch((cause) => { setError(actions.fail(cause)); setBusy(false); }); }}>{t('social.test')}</Button><Button className="text-button danger" disabled={disabled} onClick={() => { setError(undefined); setArchive(true); }}>{t('social.archive')}</Button></div>}
+            </section>
         </FormDialog>}
         {archive && <ConfirmationDialog title={t('social.archive')} description={t('social.archiveConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={busy} error={<ErrorNotice code={error} />} onCancel={() => { setArchive(false); setError(undefined); }} onConfirm={() => { void save(true); }} />}
     </>;

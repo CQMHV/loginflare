@@ -28,6 +28,7 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
         { table: 'verification', cutoff: cutoffIso },
         { table: 'userAvatar', cutoff, column: 'deleteAfter', avatars: true },
         { table: 'brandLogo', cutoff, column: 'deleteAfter', logos: true },
+        { table: 'socialIcon', cutoff, column: 'deleteAfter', icons: true },
         { table: 'oauthAccessToken', cutoff: cutoffIso },
         { table: 'oauthRefreshToken', cutoff: cutoffIso, guard: 'AND NOT EXISTS (SELECT 1 FROM "oauthAccessToken" a WHERE a."refreshId" = "oauthRefreshToken"."id")' },
         { table: 'session', cutoff: cutoffIso, guard: `AND NOT EXISTS (SELECT 1 FROM "oauthAccessToken" a WHERE a."sessionId" = "session"."id")
@@ -41,7 +42,7 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
             if (!canContinue()) break;
             const position = positions.get(task.table);
             const column = task.column ?? 'expiresAt';
-            const reference = task.avatars ? 'EXISTS (SELECT 1 FROM "user" u WHERE u."id" = "userAvatar"."userId" AND u."image" = "userAvatar"."url")' : task.logos ? 'EXISTS (SELECT 1 FROM "siteBranding" b WHERE b."logoId" = "brandLogo"."id")' : '';
+            const reference = task.avatars ? 'EXISTS (SELECT 1 FROM "user" u WHERE u."id" = "userAvatar"."userId" AND u."image" = "userAvatar"."url")' : task.logos ? 'EXISTS (SELECT 1 FROM "siteBranding" b WHERE b."logoId" = "brandLogo"."id")' : task.icons ? 'EXISTS (SELECT 1 FROM "socialConnection" c WHERE c."iconId" = "socialIcon"."id")' : '';
             const values: (string | number)[] = [task.cutoff];
             if (position?.id) values.push(typeof task.cutoff === 'number' ? Number(position.expiresAt) : position.expiresAt, position.id);
             values.push(batchSize);
@@ -51,8 +52,8 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
                 ${position?.id ? `AND ("${column}", "id") > (?, ?)` : ''} ORDER BY "${column}", "id" LIMIT ?`)
                 .bind(...values).all<{ id: string; expiresAt: string | number; referenced?: number }>();
             if (!canContinue()) break;
-            if (task.avatars || task.logos) {
-                const obsolete = rows.results.filter((row) => !row.referenced).map((row) => task.logos ? `branding/${row.id}` : row.id);
+            if (task.avatars || task.logos || task.icons) {
+                const obsolete = rows.results.filter((row) => !row.referenced).map((row) => task.logos ? `branding/${row.id}` : task.icons ? `social-icons/${row.id}` : row.id);
                 if (obsolete.length) await env.AVATARS.delete(obsolete);
             }
             const statements: D1PreparedStatement[] = [];
