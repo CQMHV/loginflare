@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { harness, origin, session } from './helpers';
 import { applicationPrivileges } from '../src/server/application-policy';
+import { applicationCreateSchema, applicationFieldErrors } from '../src/shared/application-validation';
 
 const developerPath = '/api/developer/applications';
 const settings = { name: 'Developer website', type: 'web', redirectUris: ['https://developer.example.test/callback'], postLogoutRedirectUris: ['https://developer.example.test/'], scopes: ['openid', 'profile', 'email'] };
@@ -138,6 +139,55 @@ it('requires an active verified session and rejects foreign origins or unsupport
     expect((await client.request(developerPath, { cookie: owner.cookie })).status).toBe(403);
     await env.DB.prepare('UPDATE "user" SET "emailVerified" = 1, "banned" = 1 WHERE "id" = ?').bind(owner.identity.user.id).run();
     expect([401, 403]).toContain((await client.request(developerPath, { cookie: owner.cookie, body: settings })).status);
+});
+
+it('returns stable field errors for create and update without exposing URI credentials or original validation messages', async () => {
+    const client = harness(), owner = await developer(client), registered = await create(client, owner.cookie);
+    const cases = [
+        { patch: { name: '' }, errors: { name: 'APPLICATION_NAME_INVALID' } },
+        { patch: { redirectUris: [] }, errors: { redirectUris: 'APPLICATION_REDIRECT_REQUIRED' } },
+        { patch: { postLogoutRedirectUris: [] }, errors: { postLogoutRedirectUris: 'APPLICATION_LOGOUT_REDIRECT_REQUIRED' } },
+        { patch: { redirectUris: ['http://app.example.test/callback'] }, errors: { redirectUris: 'APPLICATION_URI_HTTPS_REQUIRED' } },
+        { patch: { redirectUris: ['https://localhost/callback'] }, errors: { redirectUris: 'APPLICATION_URI_LOOPBACK' } },
+        { patch: { redirectUris: ['https://app.example.test/callback#'] }, errors: { redirectUris: 'APPLICATION_URI_INVALID' } },
+        { patch: { postLogoutRedirectUris: ['https://developer:do-not-echo-credentials@app.example.test/logout'] }, errors: { postLogoutRedirectUris: 'APPLICATION_URI_INVALID' } },
+        { patch: { scopes: ['profile'] }, errors: { scopes: 'APPLICATION_SCOPES_INVALID' } },
+    ];
+    for (const { patch, errors } of cases) {
+        for (const [path, body, method] of [[developerPath, { ...settings, ...patch }, 'POST'], [`${developerPath}/${registered.application.clientId}`, patch, 'PATCH']] as const) {
+            const response = await client.request(path, { cookie: owner.cookie, body, method });
+            expect(response.status).toBe(400);
+            expect(await response.json()).toEqual({ code: 'INVALID_INPUT', fieldErrors: errors });
+        }
+    }
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "oauthClient" WHERE "ownerId" = ?').bind(owner.identity.user.id).first('n')).toBe(1);
+    expect(await env.DB.prepare('SELECT "name" FROM "oauthClient" WHERE "clientId" = ?').bind(registered.application.clientId).first('name')).toBe(settings.name);
+});
+
+it('keeps callback checks aligned across numeric loopback forms and valid exact HTTPS development callbacks', () => {
+    for (const uri of ['https://localhost./cb', 'https://127.1/cb', 'https://2130706433/cb', 'https://0x7f000001/cb', 'https://[::1]/cb', 'https://[::ffff:127.0.0.1]/cb']) {
+        const parsed = applicationCreateSchema.safeParse({ ...settings, redirectUris: [uri] });
+        expect(parsed.success).toBe(false);
+        if (!parsed.success) expect(applicationFieldErrors(parsed.error)).toEqual({ redirectUris: 'APPLICATION_URI_LOOPBACK' });
+    }
+    const uri = 'https://WEB.localhost:443/callback?next=%2Fhome';
+    const parsed = applicationCreateSchema.safeParse({ ...settings, redirectUris: [uri] });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.redirectUris).toEqual([uri]);
+});
+
+it('maps native protocol rejection identifiers without exposing legacy callback content', async () => {
+    const client = harness(), owner = await developer(client), registered = await create(client, owner.cookie);
+    const privateUri = 'https://localhost/callback?private=do-not-echo';
+    await env.DB.prepare('UPDATE "oauthClient" SET "redirectUris" = ? WHERE "clientId" = ?').bind(JSON.stringify([privateUri]), registered.application.clientId).run();
+    const invalidRedirect = await client.request(`${developerPath}/${registered.application.clientId}`, { cookie: owner.cookie, method: 'PATCH', body: { name: 'Refused edit' } });
+    expect(invalidRedirect.status).toBe(400);
+    expect(await invalidRedirect.json()).toEqual({ code: 'INVALID_INPUT', fieldErrors: { redirectUris: 'APPLICATION_URI_INVALID' } });
+    await env.DB.prepare('UPDATE "oauthClient" SET "redirectUris" = ?, "scopes" = ? WHERE "clientId" = ?').bind(JSON.stringify(settings.redirectUris), JSON.stringify(['openid', 'unavailable_scope']), registered.application.clientId).run();
+    const invalidScope = await client.request(`${developerPath}/${registered.application.clientId}`, { cookie: owner.cookie, method: 'PATCH', body: { name: 'Refused scope edit' } });
+    expect(invalidScope.status).toBe(400);
+    expect(await invalidScope.json()).toEqual({ code: 'INVALID_INPUT', fieldErrors: { scopes: 'APPLICATION_SCOPES_INVALID' } });
+    expect(await env.DB.prepare('SELECT "name" FROM "oauthClient" WHERE "clientId" = ?').bind(registered.application.clientId).first('name')).toBe(settings.name);
 });
 
 it('enforces the per-developer limit atomically while leaving instance registrations independent', async () => {

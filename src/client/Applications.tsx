@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
-import { fetchJson } from './api';
+import { applicationCreateSchema, applicationUpdateSchema, applicationFieldErrors, applicationFields, type ApplicationField, type ApplicationFieldErrors } from '../shared/application-validation';
+import { ApiError, fetchJson } from './api';
 import { Button, ButtonLink, Checkbox, FormDialog, Select, TextField } from './material';
 import { ErrorNotice, useFeedback } from './feedback';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
@@ -149,7 +150,7 @@ export function ApplicationsPage({ locale, area = 'admin' }: { locale: Locale; a
 }
 
 export function ApplicationEditor({ locale, create = false, area = 'admin' }: { locale: Locale; create?: boolean; area?: ApplicationArea }) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const feedback = useFeedback();
     const location = useLocation();
     const clientId = new URLSearchParams(location.search).get('clientId') ?? '';
@@ -160,16 +161,23 @@ export function ApplicationEditor({ locale, create = false, area = 'admin' }: { 
     const issuer = createdData?.issuer ?? applicationQuery.data?.issuer ?? '';
     type FormValues = { name: string; type: 'web' | 'spa'; redirectUris: string; postLogoutRedirectUris: string; scopes: string[] };
     const [draft, setDraft, clearDraft] = usePageDraft<FormValues>(`${area}:application:${create ? 'new' : clientId}`);
+    const editor = useRef<HTMLFormElement>(null);
+    const focusError = useRef<ApplicationField | undefined>(undefined);
+    const [fieldErrors, setFieldErrors] = useState<ApplicationFieldErrors>({});
     const form: FormValues = draft ?? {
         name: application?.name ?? '', type: application?.type ?? 'web', redirectUris: application?.redirectUris.join('\n') ?? '',
         postLogoutRedirectUris: application?.postLogoutRedirectUris.join('\n') ?? '', scopes: application?.scopes ?? ['openid', 'profile', 'email', 'offline_access'],
     };
     const { name, type, redirectUris, postLogoutRedirectUris, scopes } = form;
-    const setName = (name: string) => setDraft({ ...form, name });
-    const setType = (type: 'web' | 'spa') => setDraft({ ...form, type });
-    const setRedirectUris = (redirectUris: string) => setDraft({ ...form, redirectUris });
-    const setPostLogoutRedirectUris = (postLogoutRedirectUris: string) => setDraft({ ...form, postLogoutRedirectUris });
-    const setScopes = (update: (current: string[]) => string[]) => setDraft({ ...form, scopes: update(scopes) });
+    function clearFieldError(field: ApplicationField) {
+        setFieldErrors((current) => { const next = { ...current }; delete next[field]; return next; });
+        setError(undefined);
+    }
+    const setName = (name: string) => { clearFieldError('name'); setDraft({ ...form, name }); };
+    const setType = (type: 'web' | 'spa') => { clearFieldError('type'); setDraft({ ...form, type }); };
+    const setRedirectUris = (redirectUris: string) => { clearFieldError('redirectUris'); setDraft({ ...form, redirectUris }); };
+    const setPostLogoutRedirectUris = (postLogoutRedirectUris: string) => { clearFieldError('postLogoutRedirectUris'); setDraft({ ...form, postLogoutRedirectUris }); };
+    const setScopes = (update: (current: string[]) => string[]) => { clearFieldError('scopes'); setDraft({ ...form, scopes: update(scopes) }); };
     const dataActions = useDataActions();
     const [secret, setSecret] = useState<string>();
     const captureSecrets = useClearSecrets(() => { setSecret(undefined); setConfirmation(undefined); setControlError(undefined); }, `${area}:${create ? 'new' : clientId}`);
@@ -186,22 +194,47 @@ export function ApplicationEditor({ locale, create = false, area = 'admin' }: { 
     useEffect(() => {
         if (restricted) { setSecret(undefined); setConfirmation(undefined); setControlError(undefined); }
     }, [restricted]);
+    useEffect(() => {
+        const field = focusError.current;
+        if (!field) return;
+        focusError.current = undefined;
+        const element = editor.current?.querySelector<HTMLElement>(`[name="${field}"]`);
+        element?.focus({ preventScroll: true });
+        element?.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }, [fieldErrors]);
+    function showFieldErrors(errors: ApplicationFieldErrors) {
+        focusError.current = applicationFields.find((field) => errors[field]);
+        setFieldErrors(errors);
+    }
+    function fieldFeedback(field: ApplicationField) {
+        return { error: !!fieldErrors[field], errorText: fieldErrors[field] ? t(`oauth.validation.${fieldErrors[field]}`) : '' };
+    }
+
     async function save(event: FormEvent<HTMLFormElement>) {
         event.preventDefault(); if (disabled || area !== 'developer') return;
-        const secretsCurrent = captureSecrets();
-        setBusy(true); setError(undefined);
+        setError(undefined);
         const lines = (value: string) => value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const input = (create ? applicationCreateSchema : applicationUpdateSchema).safeParse({
+            name: name.trim(), ...(create ? { type } : {}),
+            redirectUris: lines(redirectUris), postLogoutRedirectUris: lines(postLogoutRedirectUris), scopes,
+        });
+        if (!input.success) { showFieldErrors(applicationFieldErrors(input.error)); return; }
+        setFieldErrors({});
+        const secretsCurrent = captureSecrets();
+        setBusy(true);
         try {
-            const data = await fetchJson<ApplicationResponse>(create ? apiPath : `${apiPath}/${encodeURIComponent(clientId)}`, {
-                name: name.trim(), ...(create ? { type } : {}),
-                redirectUris: lines(redirectUris), postLogoutRedirectUris: lines(postLogoutRedirectUris), scopes,
-            }, undefined, create ? 'POST' : 'PATCH');
+            const data = await fetchJson<ApplicationResponse>(create ? apiPath : `${apiPath}/${encodeURIComponent(clientId)}`, input.data, undefined, create ? 'POST' : 'PATCH');
             if (create && secretsCurrent()) setCreatedData({ application: data.application, issuer: data.issuer });
             if (secretsCurrent()) setSecret(data.clientSecret);
             await dataActions.applicationsSaved(); clearDraft(draft);
             feedback.success(t(create ? 'oauth.applicationCreated' : 'oauth.applicationSaved'));
         } catch (cause) {
-            const code = dataActions.fail(cause); setError(code);
+            const code = dataActions.fail(cause);
+            const fields = cause instanceof ApiError && cause.fieldErrors ? Object.fromEntries(applicationFields
+                .filter((field) => cause.fieldErrors?.[field] && i18n.exists(`oauth.validation.${cause.fieldErrors[field]}`))
+                .map((field) => [field, cause.fieldErrors![field]])) as ApplicationFieldErrors : {};
+            if (code === 'INVALID_INPUT' && Object.keys(fields).length) showFieldErrors(fields);
+            else setError(code);
             if (code === 'APPLICATION_SUSPENDED' || code === 'APPLICATION_CONFLICT') await dataActions.invalidate('application', 'applications');
         }
         finally { setBusy(false); }
@@ -235,15 +268,15 @@ export function ApplicationEditor({ locale, create = false, area = 'admin' }: { 
         <ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, `${area}/applications`), location.search)}>{t('oauth.backToApplications')}</ButtonLink>
         <div className="page-heading"><div><h1>{t(create ? 'oauth.createApplication' : 'oauth.applicationDetails')}</h1><p>{application?.name ?? t(area === 'developer' ? 'oauth.developerApplicationsDescription' : 'oauth.applicationsDescription')}</p></div>{application && <Status disabled={application.disabled} adminSuspended={application.adminSuspended} ownerId={application.ownerId} />}</div>
         {!create && <ResourceFeedback query={applicationQuery} />}
-        {area === 'developer' && (created ? <ButtonLink to={listPath(localizedPath(locale, 'developer/applications/detail'), location.search, { clientId: application.clientId })}>{t('oauth.applicationDetails')}</ButtonLink> : (create || application) && <section className="card"><form className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
+        {area === 'developer' && (created ? <ButtonLink to={listPath(localizedPath(locale, 'developer/applications/detail'), location.search, { clientId: application.clientId })}>{t('oauth.applicationDetails')}</ButtonLink> : (create || application) && <section className="card"><form ref={editor} className="card-body stack-form" onSubmit={(event) => { void save(event); }}>
             <ErrorNotice code={error} />
-            <TextField label={t('oauth.applicationName')} value={name} onValueChange={setName} maxLength={100} required disabled={disabled} supportingText={t('oauth.applicationNameHint')} />
-            {create ? <Select label={t('oauth.applicationType')} value={type} options={[{ value: 'web', label: t('oauth.typeWeb') }, { value: 'spa', label: t('oauth.typeSpa') }]} onChange={(value) => setType(value === 'spa' ? 'spa' : 'web')} disabled={disabled} /> : <TextField label={t('oauth.applicationType')} value={t(type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')} readOnly supportingText={t('oauth.typeFixed')} />}
+            <TextField name="name" label={t('oauth.applicationName')} value={name} onValueChange={setName} maxLength={100} required disabled={disabled} supportingText={t('oauth.applicationNameHint')} {...fieldFeedback('name')} />
+            {create ? <Select name="type" label={t('oauth.applicationType')} value={type} options={[{ value: 'web', label: t('oauth.typeWeb') }, { value: 'spa', label: t('oauth.typeSpa') }]} onChange={(value) => setType(value === 'spa' ? 'spa' : 'web')} disabled={disabled} {...fieldFeedback('type')} /> : <TextField label={t('oauth.applicationType')} value={t(type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')} readOnly supportingText={t('oauth.typeFixed')} />}
             {create && <p className="muted">{t(type === 'spa' ? 'oauth.typeSpaHint' : 'oauth.typeWebHint')}</p>}
-            <TextField label={t('oauth.redirectUris')} type="textarea" value={redirectUris} onValueChange={setRedirectUris} required maxLength={8192} disabled={disabled} supportingText={t('oauth.redirectUrisHint')} />
-            <TextField label={t('oauth.postLogoutRedirectUris')} type="textarea" value={postLogoutRedirectUris} onValueChange={setPostLogoutRedirectUris} required maxLength={8192} disabled={disabled} supportingText={t('oauth.postLogoutRedirectUrisHint')} />
-            <fieldset className="scope-options"><legend>{t('oauth.allowedScopes')}</legend><p className="muted">{t('oauth.scopesHint')}</p><p className="muted">{t('oauth.openidRequired')}</p>{['profile', 'email', 'offline_access'].map((scope) => <Checkbox key={scope} label={t(`oauth.scope_${scope}`)} checked={scopes.includes(scope)} disabled={disabled} onCheckedChange={(checked) => setScopes((current) => checked ? [...current, scope] : current.filter((value) => value !== scope))} />)}</fieldset>
-            <div className="form-footer">{draft && <Button className="text-button" disabled={disabled} onClick={() => { setDraft(undefined); setError(undefined); }}>{t('discardDraft')}</Button>}<Button type="submit" busy={busy} disabled={restricted}>{t(create ? 'oauth.createApplication' : 'save')}</Button></div>
+            <TextField name="redirectUris" label={t('oauth.redirectUris')} type="textarea" value={redirectUris} onValueChange={setRedirectUris} required maxLength={8192} disabled={disabled} supportingText={t('oauth.redirectUrisHint')} {...fieldFeedback('redirectUris')} />
+            <TextField name="postLogoutRedirectUris" label={t('oauth.postLogoutRedirectUris')} type="textarea" value={postLogoutRedirectUris} onValueChange={setPostLogoutRedirectUris} required maxLength={8192} disabled={disabled} supportingText={t('oauth.postLogoutRedirectUrisHint')} {...fieldFeedback('postLogoutRedirectUris')} />
+            <fieldset className="scope-options" name="scopes" tabIndex={-1} aria-describedby={fieldErrors.scopes ? 'application-scopes-error' : undefined}><legend>{t('oauth.allowedScopes')}</legend><p className="muted">{t('oauth.scopesHint')}</p><p className="muted">{t('oauth.openidRequired')}</p>{['profile', 'email', 'offline_access'].map((scope) => <Checkbox key={scope} label={t(`oauth.scope_${scope}`)} checked={scopes.includes(scope)} disabled={disabled} onCheckedChange={(checked) => setScopes((current) => checked ? [...current, scope] : current.filter((value) => value !== scope))} />)}{fieldErrors.scopes && <p className="field-error" role="alert" id="application-scopes-error">{t(`oauth.validation.${fieldErrors.scopes}`)}</p>}</fieldset>
+            <div className="form-footer">{draft && <Button className="text-button" disabled={disabled} onClick={() => { setDraft(undefined); setFieldErrors({}); setError(undefined); }}>{t('discardDraft')}</Button>}<Button type="submit" busy={busy} disabled={restricted}>{t(create ? 'oauth.createApplication' : 'save')}</Button></div>
         </form></section>)}
         {application && area === 'admin' && <ApplicationDetails application={application} locale={locale} />}
         {application && area === 'developer' && <ConnectionDetails application={application} issuer={issuer} />}

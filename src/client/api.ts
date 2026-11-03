@@ -31,7 +31,7 @@ export interface Identity {
 }
 
 export class ApiError extends Error {
-    constructor(public code: string, public status: number, public retryAfterMs = 0) {
+    constructor(public code: string, public status: number, public retryAfterMs = 0, public fieldErrors?: Record<string, string>) {
         super(code);
     }
 }
@@ -73,7 +73,10 @@ export async function readResponse<T>(response: Response): Promise<T> {
         const retryAfter = response.headers.get('retry-after');
         const seconds = retryAfter === null ? NaN : Number(retryAfter);
         const retryAfterMs = Number.isFinite(seconds) ? seconds * 1000 : retryAfter ? Date.parse(retryAfter) - Date.now() : 0;
-        throw new ApiError(code, response.status, Math.max(0, retryAfterMs || 0));
+        const fields = payload && typeof payload === 'object' && 'fieldErrors' in payload ? payload.fieldErrors : undefined;
+        const fieldErrors = fields && typeof fields === 'object' && !Array.isArray(fields)
+            ? Object.fromEntries(Object.entries(fields).filter(([, value]) => typeof value === 'string')) as Record<string, string> : undefined;
+        throw new ApiError(code, response.status, Math.max(0, retryAfterMs || 0), fieldErrors);
     }
     return payload as T;
 }

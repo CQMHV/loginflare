@@ -221,3 +221,64 @@ test('isolates developer applications and prevents an owner from lifting adminis
         expect(saved.application.disabled).toBe(true);
     } finally { await second.close(); await admin.close(); }
 });
+
+for (const chinese of [false, true]) {
+    test(`explains invalid application callbacks beside the field and creates after correction in ${chinese ? 'zh-cn' : 'en-us'}`, async ({ page, context }) => {
+        test.setTimeout(90_000);
+        const owner = await account();
+        if (chinese) await page.setViewportSize({ width: 375, height: 812 });
+        await signin(page, owner.email, chinese);
+        await switchArea(page, chinese ? '开发者中心' : 'Developer center');
+        await page.getByRole('link', { name: chinese ? '创建应用' : 'Create application', exact: true }).click();
+        const name = `Callback validation ${randomUUID()}`;
+        await page.getByLabel(chinese ? '应用名称' : 'Application name', { exact: true }).fill(name);
+        await page.getByRole('combobox', { name: chinese ? '应用类型' : 'Application type', exact: true }).click();
+        await page.getByRole('option', { name: chinese ? '单页应用' : 'Single-page application', exact: true }).click();
+        const redirect = page.getByLabel(chinese ? '登录回调 URI' : 'Sign-in redirect URIs', { exact: true });
+        const signout = page.getByLabel(chinese ? '退出回调 URI' : 'Sign-out redirect URIs', { exact: true });
+        await signout.fill(logout);
+        const submit = page.getByRole('button', { name: chinese ? '创建应用' : 'Create application', exact: true });
+        let writes = 0;
+        page.on('request', (request) => { if (request.method() === 'POST' && request.url().endsWith('/api/developer/applications')) writes++; });
+        const httpsError = chinese ? '请使用 HTTPS 回调地址，不支持 HTTP 地址。' : 'Use an HTTPS redirect URI. HTTP addresses are not supported.';
+        const loopbackError = chinese ? '请使用域名，不能直接使用 localhost 或回环 IP。本地调试可使用 web.localhost 等 HTTPS 子域。' : 'Use a domain instead of localhost or a loopback IP. For local testing, use an HTTPS subdomain such as web.localhost.';
+        const uriError = chinese ? '请填写完整地址，每个不超过 2048 个字符，不能包含通配符、账号密码或 # 片段。' : 'Enter complete URIs, up to 2048 characters each, without wildcards, credentials or # fragments.';
+        for (const [uri, message] of [['http://app.example.test/callback', httpsError], ['https://localhost:3000/callback', loopbackError], ['https://app.example.test/callback#', uriError]]) {
+            await redirect.fill(uri);
+            await expect(page.locator('md-outlined-text-field[name="redirectUris"]')).toHaveJSProperty('error', false);
+            await submit.click();
+            await expect(redirect).toBeFocused();
+            await expect(page.getByText(message, { exact: true })).toBeVisible();
+            await expect(page.locator('md-outlined-text-field[name="redirectUris"]')).toHaveJSProperty('error', true);
+            await expect(page.locator('.notice.error')).toHaveCount(0);
+            expect(writes).toBe(0);
+        }
+        await page.screenshot({ path: test.info().outputPath(`callback-error-${chinese ? 'zh-cn' : 'en-us'}.png`), fullPage: true });
+        await redirect.fill(callback);
+        await signout.fill('http://app.example.test/signed-out');
+        await submit.click();
+        await expect(signout).toBeFocused();
+        await expect(page.getByText(httpsError, { exact: true })).toBeVisible();
+        expect(writes).toBe(0);
+        await signout.fill(logout);
+        await page.route(`${testOrigin}/api/developer/applications`, (route) => route.fulfill({ status: 400, json: { code: 'INVALID_INPUT', fieldErrors: { postLogoutRedirectUris: 'APPLICATION_URI_INVALID' } } }), { times: 1 });
+        await submit.click();
+        await expect(signout).toBeFocused();
+        await expect(page.getByText(uriError, { exact: true })).toBeVisible();
+        await expect(page.locator('.notice.error')).toHaveCount(0);
+        expect(writes).toBe(1);
+        await signout.fill(`${logout}?verified=1`);
+        await expect(page.locator('md-outlined-text-field[name="postLogoutRedirectUris"]')).toHaveJSProperty('error', false);
+        const response = page.waitForResponse((response) => response.url().endsWith('/api/developer/applications') && response.request().method() === 'POST');
+        await submit.click();
+        const created = await response;
+        expect(created.status(), await created.text()).toBe(201);
+        const data = await created.json() as { application: { clientId: string; postLogoutRedirectUris: string[] }; clientSecret?: string };
+        clients.push(data.application.clientId);
+        expect(data.application.postLogoutRedirectUris).toEqual([`${logout}?verified=1`]);
+        expect(data.clientSecret).toBeUndefined();
+        await expect(page.getByRole('status')).toContainText(chinese ? '应用已创建。' : 'Application created.');
+        expect(writes).toBe(2);
+        await expect(page.getByLabel(chinese ? '应用名称' : 'Application name', { exact: true })).toHaveCount(0);
+    });
+}

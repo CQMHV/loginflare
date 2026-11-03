@@ -259,6 +259,7 @@ const enUS = {
         APPLICATION_DISABLED: 'This application is disabled. Contact its administrator.',
         APPLICATION_SUSPENDED: 'An administrator has disabled this application. Contact an administrator before making changes.',
         APPLICATION_CONFLICT: 'This application changed. Review its latest status and try again.',
+        APPLICATION_CONFIGURATION_REJECTED: 'The server rejected this application configuration. Contact an administrator to check the setup.',
         APPLICATION_LIMIT: 'You have reached the limit of 20 applications.',
     },
 };
@@ -515,6 +516,7 @@ const zhCN: typeof enUS = {
         APPLICATION_DISABLED: '此应用已停用，请联系其管理员。',
         APPLICATION_SUSPENDED: '管理员已停用此应用，请联系管理员解除限制后再操作。',
         APPLICATION_CONFLICT: '应用状态已发生变化，请检查最新状态后重试。',
+        APPLICATION_CONFIGURATION_REJECTED: '应用配置被服务端拒绝，请联系管理员检查配置。',
         APPLICATION_LIMIT: '你创建的应用已达到 20 个上限。',
     },
 };

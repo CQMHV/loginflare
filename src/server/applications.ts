@@ -1,30 +1,11 @@
 import { Hono, type Context } from 'hono';
 import { APIError } from 'better-auth/api';
-import { z } from 'zod';
 import { createAuth } from './auth';
 import type { Env } from './config';
 import { PaginationError, pageBoundary, pageResult, readPageInput } from './pagination';
 import { databaseRateLimit } from './rate-limit';
 import { applicationPrivileges, type ApplicationManagement, type ApplicationOwnership } from './application-policy';
-
-const scopes = ['openid', 'profile', 'email', 'offline_access'] as const;
-const redirectUri = z.string().max(2048).refine((value) => {
-    try {
-        const url = new URL(value);
-        return !url.username && !url.password && !url.hash && !value.includes('*')
-            && url.protocol === 'https:';
-    } catch {
-        return false;
-    }
-});
-const editable = z.object({
-    name: z.string().trim().min(1).max(100),
-    redirectUris: z.array(redirectUri).min(1).max(10),
-    postLogoutRedirectUris: z.array(redirectUri).min(1).max(10),
-    scopes: z.array(z.enum(scopes)).min(1).max(4).refine((values) => values.includes('openid') && new Set(values).size === values.length),
-});
-const createInput = editable.extend({ type: z.enum(['web', 'spa']) }).strict();
-const updateInput = editable.partial().extend({ disabled: z.boolean().optional() }).strict().refine((value) => Object.keys(value).length > 0);
+import { applicationCreateSchema, applicationUpdateSchema, applicationFieldErrors } from '../shared/application-validation';
 
 type Auth = ReturnType<typeof createAuth>;
 type NativeClient = Awaited<ReturnType<Auth['api']['getOAuthClient']>>;
@@ -72,7 +53,11 @@ function createApplications(administrator: boolean) {
         if (error instanceof PaginationError) return c.json({ code: error.code }, 400);
         if (error instanceof APIError && error.statusCode < 500) {
             const status = error.statusCode === 404 ? 404 : error.statusCode === 401 ? 401 : error.statusCode === 403 ? 403 : 400;
-            return c.json({ code: status === 404 ? 'APPLICATION_NOT_FOUND' : status === 403 ? 'FORBIDDEN' : status === 401 ? 'UNAUTHORIZED' : 'INVALID_INPUT' }, status);
+            // Only protocol error identifiers are mapped. Upstream descriptions
+            // can contain submitted URLs or credentials and never leave the API.
+            if (status === 400 && error.body?.error === 'invalid_redirect_uri') return c.json({ code: 'INVALID_INPUT', fieldErrors: { redirectUris: 'APPLICATION_URI_INVALID' } }, 400);
+            if (status === 400 && error.body?.error === 'invalid_scope') return c.json({ code: 'INVALID_INPUT', fieldErrors: { scopes: 'APPLICATION_SCOPES_INVALID' } }, 400);
+            return c.json({ code: status === 404 ? 'APPLICATION_NOT_FOUND' : status === 403 ? 'FORBIDDEN' : status === 401 ? 'UNAUTHORIZED' : 'APPLICATION_CONFIGURATION_REJECTED' }, status);
         }
         throw error;
     });
@@ -111,8 +96,8 @@ function createApplications(administrator: boolean) {
     });
 
     applications.post('/', async (c) => {
-        const input = createInput.safeParse(await c.req.json().catch(() => null));
-        if (!input.success) return c.json({ code: 'INVALID_INPUT' }, 400);
+        const input = applicationCreateSchema.safeParse(await c.req.json().catch(() => null));
+        if (!input.success) return c.json({ code: 'INVALID_INPUT', fieldErrors: applicationFieldErrors(input.error) }, 400);
         const data = input.data;
         const client = await c.var.auth.api.adminCreateOAuthClient({
             headers: c.req.raw.headers,
@@ -144,8 +129,8 @@ function createApplications(administrator: boolean) {
     });
 
     applications.patch('/:clientId', async (c) => {
-        const input = updateInput.safeParse(await c.req.json().catch(() => null));
-        if (!input.success) return c.json({ code: 'INVALID_INPUT' }, 400);
+        const input = applicationUpdateSchema.safeParse(await c.req.json().catch(() => null));
+        if (!input.success) return c.json({ code: 'INVALID_INPUT', fieldErrors: applicationFieldErrors(input.error) }, 400);
         const data = input.data;
         const ownership = await stored(c, c.req.param('clientId'));
         if (!ownership) return c.json({ code: 'APPLICATION_NOT_FOUND' }, 404);

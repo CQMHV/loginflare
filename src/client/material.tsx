@@ -87,6 +87,8 @@ interface TextFieldProps {
     disabled?: boolean;
     readOnly?: boolean;
     supportingText?: string;
+    error?: boolean;
+    errorText?: string;
 }
 
 export function TextField({ label, onValueChange, supportingText, ...props }: TextFieldProps) {
@@ -103,9 +105,9 @@ export function Checkbox({ label, checked, onCheckedChange, disabled = false }: 
     })}<span>{label}</span></label>;
 }
 
-export function Select({ label, value, options, onChange, disabled = false }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean }) {
+export function Select({ label, value, options, onChange, disabled = false, name, error, errorText }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; name?: string; error?: boolean; errorText?: string }) {
     return createElement('md-outlined-select', {
-        value, label, disabled, 'aria-label': label,
+        value, label, disabled, name, error, errorText, 'aria-label': label,
         onChange: (event: Event) => onChange((event.currentTarget as HTMLElement & { value: string }).value),
     }, ...options.map((option) => createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
 }
