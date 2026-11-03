@@ -1,6 +1,6 @@
 import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthEndpoint, createAuthMiddleware, isAPIError, sensitiveSessionMiddleware } from 'better-auth/api';
-import type { OAuthProviderExtension } from '@better-auth/oauth-provider';
+import { getOAuthProviderApi, type OAuthClaimExtensionInput, type OAuthProviderExtension } from '@better-auth/oauth-provider';
 import type { Env } from './config';
 
 /** Loginflare account policy, composed through Better Auth's supported lifecycle hooks. */
@@ -53,15 +53,25 @@ export function createOAuthPolicy(env: Env) {
         }
     }
 
+    async function requireAvailableCode(input: OAuthClaimExtensionInput) {
+        if (input.grantType !== 'authorization_code' || typeof input.ctx.body?.code !== 'string') return;
+        const identifier = await getOAuthProviderApi(input.ctx, input.opts, input.grantType).hashToken(input.ctx.body.code, 'authorization_code');
+        const policy = await env.DB.prepare('SELECT "revokedAt" FROM "oauthGrantPolicy" WHERE "authorizationCodeId" = ?')
+            .bind(identifier).first<{ revokedAt: string | null }>();
+        if (policy?.revokedAt) throw new APIError('BAD_REQUEST', { error: 'invalid_grant', error_description: 'The authorization is unavailable.' });
+    }
+
     const extension: OAuthProviderExtension = {
         claims: {
-            async idToken({ user }) {
+            async idToken(input) {
                 // Runs before native token issuance; the D1 constraint is the concurrent-write backstop.
-                await requireEligibleUser(user?.id);
+                await requireEligibleUser(input.user?.id);
+                await requireAvailableCode(input);
                 return {};
             },
-            async accessToken({ user, grantType }) {
-                await requireEligibleUser(user?.id, grantType === undefined);
+            async accessToken(input) {
+                await requireEligibleUser(input.user?.id, input.grantType === undefined);
+                await requireAvailableCode(input);
                 return {};
             },
             async userInfo({ user }) {

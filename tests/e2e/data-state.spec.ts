@@ -54,6 +54,7 @@ async function mockAccount(context: BrowserContext) {
             if (state.rateLimitEmails) { status = 429; result = { code: 'TOO_MANY_REQUESTS' }; }
             await state.emailGate;
         } else if (url.pathname === '/api/account/sessions') result = { items: state.actor ? [state.actor.session] : [], pageInfo: { nextCursor: null, previousCursor: null }, hasOtherSessions: false };
+        else if (url.pathname === '/api/account/applications') result = { items: [{ clientId, name: 'Authorized cache application', scopes: ['openid', 'profile', 'email'], authorizedAt: new Date().toISOString(), disabled: false }], pageInfo: { nextCursor: null, previousCursor: null } };
         else if (url.pathname === '/api/admin/users') result = { items: rows.slice(0, 20), pageInfo: { nextCursor: null, previousCursor: null } };
         else if (url.pathname === '/api/auth/admin/get-user') {
             if (state.forbiddenUser) { status = 403; result = { code: 'YOU_ARE_NOT_ALLOWED_TO_GET_USER' }; }
@@ -246,6 +247,7 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
         ['profile', '/en-us/account', '.profile-card .avatar-editor'],
         ['emails', '/en-us/account/emails', '.email-row'],
         ['sessions', '/en-us/account/sessions', '.session-row'],
+        ['authorized-applications', '/en-us/account/applications', '.authorized-application-card'],
         ['users', '/en-us/admin/users', 'tbody tr'],
         ['user', '/en-us/admin/users/detail?id=row-0', '.user-detail-grid'],
         ['applications', '/en-us/admin/applications', '.application-name'],
@@ -257,7 +259,7 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
         await expect(page.locator(ready).first()).toBeVisible();
         await expect(page.getByRole('button', { name: /^(Refresh data|刷新数据)$/ })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
-        const positions = () => page.locator('.page-content > .page-heading, .page-content > .card, .developer-applications-grid').evaluateAll((elements) =>
+        const positions = () => page.locator('.page-content > .page-heading, .page-content > .card, .developer-applications-grid, .authorized-application-list').evaluateAll((elements) =>
             elements.map((element) => { const rect = element.getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));
         const before = await positions();
         let release!: () => void;

@@ -8,7 +8,7 @@ import type { Branding } from '../shared/branding';
 
 export const identityKey = ['identity'] as const;
 export const freshness = { identity: 15_000, sessions: 15_000, ordinary: 60_000, configuration: 300_000 };
-export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'consent' | 'branding' | 'security' | 'social-connections';
+export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections';
 type Group = Resource | 'profile';
 type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications'; owner?: string; groups?: Group[] };
 const SyncContext = createContext<(message: SyncMessage) => void>(() => {});
@@ -94,7 +94,7 @@ export function DataProvider({ children }: PropsWithChildren) {
             const message = event.data;
             if (message?.type === 'signout') endIdentity(client);
             else if (message?.type === 'applications') {
-                void invalidate(client, identityScope(client.getQueryData(identityKey)), ['application', 'applications']);
+                void invalidate(client, identityScope(client.getQueryData(identityKey)), ['application', 'applications', 'authorized-applications']);
             }
             else if (message?.type === 'social') {
                 void client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'social-providers' || (query.queryKey[0] === 'private' && ['security', 'social-connections'].includes(String(query.queryKey[2]))), refetchType: document.visibilityState === 'visible' ? 'active' : 'none' });
@@ -185,7 +185,7 @@ export function useDataActions() {
         async applicationsSaved() {
             if (scope !== identityScope(client.getQueryData(identityKey))) return;
             publish({ type: 'applications' });
-            await invalidate(client, scope, ['application', 'applications']);
+            await invalidate(client, scope, ['application', 'applications', 'authorized-applications']);
         },
         async socialSaved() {
             publish({ type: 'social' });

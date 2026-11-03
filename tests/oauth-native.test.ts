@@ -68,6 +68,9 @@ async function nativeFixture() {
     expect(tokens.refresh_token).toBeTruthy();
     async function issueAnotherGrant(activeCookie = cookie) {
         const response = await auth.handler(new Request(`${origin}/api/auth/oauth2/authorize?${query}`, { headers: { Cookie: activeCookie } }));
+        // The code registration guard may reject an explicitly revoked session
+        // before native authorization reaches the token exchange.
+        if (response.status !== 302) return response;
         expect(response.status, await response.clone().text()).toBe(302);
         const code = new URL(response.headers.get('location')!).searchParams.get('code')!;
         expect(code).toBeTruthy();

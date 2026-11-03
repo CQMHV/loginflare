@@ -5,6 +5,7 @@ import { createAuth } from './auth';
 import { ConfigurationError, validateConfig, type Env } from './config';
 import { isLocale } from '../shared/locales';
 import { applications, developerApplications } from './applications';
+import { accountApplications } from './account-applications';
 import { consent, oauth, protocolRoutes } from './oauth';
 import { management } from './management';
 import { maintainDatabase } from './maintenance';
@@ -104,7 +105,8 @@ function logPath(path: string): string {
     if (path === '/api/social/providers' || path === '/api/admin/social-connections' || path === '/api/admin/social-connections/icon') return path;
     if (/^\/api\/admin\/social-connections\/[^/]+$/.test(path)) return '/api/admin/social-connections/:id';
     if (['/api/health', '/api/config', '/api/branding', '/api/admin/branding', '/api/admin/branding/logo'].includes(path)) return path;
-    if (path === '/api/admin/users' || path === '/api/account/sessions') return path;
+    if (path === '/api/admin/users' || path === '/api/account/sessions' || path === '/api/account/applications') return path;
+    if (/^\/api\/account\/applications\/[^/]+\/revoke$/.test(path)) return '/api/account/applications/:clientId/revoke';
     if (path === '/api/account/avatar') return path;
     if (/^\/api\/(admin|developer)\/applications$/.test(path)) return path;
     if (/^\/api\/(admin|developer)\/applications\/[^/]+\/rotate-secret$/.test(path)) return path.replace(/\/applications\/[^/]+\/rotate-secret$/, '/applications/:clientId/rotate-secret');
@@ -178,6 +180,7 @@ app.get('/api/config', (c) => {
 
 app.route('/api/admin/applications', applications);
 app.route('/api/developer/applications', developerApplications);
+app.route('/api/account/applications', accountApplications);
 app.route('/api', management);
 app.route('/api/oauth', consent);
 app.route('/', avatars);
@@ -284,7 +287,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);

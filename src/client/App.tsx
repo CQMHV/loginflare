@@ -10,6 +10,7 @@ import i18n from './i18n';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, List, ListItem, MenuButton, NavigationLink, Progress, Select, TextField } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
 import { ApplicationEditor, ApplicationsPage } from './Applications';
+import { AuthorizedApplicationsPage } from './AuthorizedApplications';
 import { EmailsPage } from './Emails';
 import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
@@ -557,7 +558,8 @@ function AccountLayout() {
             <NavigationLink end to={localizedPath(locale, 'account')}><Icon name="profile" />{t('profile')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'account/emails')}><Icon name="mail" />{t('emails.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'account/security')}><Icon name="shield" />{t('security')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavigationLink></>} />;
+            <NavigationLink to={localizedPath(locale, 'account/sessions')}><Icon name="sessions" />{t('sessions')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'account/applications')}><Icon name="globe" />{t('oauth.authorizedApplicationsTitle')}</NavigationLink></>} />;
 }
 
 function AdminLayout() {
@@ -812,6 +814,7 @@ function LocaleRoutes() {
                     <Route path="account/emails" element={<EmailsPage />} />
                     <Route path="account/security" element={<SecurityPage />} />
                     <Route path="account/sessions" element={<SessionsPage />} />
+                    <Route path="account/applications" element={<AuthorizedApplicationsPage locale={locale} />} />
                 </Route>
                 <Route element={<Protected developerOnly />}>
                     <Route element={<DeveloperLayout />}>
