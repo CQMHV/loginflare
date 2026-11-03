@@ -3,10 +3,11 @@ import { Progress } from './material';
 import { ToolbarIcon } from './ToolbarIcon';
 import { ApiError } from './api';
 import { useClearSecrets } from './page-state';
-import { inspectImage, maximumSourceBytes } from '../shared/avatars';
+import { inspectImage } from '../shared/avatars';
+import { maximumImageBytes, maximumSourceBytes } from '../shared/image-limits';
 import type { ImageCropDialogProps, ImageEditorLabels, ImagePhoto } from './ImageCropDialog';
 
-export function ImagePicker({ children, inputLabel, changeLabel, editLabel, accept, busy = false, disabled = false, shape = 'circle', allowSvg = false, outputSize, maximumBytes, editorLabels, onSave, onError, onErrorChange, onBusyChange }: PropsWithChildren<{
+export function ImagePicker({ children, inputLabel, changeLabel, editLabel, accept, busy = false, disabled = false, shape = 'circle', allowSvg = false, outputSize, editorLabels, onSave, onError, onErrorChange, onBusyChange }: PropsWithChildren<{
     inputLabel: string;
     changeLabel: string;
     editLabel: string;
@@ -16,7 +17,6 @@ export function ImagePicker({ children, inputLabel, changeLabel, editLabel, acce
     shape?: 'circle' | 'rounded';
     allowSvg?: boolean;
     outputSize: number;
-    maximumBytes: number;
     editorLabels: ImageEditorLabels;
     onSave: (blob: Blob) => Promise<void>;
     onError: (cause: unknown) => string;
@@ -38,10 +38,11 @@ export function ImagePicker({ children, inputLabel, changeLabel, editLabel, acce
         const active = capture(); progress(true); report();
         let bitmap: ImageBitmap | undefined, selected: ImagePhoto | undefined;
         try {
-            if (file.size > maximumSourceBytes) throw new ApiError('IMAGE_FILE_TOO_LARGE', 400);
+            const svg = allowSvg && file.type === 'image/svg+xml';
+            if (svg && file.size > maximumImageBytes) throw new ApiError('IMAGE_SVG_TOO_LARGE', 413);
+            if (file.size > maximumSourceBytes) throw new ApiError('IMAGE_FILE_TOO_LARGE', 413);
             const bytes = new Uint8Array(await file.arrayBuffer());
             if (!active()) return;
-            const svg = allowSvg && file.type === 'image/svg+xml';
             if (!svg) {
                 try { inspectImage(bytes); } catch { throw new ApiError('IMAGE_INVALID_IMAGE', 400); }
             }
@@ -79,5 +80,5 @@ export function ImagePicker({ children, inputLabel, changeLabel, editLabel, acce
             {working ? <Progress /> : <ToolbarIcon name="edit" />}
             {createElement('md-ripple', { disabled: unavailable })}{createElement('md-focus-ring')}
         </button>
-    </div>{photo && Dialog && <Dialog key={photo.id} photo={photo} busy={working || busy} requestError={error} labels={editorLabels} outputSize={outputSize} maximumBytes={maximumBytes} shape={shape === 'circle' ? 'round' : 'rect'} onCancel={() => { setPhoto(undefined); report(); }} onSave={save} />}</>;
+    </div>{photo && Dialog && <Dialog key={photo.id} photo={photo} busy={working || busy} requestError={error} labels={editorLabels} outputSize={outputSize} shape={shape === 'circle' ? 'round' : 'rect'} onCancel={() => { setPhoto(undefined); report(); }} onSave={save} />}</>;
 }

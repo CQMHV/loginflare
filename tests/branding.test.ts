@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { brandColors } from '../src/shared/brand-colors';
 import { colorSchemes, defaultBranding, type Branding } from '../src/shared/branding';
+import { maximumImageBytes } from '../src/shared/image-limits';
 import { maintainDatabase } from '../src/server/maintenance';
 import { harness, origin, session } from './helpers';
 import { avatarPng, avatarJpeg, avatarWebpWithMetadata } from './fixtures/avatars';
@@ -106,9 +107,12 @@ it('preserves SVG vectors and serves isolated immutable image responses without 
 
 it('rejects active, externally referencing, malformed and oversized SVGs', async () => {
     const { cookie } = await admin();
-    for (const content of [svg.replace('<rect', '<script>alert(1)</script><rect'), svg.replace('<rect', '<foreignObject/><rect'), svg.replace('<rect', '<image href="https://elsewhere.test/private"/><rect'), svg.replace('fill="#6750a4"', 'fill="url(https://elsewhere.test/paint.svg#color)"'), svg.replace('<rect', '<animateMotion/><rect'), svg.replace('<rect', '<style>@import "https://elsewhere.test/a.css";</style><rect'), svg.replace('<rect', '<rect onload="alert(1)"/><rect'), '<!DOCTYPE svg [<!ENTITY x "expanded">]>' + svg, '<svg', svg + ' '.repeat(256 * 1024)]) {
+    for (const content of [svg.replace('<rect', '<script>alert(1)</script><rect'), svg.replace('<rect', '<foreignObject/><rect'), svg.replace('<rect', '<image href="https://elsewhere.test/private"/><rect'), svg.replace('fill="#6750a4"', 'fill="url(https://elsewhere.test/paint.svg#color)"'), svg.replace('<rect', '<animateMotion/><rect'), svg.replace('<rect', '<style>@import "https://elsewhere.test/a.css";</style><rect'), svg.replace('<rect', '<rect onload="alert(1)"/><rect'), '<!DOCTYPE svg [<!ENTITY x "expanded">]>' + svg, '<svg']) {
         expect((await upload(cookie, content)).status).toBe(400);
     }
+    const oversized = await upload(cookie, svg.padEnd(maximumImageBytes + 1));
+    expect(oversized.status).toBe(413);
+    expect(await oversized.json()).toEqual({ code: 'IMAGE_UPLOAD_TOO_LARGE' });
     expect((await env.AVATARS.list()).objects).toHaveLength(0);
 });
 

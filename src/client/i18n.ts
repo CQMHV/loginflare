@@ -1,5 +1,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import { maximumImageBytes, maximumSourceBytes } from '../shared/image-limits';
 import { oauthEn, oauthZh } from './oauth-translations';
 import { emailEn, emailZh } from './email-translations';
 import { mfaEn, mfaZh } from './mfa-translations';
@@ -192,12 +193,13 @@ const enUS = {
         BACKUP_CODES_NOT_ENABLED: 'No recovery codes are available. Use your authenticator app.',
         AVATAR_INVALID_IMAGE: 'Choose a valid static JPG, PNG or WebP image, up to 16384 pixels per side and 100 megapixels.',
         IMAGE_INVALID_IMAGE: 'Choose a valid static image.',
-        IMAGE_SVG_TOO_LARGE: 'Choose an SVG no larger than 256 KiB.',
-        IMAGE_FILE_TOO_LARGE: 'Choose an image no larger than 20 MiB.',
+        IMAGE_SVG_TOO_LARGE: 'Choose an SVG no larger than {{imageUploadKiB}} KiB.',
+        IMAGE_FILE_TOO_LARGE: 'Choose an image no larger than {{imageSourceMiB}} MiB.',
+        IMAGE_UPLOAD_TOO_LARGE: 'The upload image must be no larger than {{imageUploadKiB}} KiB. Choose a smaller or simpler image.',
         IMAGE_WEBP_UNAVAILABLE: 'Your browser cannot create WebP images. Update your browser and try again.',
         IMAGE_ENCODING_FAILED: 'Unable to process this image. Try again or choose another image.',
         IMAGE_EDITOR_LOAD_FAILED: 'Unable to load the image editor. Reload this page and try again.',
-        BRANDING_LOGO_INVALID: 'Choose a static SVG (up to 256 KiB), PNG, JPG or WebP (up to 512 KiB and 2048 pixels per side). Scripts, animation and external references are not allowed.',
+        BRANDING_LOGO_INVALID: 'Choose a static SVG, PNG, JPG or WebP, up to 2048 pixels per side. Scripts, animation and external references are not allowed.',
         BRANDING_LOGO_UNAVAILABLE: 'This logo draft has expired. Choose the file again.',
         BRANDING_CONFLICT: 'Brand settings changed in another session. Discard this draft and reload before saving again.',
         NETWORK_ERROR: 'Unable to connect. Check your connection and try again.',
@@ -442,12 +444,13 @@ const zhCN: typeof enUS = {
         BACKUP_CODES_NOT_ENABLED: '没有可用的恢复码，请使用验证器应用。',
         AVATAR_INVALID_IMAGE: '请选择有效的静态 JPG、PNG 或 WebP 图片，单边不超过 16384 像素、总像素不超过 1 亿。',
         IMAGE_INVALID_IMAGE: '请选择有效的静态图片。',
-        IMAGE_SVG_TOO_LARGE: '请选择不超过 256 KiB 的 SVG。',
-        IMAGE_FILE_TOO_LARGE: '请选择不超过 20 MiB 的图片。',
+        IMAGE_SVG_TOO_LARGE: '请选择不超过 {{imageUploadKiB}} KiB 的 SVG。',
+        IMAGE_FILE_TOO_LARGE: '请选择不超过 {{imageSourceMiB}} MiB 的图片。',
+        IMAGE_UPLOAD_TOO_LARGE: '上传图片不能超过 {{imageUploadKiB}} KiB，请选择更小或更简单的图片。',
         IMAGE_WEBP_UNAVAILABLE: '当前浏览器无法生成 WebP 图片，请更新浏览器后重试。',
         IMAGE_ENCODING_FAILED: '无法处理这张图片，请重试或选择其他图片。',
         IMAGE_EDITOR_LOAD_FAILED: '无法加载图片编辑器，请刷新页面后重试。',
-        BRANDING_LOGO_INVALID: '请选择静态 SVG（最大 256 KiB）、PNG、JPG 或 WebP（最大 512 KiB，每边不超过 2048 像素）。不支持脚本、动画和外部引用。',
+        BRANDING_LOGO_INVALID: '请选择静态 SVG、PNG、JPG 或 WebP，每边不超过 2048 像素。不支持脚本、动画和外部引用。',
         BRANDING_LOGO_UNAVAILABLE: '此 Logo 草稿已过期，请重新选择图片。',
         BRANDING_CONFLICT: '品牌设置已被其他会话修改，请放弃当前草稿并刷新页面后再保存。',
         NETWORK_ERROR: '无法连接，请检查网络后重试。',
@@ -517,7 +520,7 @@ void i18n.use(initReactI18next).init({
     fallbackLng: 'en-US',
     supportedLngs: ['en-US', 'zh-CN'],
     load: 'currentOnly',
-    interpolation: { escapeValue: false },
+    interpolation: { escapeValue: false, defaultVariables: { imageSourceMiB: maximumSourceBytes / (1024 * 1024), imageUploadKiB: maximumImageBytes / 1024 } },
     returnNull: false,
 });
 

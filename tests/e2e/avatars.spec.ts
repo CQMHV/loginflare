@@ -4,7 +4,8 @@ import { deflateSync } from 'node:zlib';
 import { expect, test, switchArea } from './fixtures';
 import { executeLocal, removeLocalFixtures } from './database';
 import { avatarJpeg, avatarWebp, sourcePng } from '../fixtures/avatars';
-import { inspectImage, maximumSourceBytes } from '../../src/shared/avatars';
+import { inspectImage } from '../../src/shared/avatars';
+import { maximumSourceBytes } from '../../src/shared/image-limits';
 
 function largeSourcePng() {
     const width = 10_000, height = 3_000;

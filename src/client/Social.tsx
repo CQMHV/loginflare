@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
 import type { PublicProvider } from '../shared/social';
-import { inspectImage, maximumAvatarBytes } from '../shared/avatars';
+import { inspectImage } from '../shared/avatars';
 import { ApiError, errorCode, fetchJson, readResponse, request } from './api';
 import { Button, TextField } from './material';
 import { ErrorNotice, useFeedback } from './feedback';
@@ -110,7 +110,7 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
                         drawing.imageSmoothingQuality = 'high';
                         const side = Math.min(bitmap.width, bitmap.height);
                         drawing.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
-                        await readResponse(await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'image/webp', 'X-Avatar-Import': 'if-empty' }, body: await encodeWebP(canvas, maximumAvatarBytes) }));
+                        await readResponse(await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'image/webp', 'X-Avatar-Import': 'if-empty' }, body: await encodeWebP(canvas) }));
                     } finally { bitmap.close(); }
                 } catch { /* Profile imports are retried on a later sign-in. */ }
             }

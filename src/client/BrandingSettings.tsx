@@ -4,7 +4,7 @@ import { ApiError, fetchJson, readResponse } from './api';
 import { Button, Select, TextField } from './material';
 import { ResourceFeedback, useDataActions, useResource } from './data';
 import { useClearSecrets, usePageDraft } from './page-state';
-import { colorSchemes, defaultBranding, maximumBrandLogoBytes, type Branding } from '../shared/branding';
+import { colorSchemes, defaultBranding, type Branding } from '../shared/branding';
 import { ImagePicker } from './ImagePicker';
 import { ErrorNotice, useFeedback } from './feedback';
 
@@ -53,7 +53,7 @@ export function BrandingSettings() {
         {current && <section className="card"><form className="card-body stack-form branding-form" onSubmit={(event) => { void save(event); }}>
             <ErrorNotice code={error} />
             <div className="branding-logo-editor">
-                <ImagePicker inputLabel={t('branding.chooseLogo')} changeLabel={t('branding.chooseLogo')} editLabel={t('branding.editLogo')} accept="image/svg+xml,image/png,image/jpeg,image/webp" shape="rounded" busy={uploading} disabled={busy} allowSvg outputSize={512} maximumBytes={maximumBrandLogoBytes} editorLabels={{ title: t('branding.crop'), position: t('branding.position'), preview: t('branding.preview'), save: t('branding.useLogo') }} onSave={upload} onError={actions.fail} onErrorChange={setError} onBusyChange={setUploading}>
+                <ImagePicker inputLabel={t('branding.chooseLogo')} changeLabel={t('branding.chooseLogo')} editLabel={t('branding.editLogo')} accept="image/svg+xml,image/png,image/jpeg,image/webp" shape="rounded" busy={uploading} disabled={busy} allowSvg outputSize={512} editorLabels={{ title: t('branding.crop'), position: t('branding.position'), preview: t('branding.preview'), save: t('branding.useLogo') }} onSave={upload} onError={actions.fail} onErrorChange={setError} onBusyChange={setUploading}>
                     <img className="branding-logo-image" src={current.logoUrl} alt="" />
                 </ImagePicker>
                 {current.logoId && <Button className="text-button" disabled={busy || uploading} onClick={() => edit({ logoId: null, logoUrl: '/assets/logo.svg' })}>{t('branding.defaultLogo')}</Button>}

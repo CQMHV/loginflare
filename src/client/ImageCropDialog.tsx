@@ -6,8 +6,8 @@ import type { MdDialog } from '@material/web/dialog/dialog.js';
 import { ErrorNotice } from './feedback';
 import type { MdSlider } from '@material/web/slider/slider.js';
 import { useTranslation } from 'react-i18next';
-import { maximumSourceDimension, maximumSourcePixels } from '../shared/avatars';
-import { maximumSvgBytes, parseSvg } from '../shared/svg';
+import { maximumImageBytes, maximumSourceDimension, maximumSourcePixels } from '../shared/image-limits';
+import { parseSvg } from '../shared/svg';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { ApiError } from './api';
 import { Button, Progress } from './material';
@@ -29,7 +29,6 @@ export interface ImageCropDialogProps {
     requestError?: string;
     labels: ImageEditorLabels;
     outputSize: number;
-    maximumBytes: number;
     shape: 'round' | 'rect';
     onCancel: () => void;
     onSave: (blob: Blob) => Promise<void>;
@@ -74,7 +73,7 @@ export async function prepareSvgPhoto(bytes: Uint8Array): Promise<ImagePhoto> {
     } finally { bitmap?.close(); }
 }
 
-export default function ImageCropDialog({ photo, busy, requestError, labels, outputSize, maximumBytes, shape, onCancel, onSave }: ImageCropDialogProps) {
+export default function ImageCropDialog({ photo, busy, requestError, labels, outputSize, shape, onCancel, onSave }: ImageCropDialogProps) {
     const { t } = useTranslation();
     const dialog = useRef<MdDialog>(null);
     const shown = useRef(false);
@@ -155,7 +154,7 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
                 const transform = `translate(${width / 2} ${height / 2}) scale(${width / cropSize.width} ${height / cropSize.height}) translate(${crop.x} ${crop.y}) rotate(${rotation}) scale(${mediaSize.width / sourceWidth * renderedZoom} ${mediaSize.height / sourceHeight * renderedZoom}) translate(${-sourceWidth / 2} ${-sourceHeight / 2})`;
                 const result = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g transform="${transform}">${new XMLSerializer().serializeToString(original)}</g></svg>`;
                 const blob = new Blob([result], { type: 'image/svg+xml' });
-                if (blob.size > maximumSvgBytes) throw new ApiError('IMAGE_SVG_TOO_LARGE', 400);
+                if (blob.size > maximumImageBytes) throw new ApiError('IMAGE_UPLOAD_TOO_LARGE', 413);
                 if (current()) await onSave(blob);
                 return;
             }
@@ -171,7 +170,7 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
             context.rotate(rotation * Math.PI / 180);
             context.scale(mediaSize.width / bitmap.width * renderedZoom, mediaSize.height / bitmap.height * renderedZoom);
             context.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
-            const blob = await encodeWebP(output, maximumBytes);
+            const blob = await encodeWebP(output);
             if (current()) await onSave(blob);
         } catch (cause) { if (current()) setError(cause instanceof ApiError ? cause.code : 'IMAGE_ENCODING_FAILED'); }
         finally { setEncoding(false); }

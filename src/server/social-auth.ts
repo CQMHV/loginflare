@@ -14,7 +14,8 @@ import { locales, localizedPath, type Locale } from '../shared/locales';
 import { sendEmailCode } from './mail';
 import { consumeEmailQuota } from './email-operations';
 import { socialFetch } from './social-network';
-import { inspectImage, maximumSourceBytes } from '../shared/avatars';
+import { inspectImage } from '../shared/avatars';
+import { maximumSourceBytes } from '../shared/image-limits';
 
 interface Profile { subject: string; email?: string; verified: boolean; name: string; image?: string }
 interface FlowData {

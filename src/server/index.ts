@@ -9,10 +9,9 @@ import { consent, oauth, protocolRoutes } from './oauth';
 import { management } from './management';
 import { maintainDatabase } from './maintenance';
 import { avatars } from './avatars';
-import { maximumAvatarBytes } from '../shared/avatars';
+import { maximumImageBytes } from '../shared/image-limits';
 import { branding } from './branding';
 import { publicBranding, readBranding } from './branding-settings';
-import { maximumBrandLogoBytes } from '../shared/branding';
 import { socialConnections, connection } from './social-connections';
 import { databaseRateLimit } from './rate-limit';
 
@@ -163,10 +162,13 @@ app.use('/api/*', async (c, next) => {
         console.log(JSON.stringify({ event: 'http_request', requestId, method: c.req.method, path: logPath(c.req.path), status: c.res.status, durationMs: Date.now() - started }));
     }
 });
-app.use('/api/*', (c, next) => bodyLimit({
-    maxSize: c.req.path === '/api/admin/branding/logo' && c.req.method === 'POST' ? maximumBrandLogoBytes : c.req.path === '/api/account/avatar' && c.req.method === 'POST' ? maximumAvatarBytes : 16_384,
-    onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE' }, 413),
-})(c, next));
+app.use('/api/*', (c, next) => {
+    const imageUpload = c.req.method === 'POST' && ['/api/account/avatar', '/api/admin/branding/logo'].includes(c.req.path);
+    return bodyLimit({
+        maxSize: imageUpload ? maximumImageBytes : 16_384,
+        onError: (c) => c.json({ code: imageUpload ? 'IMAGE_UPLOAD_TOO_LARGE' : 'PAYLOAD_TOO_LARGE' }, 413),
+    })(c, next);
+});
 
 app.get('/api/health', (c) => c.json({ status: 'ok' }));
 app.get('/api/config', (c) => {

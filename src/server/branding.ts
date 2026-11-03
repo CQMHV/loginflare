@@ -5,7 +5,8 @@ import { createAuth } from './auth';
 import type { Env } from './config';
 import { databaseRateLimit } from './rate-limit';
 import { avatarIdPattern, inspectImage } from '../shared/avatars';
-import { colorSchemes, maximumBrandLogoBytes } from '../shared/branding';
+import { colorSchemes } from '../shared/branding';
+import { maximumImageBytes } from '../shared/image-limits';
 import { publicBranding, readBranding } from './branding-settings';
 
 type Identity = NonNullable<Awaited<ReturnType<ReturnType<typeof createAuth>['api']['getSession']>>>;
@@ -60,7 +61,8 @@ branding.put('/api/admin/branding', async (c) => {
 
 branding.post('/api/admin/branding/logo', async (c) => {
     const bytes = new Uint8Array(await c.req.arrayBuffer());
-    if (!bytes.length || bytes.length > maximumBrandLogoBytes) return c.json({ code: 'BRANDING_LOGO_INVALID' }, 400);
+    if (bytes.length > maximumImageBytes) return c.json({ code: 'IMAGE_UPLOAD_TOO_LARGE' }, 413);
+    if (!bytes.length) return c.json({ code: 'BRANDING_LOGO_INVALID' }, 400);
     let content: Uint8Array, mime: string;
     try {
         if (c.req.header('Content-Type')?.split(';')[0] === 'image/svg+xml') {

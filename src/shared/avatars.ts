@@ -1,9 +1,7 @@
+import { maximumSourceDimension, maximumSourcePixels } from './image-limits';
+
 export const avatarSize = 256;
 export const avatarMimeType = 'image/webp';
-export const maximumAvatarBytes = 300 * 1024;
-export const maximumSourceBytes = 20 * 1024 * 1024;
-export const maximumSourceDimension = 16_384;
-export const maximumSourcePixels = 100_000_000;
 export const avatarIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export class AvatarImageError extends Error {

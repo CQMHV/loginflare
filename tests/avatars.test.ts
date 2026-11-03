@@ -3,7 +3,8 @@ import { applyD1Migrations, createExecutionContext, reset, waitOnExecutionContex
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { maintainDatabase } from '../src/server/maintenance';
-import { maximumAvatarBytes, inspectImage } from '../src/shared/avatars';
+import { inspectImage } from '../src/shared/avatars';
+import { maximumImageBytes } from '../src/shared/image-limits';
 import { avatarJpeg, avatarPng, avatarWebp, avatarWebpWithMetadata, sourcePng } from './fixtures/avatars';
 import { harness, origin, session } from './helpers';
 
@@ -92,7 +93,7 @@ it('rejects unsafe, malformed, oversized, wrongly typed and non-normalized uploa
         [bytes(avatarJpeg), 'image/jpeg', 400],
         [bytes(avatarPng), 'image/webp', 400],
         [bytes(sourcePng), 'image/png', 400],
-        [new Uint8Array(maximumAvatarBytes + 1), 'image/webp', 413],
+        [new Uint8Array(maximumImageBytes + 1), 'image/webp', 413],
     ] as const) expect((await avatarRequest(cookie, data, client.bindings, { 'Content-Type': type })).status).toBe(expected);
     expect((await env.AVATARS.list()).objects).toHaveLength(0);
     expect((await session(client, cookie))!.user.image).toBeNull();

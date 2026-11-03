@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { createAuth } from './auth';
 import type { Env } from './config';
 import { databaseRateLimit } from './rate-limit';
-import { avatarIdPattern, avatarMimeType, avatarSize, AvatarImageError, inspectImage, maximumAvatarBytes } from '../shared/avatars';
+import { avatarIdPattern, avatarMimeType, avatarSize, AvatarImageError, inspectImage } from '../shared/avatars';
+import { maximumImageBytes } from '../shared/image-limits';
 
 export const avatars = new Hono<{ Bindings: Env }>();
 
@@ -46,7 +47,7 @@ avatars.on(['POST', 'DELETE'], '/api/account/avatar', async (c) => {
     let image: string | null = null;
     if (uploading) {
         const bytes = new Uint8Array(await c.req.arrayBuffer());
-        if (bytes.length > maximumAvatarBytes) return c.json({ code: 'PAYLOAD_TOO_LARGE' }, 413);
+        if (bytes.length > maximumImageBytes) return c.json({ code: 'IMAGE_UPLOAD_TOO_LARGE' }, 413);
         let file: ReturnType<typeof inspectImage>;
         try { file = inspectImage(bytes); } catch (error) {
             if (error instanceof AvatarImageError || error instanceof RangeError) return c.json({ code: 'AVATAR_INVALID_IMAGE' }, 400);

@@ -1,6 +1,5 @@
 import { DOMParser, onErrorStopParsing } from '@xmldom/xmldom';
-
-export const maximumSvgBytes = 256 * 1024;
+import { maximumImageBytes } from './image-limits';
 
 function safeStyle(value: string): boolean {
     return !/\\|@import|@font-face|@(?:-webkit-)?keyframes|animation(?:-[a-z-]+)?\s*:/i.test(value)
@@ -8,7 +7,7 @@ function safeStyle(value: string): boolean {
 }
 export function parseSvg(bytes: Uint8Array) {
     const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    if (bytes.length > maximumSvgBytes || (source.match(/<[a-z]/gi)?.length ?? 0) > 5000 || /<!DOCTYPE|<!ENTITY/i.test(source)) throw new Error('Invalid SVG image');
+    if (bytes.length > maximumImageBytes || (source.match(/<[a-z]/gi)?.length ?? 0) > 5000 || /<!DOCTYPE|<!ENTITY/i.test(source)) throw new Error('Invalid SVG image');
     const document = new DOMParser({ onError: onErrorStopParsing }).parseFromString(source, 'image/svg+xml');
     if (document.documentElement?.localName !== 'svg' || document.documentElement.namespaceURI !== 'http://www.w3.org/2000/svg') throw new Error('Invalid SVG image');
     const nodes = [document.documentElement];

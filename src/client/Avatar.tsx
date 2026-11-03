@@ -6,7 +6,7 @@ import { useDataActions } from './data';
 import { useClearSecrets } from './page-state';
 import { ToolbarIcon } from './ToolbarIcon';
 import { ImagePicker } from './ImagePicker';
-import { avatarIdPattern, avatarSize, maximumAvatarBytes } from '../shared/avatars';
+import { avatarIdPattern, avatarSize } from '../shared/avatars';
 import { ErrorNotice, useFeedback } from './feedback';
 
 export function Avatar({ name, image, className }: { name: string; image?: string | null; className: string }) {
@@ -56,7 +56,7 @@ export function AvatarEditor({ name, image }: { name: string; image?: string | n
 
     return <>
         <div className="avatar-editor">
-            <ImagePicker inputLabel={t('avatar.file')} changeLabel={t('avatar.change')} editLabel={t('avatar.edit')} accept="image/png,image/jpeg,image/webp" busy={busy} outputSize={avatarSize} maximumBytes={maximumAvatarBytes} editorLabels={{ title: t('avatar.crop'), position: t('avatar.position'), preview: t('avatar.preview'), save: t('avatar.save') }} onSave={save} onError={actions.fail} onErrorChange={setError} onBusyChange={setBusy}>
+            <ImagePicker inputLabel={t('avatar.file')} changeLabel={t('avatar.change')} editLabel={t('avatar.edit')} accept="image/png,image/jpeg,image/webp" busy={busy} outputSize={avatarSize} editorLabels={{ title: t('avatar.crop'), position: t('avatar.position'), preview: t('avatar.preview'), save: t('avatar.save') }} onSave={save} onError={actions.fail} onErrorChange={setError} onBusyChange={setBusy}>
                 <Avatar name={name} image={image} className="profile-avatar" />
             </ImagePicker>
             <div className="avatar-description">
