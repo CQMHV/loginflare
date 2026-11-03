@@ -21,6 +21,7 @@ Account and management reads use these same-origin JSON endpoints:
 | `GET /api/admin/users` | Verified, active administrator | `id`, `username`, `email` | None |
 | `GET /api/admin/applications` | Verified, active administrator | `clientId`, `name` | `issuer` |
 | `GET /api/account/sessions` | Verified, active owner with a fresh session | None | `hasOtherSessions` |
+| `GET /api/account/applications` | Verified, active owner | None | None |
 
 The parameters are `limit`, `cursor`, and, for a lookup, the pair `lookupField` / `lookupValue`. The default limit is 20; accepted limits are integers from 1 to 100. User email and username lookups are normalized to lowercase. Application names match the complete stored name. Unknown parameters, duplicate parameters, unsupported fields, arbitrary sorts, offsets, and substring filters are rejected.
 
@@ -29,6 +30,7 @@ GET /api/admin/users?limit=20
 GET /api/admin/users?limit=20&lookupField=username&lookupValue=example_user
 GET /api/admin/applications?limit=20&lookupField=name&lookupValue=Example%20Web
 GET /api/account/sessions?limit=20
+GET /api/account/applications?limit=20
 ```
 
 Each list returns this shape, with endpoint-specific item fields:
@@ -43,13 +45,13 @@ Each list returns this shape, with endpoint-specific item fields:
 }
 ```
 
-Application list items contain only `clientId`, `name`, `type`, `disabled`, and `createdAt`. Configuration details and client-secret creation/rotation remain separate operations. User lists project the fields needed for the management table. Session items retain the owner's native session token for native revocation; responses are private and must not be logged or cached.
+Application management list items contain `clientId`, `name`, `type`, `disabled`, `createdAt` and ownership/status flags; administrator responses also include developer summaries. The account's authorized-application list contains only `clientId`, `name`, `scopes`, `authorizedAt` and `disabled`, read from an indexed per-user consent projection maintained by database triggers. Configuration details and client-secret creation/rotation remain separate operations. User lists project the fields needed for the management table. Session items retain the owner's native session token for native revocation; responses are private and must not be logged or cached.
 
 The native `/api/auth/admin/list-users` and `/api/auth/list-sessions` endpoints are closed. There is no legacy alias or total-count response. Native `/api/auth/revoke-session` and `/api/auth/revoke-other-sessions` remain the session mutation operations.
 
 Lists seek through descending `(createdAt, id)` indexes, or `(createdAt, clientId)` for applications, and read at most `limit + 1` result rows to determine the next boundary. Cursors are opaque HMAC-signed positions bound to the entity, owner, and exact lookup. Reuse the returned cursor with the same lookup; do not construct, edit, or transfer it between endpoints or users. Malformed or mismatched cursors return `INVALID_CURSOR`.
 
-The UI offers Previous, Next, and Return to latest and reports only the current page's size. It preserves the cursor and search in the URL across reloads and detail navigation. Submitting a changed lookup starts at the latest matching records. Lists are live reads, not database snapshots: concurrent edits and deletions can change visible records. Return to latest restarts from the current newest boundary.
+The paginated account and administrator views offer Previous, Next, and Return to latest and report only the current page's size. They preserve the cursor and applicable search in the URL across reloads and detail navigation. Submitting a changed lookup starts at the latest matching records. The developer workspace uses a bounded request to show all owned applications within the personal limit of 20 as cards, without search or pagination controls. Lists are live reads, not database snapshots: concurrent edits and deletions can change visible records. Return to latest restarts from the current newest boundary.
 
 `hasOtherSessions` is an independent existence check across the owner's active sessions. The ability to revoke other sessions does not depend on how many records happen to be on the current page. The current-session badge compares stable session IDs.
 

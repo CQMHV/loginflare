@@ -4,7 +4,7 @@ An open-source account and identity management system built for Cloudflare.
 
 [简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Application integration](docs/oauth.md) · [Architecture](docs/architecture.md) · [Scaling](docs/scaling.md)
 
-Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, R2, Email Service, Turnstile, and Workers Static Assets.
+Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, a developer center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, R2, Email Service, Turnstile, and Workers Static Assets.
 
 The maintainer currently runs a personal test instance for functional checks; this does not limit how independent deployments may be used. Its management console requires administrator access. Other users fork this repository, configure their own resources, and deploy their own instances. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
 
@@ -13,13 +13,13 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 ## Features
 
 - Register, verify email, resend verification, sign in with an email address or username, and sign out.
-- Configure Google, GitHub, OIDC and OAuth 2.0 connections; support passwordless registration, explicit linking and third-party reauthentication. See [Third-party sign-in](docs/social.md).
+- Configure Google, GitHub, Microsoft, Discord, X, Telegram, OIDC and OAuth 2.0 connections; support passwordless registration, explicit linking and third-party reauthentication. See [Third-party sign-in](docs/social.md).
 - Recover a forgotten password and change a known password.
 - Enable authenticator-based MFA (TOTP), save or reset one-use recovery codes, and verify email/username and OAuth sign-ins.
 - Update a display name and username, upload/crop/remove a profile photo, and manage active sessions.
 - Manage primary and secondary email addresses on a dedicated page, verify new addresses with codes, and choose the primary sign-in email.
 - Find users by exact ID, username, or primary email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
-- Register server Web and SPA clients through the administrator console, with exact redirects, consent, and client-secret rotation.
+- Create and manage your own server Web and SPA clients in the developer center, with exact redirects, consent, and client-secret rotation; administrators oversee all applications.
 - Configure an independent brand logo, brand name, theme source color and Material color scheme in the administrator console.
 - OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
 - English and Simplified Chinese pages, error messages, and transactional emails.
@@ -39,7 +39,7 @@ Administrators manage deployment-wide branding at `/en-us/admin/branding`. The l
 
 Profile photos use a private R2 bucket and Better Auth's existing `user.image` field. Choose a static JPG, PNG or WebP image up to 20 MiB in the account center, then drag, zoom or rotate it inside the circular crop frame. Mouse, touch and keyboard controls share the same preview. The initial/minimum zoom fills the crop frame exactly; dragging stays within the image bounds. The browser creates a 256-pixel square from the original and encodes the visible composition as WebP before upload; the Worker accepts only WebP, checks its dimensions and size and strips metadata. Header/profile photos, user management and OIDC `picture` claims share that address. Photo changes invalidate the existing account/admin caches across tabs. See [avatar storage and lifecycle](docs/architecture.md#avatars) and the [deployment prerequisites](docs/deployment.md).
 
-The account center and administrator console have separate layouts and navigation. Personal profile, emails, security and sessions stay in the account center; users, applications and branding stay in the administrator console. Administrators switch areas explicitly, and ordinary users cannot enter the console.
+The account center, developer center and administrator console use separate navigation. Profile, email, security, active sessions and authorized applications stay in the account center. Under **Authorized applications**, users review permissions and revoke an application's consent and OAuth credentials; using it again requires consent. Verified accounts create and configure their own applications in the developer center. The administrator console lists all applications and their developers, links to user management, and restricts or restores application access; its application details are read-only. Ordinary users cannot enter the administrator console.
 
 The interface follows Material Design 3 and uses **Material Web (`@material/web` 2.5.0)** Web Components inside React 19. Shared MD3 design tokens define the color, typography, shape, and interaction styles across authentication, account, and administrator pages. Roboto and Noto Sans SC variable fonts are bundled through pinned Fontsource packages and served from the instance, including the 400/500/700 weights used by Material. Character-range WOFF2 subsets use `font-display: optional`, with the common Roboto Latin subset preloaded. Fonts that arrive too late keep the current page on its system fallback instead of changing already visible text. Components and fonts do not depend on an external CDN.
 
@@ -88,7 +88,7 @@ The command requires an existing, verified account and is idempotent. Sign out a
 
 ## Scale and data operations
 
-User, application, and active-session lists use signed cursor pagination over indexed creation-time and ID keys. The interface offers Previous, Next, and Return to latest, reports only the current page's size, and preserves the cursor and exact search in the URL when opening details. It does not scan for an exact total or use an offset. Application search matches an exact client ID or complete name. The account and administrator list APIs are documented in the [scaling guide](docs/scaling.md).
+User, application, and active-session list APIs use signed cursor pagination over indexed creation-time and ID keys. The account-session and administrator list interfaces offer Previous, Next, and Return to latest, report only the current page's size, and preserve the cursor and exact search in the URL when opening details. They do not scan for an exact total or use an offset. Administrator application search matches an exact client ID or complete name. The developer workspace displays the owner's applications as cards, with a single creation entry when empty; its bounded request covers the personal limit of 20 applications. The account and administrator list APIs are documented in the [scaling guide](docs/scaling.md).
 
 D1 is the only implemented database backend. A million registered accounts describes stored data volume, not simultaneous users or an assured request rate. Validate the intended traffic, database size, email load, and Cloudflare plan limits before a public rollout. Hyperdrive or an external SQL backend would be a separate future integration, not an existing deployment option.
 
@@ -129,7 +129,9 @@ Passwords contain 8–128 characters. Registration-verification tokens expire af
 
 ## Connect another application
 
-Administrators create applications under **Applications**. Server applications use `client_secret_basic`; browser SPAs use `none` and never receive a secret. Both require authorization code + PKCE S256 and first-use consent. Discover the provider at `${AUTH_URL}/api/auth/.well-known/openid-configuration`.
+Sign in with a verified account, switch to **Developer center → My applications**, and create a server Web or SPA client. Each developer may own up to 20 applications and can manage only their own. **Administration → Applications** provides a global read-only view and access restrictions, including for existing instance applications. It does not provide creation, configuration editing or secret rotation. A developer cannot remove an administrator's restriction.
+
+Register the external application's exact sign-in and sign-out callbacks in Loginflare, then configure that application's OIDC settings with the generated client ID, the issuer and, for server clients, the one-time secret. Server applications use `client_secret_basic`; browser SPAs use `none` and never receive a secret. Both require authorization code + PKCE S256 and first-use consent. Discover the provider at `${AUTH_URL}/api/auth/.well-known/openid-configuration`.
 
 See the [integration guide](docs/oauth.md) for callbacks, token lifetimes, security-event revocation, and the standard `openid-client` / `oidc-client-ts` examples. The examples use local HTTPS subdomains and locally generated certificates; no system trust-store changes or remote resources are required.
 

@@ -4,6 +4,12 @@
 
 ## Prerequisites
 
+Authorized-application management requires `0017_account_applications.sql` before switching to this Worker build. It projects existing consent into the account list and registers pending authorization codes for revocation, preserving issued grants and ordinary offline refresh behavior. No new binding or secret is required.
+
+Developer self-service requires `0016_developer_applications.sql`. Apply it before switching to this Worker build. Existing clients retain their IDs, secrets, grants and disabled state, with no developer owner assigned. The migration adds application ownership, independent owner/admin disabled controls and guards for owner management; no additional binding or secret is required.
+
+Apply all pending migrations before switching to the new Worker build. The Microsoft/Discord and X/Telegram presets require `0014_social_provider_presets.sql` and `0015_social_x_telegram.sql`, respectively. Configurable third-party icons require `0013_social_icons.sql`, which adds icon references and cleanup metadata. Icons share the existing `AVATARS` R2 binding; no new bucket or secret is required. See [Third-party sign-in](social.md#connection-icons).
+
 Before deploying the MFA-enabled build, apply `0011_mfa.sql` through the existing migration wrapper. It preserves existing accounts with MFA disabled and adds the two-factor credentials table. No additional bindings or secrets are needed. Keep `BETTER_AUTH_SECRET` stable: TOTP secrets and recovery codes are encrypted with it. Users manage MFA on the Security page; password recovery does not disable it.
 
 Deploy only after local tests and a production build succeed. Review the target account, environment, Worker, database ID, public URL, and sending domain before making any remote change.

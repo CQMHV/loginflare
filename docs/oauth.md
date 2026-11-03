@@ -6,7 +6,7 @@ Loginflare uses `@better-auth/oauth-provider` and Better Auth 1.7.13 to let inde
 
 ## Client contract
 
-Google, GitHub and generic OIDC/OAuth connections are configured once by the Loginflare administrator. Applications keep this same client contract and receive a stable Loginflare user ID as `sub`, regardless of the sign-in method. Loginflare completes local email verification and MFA before resuming authorization. See [Third-party sign-in](social.md) for account linking, email conflicts and recovery behavior.
+Google, GitHub, Microsoft, Discord, X, Telegram and generic OIDC/OAuth connections are configured once by the Loginflare administrator. Applications keep this same client contract and receive a stable Loginflare user ID as `sub`, regardless of the sign-in method. Loginflare completes local email verification and MFA before resuming authorization. See [Third-party sign-in](social.md) for account linking, email conflicts and recovery behavior.
 
 The issuer is `${AUTH_URL}/api/auth`, for example `https://identity.example.com/api/auth`. Set the public origin before registering applications and keep the issuer stable. Clients should discover endpoints from the issuer instead of constructing token URLs themselves.
 
@@ -19,11 +19,30 @@ The scope set is `openid profile email offline_access`. `openid` identifies the 
 
 This iteration does not provide client credentials, native/mobile clients, device authorization, dynamic registration, custom resource audiences, or application-specific API authorization. It uses opaque access tokens for UserInfo and RS256 ID Tokens through Better Auth's JWT plugin.
 
-The management console is administrator-only. Applications belong to the Loginflare instance and are shared between its administrators. The console creates and edits names, exact callback URLs, exact post-logout URLs, and permitted scopes; it disables/restores applications and rotates server client secrets. Client type is fixed at creation. Secret plaintext is shown once after creation or rotation, never returned in an application list.
+Verified, active accounts can create and manage their own applications under **Developer center → My applications** (`/en-us/developer/applications`). The workspace shows application cards with the name, type, status and client ID; opening a card leads to its configuration. An empty workspace offers one entry to create the first application. Ownership is assigned by the server from the current account and cannot be supplied or transferred in a request. Each developer may own up to 20 applications. Administrators manage all applications; existing instance applications remain administrator-managed and are not assigned to a developer by the migration.
 
-`GET /api/admin/applications` is a bounded management list, separate from the OAuth protocol. It accepts signed cursor pagination and an exact client-ID or complete-name lookup and returns only summary fields, ISO UTC creation times, page cursors, and the issuer. The console preserves its cursor and search in the URL and reports only the current page's size. Configuration details and mutations retain the provider's management APIs. Indexed callback-Origin and post-logout URI projections avoid enumerating the client registry during protocol checks; native exact redirect validation remains authoritative. See [Scaling](scaling.md) for the management API contract and local validation boundaries.
+The developer center creates and edits names, exact callback URLs, exact post-logout URLs and permitted scopes, disables/restores owned applications, and rotates server client secrets. Client type is fixed at creation. Secret plaintext is shown once after creation or rotation, never returned by detail or list reads. Owners cannot manage an application while an administrator has suspended it. Administrator suspension and owner disabling are independent: removing the administrator suspension does not undo the owner's own disabled setting.
+
+The Applications page in the administrator console provides global oversight: it lists all clients and their developer links, shows read-only configuration and restricts/removes restrictions. Creation, configuration editing, client-secret rotation and OIDC setup instructions are in the developer center, including when the developer is also an administrator. Existing instance registrations retain the administrator operations API for maintenance; the administrator page does not expose these editing workflows.
+
+Registration requires configuration on both sides:
+
+1. In Loginflare, create the client and register the external application's exact callback URLs and permitted scopes.
+2. In the external application, configure Loginflare as its OIDC provider using the issuer, generated client ID and, for a server client, the client secret. Keep that secret on the application's server. A SPA has no client secret.
+
+Developer management uses same-origin authenticated JSON at `/api/developer/applications`, with the same create/edit fields as the administrator API. `GET` lists only the owner's applications; `GET/PATCH /:clientId` reads/edits an owned application, and `POST /:clientId/rotate-secret` rotates its server secret. Unknown or other-owner IDs return not found. Signed pagination cursors bind the owner and lookup. `APPLICATION_LIMIT` reports the per-owner limit; `APPLICATION_SUSPENDED` rejects owner writes during an administrator suspension. Native and anonymous dynamic client-registration endpoints remain closed.
+
+Create and edit forms share their validation rules with the server. Invalid fields receive localized errors beside the input, with focus on the first invalid field and the draft retained. Validation responses include `code: "INVALID_INPUT"` and a `fieldErrors` map keyed by the editable field; values are stable error codes, without submitted URI credentials or raw provider messages.
+
+`GET /api/admin/applications` is the bounded administrator view of all instance and developer applications, separate from the OAuth protocol. Both management list APIs accept signed cursor pagination and an exact client-ID or complete-name lookup and return only summary fields, ISO UTC creation times, page cursors and the issuer. The administrator table preserves its cursor and search in the URL and reports only the current page's size. The developer workspace loads the owner's bounded list without search or pagination controls. Indexed callback-Origin and post-logout URI projections avoid enumerating the client registry during protocol checks; native exact redirect validation remains authoritative. See [Scaling](scaling.md) for the management API contract and local validation boundaries.
 
 Every application requires consent on first use. Expanded permissions require consent again. There is no trusted-application switch to skip consent.
+
+Users manage granted access at **Account center → Authorized applications** (`/en-us/account/applications`). This lists applications with stored consent, the approved permissions and the authorization date, including disabled applications. Creating a developer application does not authorize it to use the developer's account. Consent remains listed when tokens expire because it still allows subsequent sign-in without another approval.
+
+Revoking access requires confirmation and removes that user's consent for the selected application, revokes its access and refresh tokens, and prevents previously issued unredeemed codes from creating new tokens. Other applications and the user's Loginflare session remain usable. A later sign-in requires consent again and creates a new grant; old credentials remain revoked. An application's own session or an already verified ID Token may remain valid according to that application's policy.
+
+The same-origin account API is `GET /api/account/applications?limit=20&cursor=...`, with owner-bound signed cursors and summary fields `clientId`, `name`, `scopes`, `authorizedAt` and `disabled`. `POST /api/account/applications/:clientId/revoke` accepts an empty JSON object. Neither endpoint exposes token values or client secrets, and one user cannot inspect or revoke another user's authorization.
 
 Register exact HTTPS callback and post-logout URLs. Wildcards, fragments, embedded credentials, plain HTTP, and literal loopback hosts are rejected by the web-client policy. The provider distinguishes client authentication from URI application type: both Loginflare types use `application_type: web`. Local examples use HTTPS subdomains such as `web.localhost` without changing this policy or relabeling browser clients as native applications.
 
@@ -90,6 +109,7 @@ Ordinary logout and an explicit security revocation have different meanings. Log
 | Action | OAuth grant effect |
 | --- | --- |
 | Normal sign-out or RP-initiated logout | Retains native offline refresh authorization; it is not an account security revocation |
+| Revoke an authorized application | Removes its consent and revokes that user's existing grants for this application, including pending authorization codes; future use requires consent again |
 | Revoke a selected session | Permanently revokes grants originating from that session |
 | Revoke other sessions or change password | Revokes grants from other sessions, including offline grants whose original session already ended; grants from the current session remain |
 | Password reset | Revokes all of the user's OAuth grants |
