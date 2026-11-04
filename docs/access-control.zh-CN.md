@@ -19,6 +19,8 @@ Loginflare 沿用授权码和刷新令牌流程，为业务 API 签发绑定资�
 
 业务角色与 Loginflare 的本站 `admin`、`user` 管理角色相互独立。名称为「管理员」的业务角色不会授予后台管理权限；本站管理员以用户身份访问业务 API 时，同样需要获得业务权限。
 
+服务之间访问 API 时，管理员将业务权限 ID 分配给独立的机器角色，再把机器角色分配给机器应用。机器角色维护自己的资源关联和 scope 上限，不使用用户角色或浏览器会话，令牌 subject 表示机器而非用户。客户端凭据及生命周期规则见[机器身份](management-api.zh-CN.md)；下文人类用户的授权码流程继续执行原有同意和 MFA 检查。
+
 ## 请求资源令牌
 
 继续使用应用当前的 OIDC SDK、授权码和 S256 PKCE，在授权请求中增加资源及业务 scope：
@@ -101,7 +103,7 @@ API 仍需自行执行对象级规则。例如 `orders:read` 允许读取订单�
 
 `GET /api/admin/audit-logs` 使用签名游标，支持按 `event`、`outcome`、`actorUserId`、`targetUserId`、`clientId` 精确查询；`GET /api/admin/audit-logs/:id` 读取单个事件。普通用户及应用所有者身份不授予日志读取权限。访问控制管理的变更和审计记录在同一事务内写入。
 
-审计保留 90 天，纳入现有有界定时清理。日志不保存密码、验证码、Cookie 值、客户端密钥、Bearer 令牌及完整 OAuth、邮件验证地址，与采样的 Worker 请求诊断日志分开。本轮使用 D1 存储事件，不增加 Webhook、外部日志导出或机器身份管理 API。
+审计保留 90 天，纳入现有有界定时清理。日志不保存密码、验证码、Cookie 值、客户端密钥、Bearer 令牌及完整 OAuth、邮件验证地址，与采样的 Worker 请求诊断日志分开。人类操作者使用 `actorUserId`，机器自动化使用 `actorClientId`，后者也支持精确查询。[版本化管理 API](management-api.zh-CN.md)通过独立机器 scope 提供相应访问控制管理和审计读取。本轮使用 D1 存储事件，不增加 Webhook 或完整外部日志导出流水线。
 
 ## 升级与验收
 

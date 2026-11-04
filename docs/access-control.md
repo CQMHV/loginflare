@@ -19,6 +19,8 @@ An identifier is an exact HTTPS URI without a query, fragment, or embedded crede
 
 Business roles are independent of Loginflare's built-in `admin` and `user` administration roles. A business role named `Administrator` does not allow entry to the Loginflare console. A Loginflare administrator needs a business permission assignment to use a protected business API as a user.
 
+For service-to-service access, administrators assign business permission IDs to separate machine roles and give those roles to machine applications. Machine roles maintain their own resource links and scope ceiling; they do not reuse a user's role or browser session. The token's subject identifies the machine rather than a person. See [machine identities](management-api.md) for client credentials and lifecycle rules. Human authorization-code flows below retain their existing consent and MFA checks.
+
 ## Request a resource token
 
 Keep using the application's OIDC SDK and authorization code with S256 PKCE. Add the resource and required business scopes to the authorization request:
@@ -101,7 +103,7 @@ Resource access tokens default to a 300-second lifetime, configurable from 60 to
 
 `GET /api/admin/audit-logs` uses signed cursor pagination and exact lookup fields `event`, `outcome`, `actorUserId`, `targetUserId` and `clientId`; `GET /api/admin/audit-logs/:id` reads one event. Ordinary users and developer application ownership do not grant audit access. Access-management mutations and their audit rows are written together.
 
-Audit logs retain events for 90 days and join the existing bounded scheduled cleanup. Records do not contain passwords, verification codes, cookie values, client secrets, bearer tokens or full OAuth/verification URLs. They remain separate from sampled Worker request diagnostics. This release stores events in the instance's D1 database and does not add webhook delivery, external log exports or a machine-authenticated management API.
+Audit logs retain events for 90 days and join the existing bounded scheduled cleanup. Records do not contain passwords, verification codes, cookie values, client secrets, bearer tokens or full OAuth/verification URLs. They remain separate from sampled Worker request diagnostics. Human actors use `actorUserId`; machine automation uses `actorClientId`, also available as an exact lookup. The [versioned Management API](management-api.md) exposes these access-management operations and audit reads with distinct machine scopes. This release stores events in the instance's D1 database and does not add webhook delivery or an external log-export pipeline.
 
 ## Upgrade and validate
 

@@ -14,10 +14,11 @@ The issuer is `${AUTH_URL}/api/auth`, for example `https://identity.example.com/
 | --- | --- | --- | --- |
 | Server Web | `client_secret_basic` | Application server only | Authorization code with PKCE S256 |
 | SPA | `none` | No client secret | Authorization code with PKCE S256 |
+| Machine | `client_secret_basic` | Trusted automation server only | Client credentials with one resource and assigned machine scopes |
 
 The identity scope set is `openid profile email offline_access`. `openid` identifies the user, `profile` permits profile claims, `email` permits email claims, and `offline_access` requests renewable access. Administrator-managed API resources add business permission scopes through explicit application/resource links and user business-role assignments. Loginflare console administrator roles are not business permissions and are not added to identity claims. An ID Token describes the authenticated identity; it is not a bearer credential for an application's business API.
 
-Requests without a business resource use opaque access tokens for UserInfo and RS256 ID Tokens through Better Auth's JWT plugin. A request with a registered `resource` uses a native signed resource access token, scoped to that API and the user's permissions. See [API access control](access-control.md) for configuration, resource/refresh parameters, immediate authorization checks and the [Workers/Hono example](../examples/worker-api/README.md). Client credentials, native/mobile clients, device authorization and dynamic registration remain outside this release.
+Human sign-in requests without a business resource use opaque access tokens for UserInfo and RS256 ID Tokens through Better Auth's JWT plugin. A request with a registered `resource` uses a native signed resource access token, scoped to that API and the user's permissions. See [API access control](access-control.md) for configuration, resource/refresh parameters, immediate authorization checks and the [Workers/Hono example](../examples/worker-api/README.md). Separately administrator-created [machine applications](management-api.md) use native client credentials and machine roles, without human consent, ID Tokens or refresh tokens. Native/mobile clients, device authorization and dynamic registration remain outside this release.
 
 Verified, active accounts can create and manage their own applications under **Developer center → My applications** (`/en-us/developer/applications`). The workspace shows application cards with the name, type, status and client ID; opening a card leads to its configuration. An empty workspace offers one entry to create the first application. Ownership is assigned by the server from the current account and cannot be supplied or transferred in a request. Each developer may own up to 20 applications. Administrators manage all applications; existing instance applications remain administrator-managed and are not assigned to a developer by the migration.
 
@@ -36,7 +37,7 @@ Create and edit forms share their validation rules with the server. Invalid fiel
 
 `GET /api/admin/applications` is the bounded administrator view of all instance and developer applications, separate from the OAuth protocol. Both management list APIs accept signed cursor pagination and an exact client-ID or complete-name lookup and return only summary fields, ISO UTC creation times, page cursors and the issuer. The administrator table preserves its cursor and search in the URL and reports only the current page's size. The developer workspace loads the owner's bounded list without search or pagination controls. Indexed callback-Origin and post-logout URI projections avoid enumerating the client registry during protocol checks; native exact redirect validation remains authoritative. See [Scaling](scaling.md) for the management API contract and local validation boundaries.
 
-Every application requires consent on first use. Expanded permissions require consent again. There is no trusted-application switch to skip consent.
+Every login application requires user consent on first use. Expanded permissions require consent again. There is no trusted-application switch to skip consent. Machine access instead requires an administrator-assigned machine role and scope ceiling; a Web or SPA registration cannot opt itself into client credentials.
 
 Users manage granted access at **Account center → Authorized applications** (`/en-us/account/applications`). This lists applications with stored consent, the approved permissions and the authorization date, including disabled applications. Creating a developer application does not authorize it to use the developer's account. Consent remains listed when tokens expire because it still allows subsequent sign-in without another approval.
 
@@ -90,6 +91,7 @@ The exact pinned provider source uses the following defaults. These are upper to
 | --- | --- |
 | Authorization code | 600 seconds |
 | Access token | 3,600 seconds |
+| Machine resource access token | At most 300 seconds, without a refresh token |
 | ID Token | 36,000 seconds |
 | Refresh token | 2,592,000 seconds |
 | Refresh replay allowance | 0 seconds |
