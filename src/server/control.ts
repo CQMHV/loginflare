@@ -189,8 +189,10 @@ export async function releasePermit(db: D1Database, permit: Permit): Promise<voi
 }
 export async function enterMaintenance(db: D1Database, buildId: string, sessionHash?: string, buildTime = 0): Promise<ControlRecord> {
     const task = crypto.randomUUID();
-    const statements = [db.prepare(`UPDATE "lfControl" SET mode='draining',taskId=?,targetBuildId=?,targetBuildTime=?,revision=revision+1
-        WHERE id=1 AND mode='ready' AND cleanupPending=0 AND owner IS NULL AND (buildId=? OR buildTime<?)`).bind(task, buildId, buildTime, buildId, buildTime)];
+    const statements = [db.prepare(`UPDATE "lfControl" SET mode='draining',taskId=?,targetBuildId=?,targetBuildTime=?,
+        owner=NULL,leaseUntil=0,generation=generation+1,revision=revision+1
+        WHERE id=1 AND mode='ready' AND cleanupPending=0 AND (owner IS NULL OR leaseUntil<=${nowSql})
+        AND (buildId=? OR buildTime<?)`).bind(task, buildId, buildTime, buildId, buildTime)];
     if (sessionHash) statements.push(db.prepare(`UPDATE "lfControlSession" SET taskId=? WHERE hash=? AND EXISTS
         (SELECT 1 FROM "lfControl" WHERE id=1 AND taskId=? AND mode='draining')`).bind(task, sessionHash, task));
     await db.batch(statements);

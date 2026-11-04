@@ -106,3 +106,22 @@ it('allows a nonconflicting recovery proof while uncertain R2 work continues to 
     await finishEffect(env.DB, lease, proof, 'done');
     await expect(drain(env.DB, lease)).rejects.toThrow('EXTERNAL_RESULT_UNCONFIRMED');
 });
+
+it('starts a new maintenance task after a completed executor leaves an expired lease, fencing its delayed commits', async () => {
+    const completed = await readControl(env.DB);
+    const old = await acquireLease(env.DB, completed.taskId);
+    // A live owner must still prevent another task from taking over.
+    expect(await enterMaintenance(env.DB, 'next', undefined, 1)).toMatchObject({ mode: 'ready', taskId: completed.taskId });
+    await env.DB.prepare('UPDATE "lfControl" SET leaseUntil=0 WHERE id=1').run();
+    const next = await enterMaintenance(env.DB, 'next', undefined, 1);
+    expect(next.mode).toBe('draining');
+    expect(next.taskId).not.toBe(completed.taskId);
+    expect(next.generation).toBeGreaterThan(old.generation);
+    expect(next.owner).toBeNull();
+    await expect(fencedBatch(env.DB, old, [env.DB.prepare('INSERT INTO "controlFixture" VALUES (?)').bind('late')]))
+        .rejects.toThrow('EXECUTION_LEASE_LOST');
+    const current = await acquireLease(env.DB, next.taskId);
+    await releaseLease(env.DB, old);
+    expect((await readControl(env.DB)).owner).toBe(current.owner);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "controlFixture"').first('n')).toBe(0);
+});
