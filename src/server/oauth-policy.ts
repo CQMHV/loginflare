@@ -70,6 +70,7 @@ export function createOAuthPolicy(env: Env) {
                 return {};
             },
             async accessToken(input) {
+                if (input.grantType === 'client_credentials' && !input.user) return {};
                 await requireEligibleUser(input.user?.id, input.grantType === undefined);
                 await requireAvailableCode(input);
                 return {};

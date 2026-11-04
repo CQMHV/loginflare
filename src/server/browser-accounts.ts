@@ -340,6 +340,7 @@ export async function browserRequest(request: Request, env: Env, next: (request:
     const connectorTest = /^\/api\/admin\/social-connections\/[a-f0-9-]{36}\/test$/.test(url.pathname);
     const socialStart = url.pathname === '/api/auth/social/start' || connectorTest;
     if (!url.pathname.startsWith('/api/')) return next(request);
+    if (url.pathname === '/api/management/v1' || url.pathname.startsWith('/api/management/v1/')) return next(request);
     if (anonymousAuthPaths.has(url.pathname) || ['/api/health', '/api/config', '/api/branding', '/api/social/providers', '/api/auth/jwks', '/api/auth/.well-known/openid-configuration', '/api/auth/.well-known/oauth-authorization-server', '/api/auth/oauth2/token', '/api/auth/oauth2/userinfo', '/api/auth/oauth2/introspect', '/api/auth/oauth2/revoke'].includes(url.pathname)) return next(request);
     const headers = new Headers(request.headers);
     const extraCookies: string[] = [];

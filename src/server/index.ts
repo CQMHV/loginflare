@@ -19,6 +19,8 @@ import { databaseRateLimit } from './rate-limit';
 import { browserRequest, browserRoutes, signOutBrowserAccount } from './browser-accounts';
 import { accessManagement } from './access-management';
 import { auditLogs, auditRequestHeader, observeAudit } from './audit';
+import { machines } from './machines';
+import { managementApi } from './management-api';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -105,6 +107,8 @@ const privatePaths = new Set(['/update-user', '/verify-password', '/change-passw
 const app = new Hono<{ Bindings: Env }>();
 
 function logPath(path: string): string {
+    if (path.startsWith('/api/management/')) return '/api/management/v1/:resource';
+    if (path.startsWith('/api/admin/machines/')) return '/api/admin/machines/:resource';
     if (path === '/api/admin/audit-logs') return path;
     if (/^\/api\/admin\/audit-logs\/[^/]+$/.test(path)) return '/api/admin/audit-logs/:id';
     if (/^\/api\/admin\/access\/(resources|roles|permissions)$/.test(path)) return path;
@@ -197,6 +201,8 @@ app.get('/api/config', (c) => {
 app.route('/api/admin/applications', applications);
 app.route('/api/admin/access', accessManagement);
 app.route('/api/admin/audit-logs', auditLogs);
+app.route('/api/admin/machines', machines);
+app.route('/api/management/v1', managementApi);
 app.route('/api/browser', browserRoutes);
 app.route('/api/developer/applications', developerApplications);
 app.route('/api/account/applications', accountApplications);
@@ -306,7 +312,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|select-account|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections|admin\/access\/resources|admin\/access\/resources\/detail|admin\/access\/roles|admin\/audit-logs)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|select-account|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections|admin\/access\/resources|admin\/access\/resources\/detail|admin\/access\/roles|admin\/audit-logs|admin\/machines\/applications|admin\/machines\/applications\/detail|admin\/machines\/roles)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);

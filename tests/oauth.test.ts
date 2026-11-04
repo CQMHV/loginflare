@@ -370,8 +370,7 @@ describe('OAuth/OIDC protocol in the Workers runtime', () => {
         expect(discoveryResponse.status).toBe(200);
         const discovery = await discoveryResponse.json<Record<string, unknown>>();
         expect(discovery).toMatchObject({ issuer, authorization_endpoint: `${issuer}/oauth2/authorize`, token_endpoint: `${issuer}/oauth2/token`, jwks_uri: `${issuer}/jwks` });
-        expect(discovery.grant_types_supported).toEqual(expect.arrayContaining(['authorization_code', 'refresh_token']));
-        expect(discovery.grant_types_supported).not.toContain('client_credentials');
+        expect(discovery.grant_types_supported).toEqual(expect.arrayContaining(['authorization_code', 'refresh_token', 'client_credentials']));
         const tokens = await tokensFor(client, registered, cookie);
         expect(tokens.token_type.toLowerCase()).toBe('bearer');
         expect(tokens.access_token.split('.')).toHaveLength(1);

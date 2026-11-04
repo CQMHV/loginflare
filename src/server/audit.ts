@@ -8,6 +8,7 @@ import { createAuth } from './auth';
 import { databaseRateLimit } from './rate-limit';
 import { PaginationError, pageBoundary, pageResult, readPageInput } from './pagination';
 import { browserAccounts } from './browser-accounts';
+import type { MachinePrincipal } from './machine-policy';
 
 export const auditRetention = 90 * 24 * 60 * 60_000;
 export const auditRequestHeader = 'X-Loginflare-Request-ID';
@@ -15,6 +16,7 @@ export interface AuditEvent {
     event: string;
     outcome: 'success' | 'failure';
     actorUserId?: string | null;
+    actorClientId?: string | null;
     targetUserId?: string | null;
     clientId?: string | null;
     targetType?: string | null;
@@ -25,16 +27,17 @@ export interface AuditEvent {
 interface AuditRow extends AuditEvent {
     id: string; ipAddress: string | null; userAgent: string | null; createdAt: string;
 }
-const fields = '"id", "event", "outcome", "actorUserId", "targetUserId", "clientId", "targetType", "targetId", "reason", "requestId", "ipAddress", "userAgent", "createdAt"';
+const fields = '"id", "event", "outcome", "actorUserId", "actorClientId", "targetUserId", "clientId", "targetType", "targetId", "reason", "requestId", "ipAddress", "userAgent", "createdAt"';
 const text = (value: unknown, maximum = 255) => typeof value === 'string' && value.length > 0 && value.length <= maximum && !/[\u0000-\u001f\u007f]/.test(value) ? value : null;
 const code = (value: unknown) => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.:-]{0,99}$/.test(value) ? value : null;
 
 /** Only allowlisted event fields are persisted; request bodies and credentials never enter this schema. */
 export function auditStatement(env: Pick<Env, 'DB'>, event: AuditEvent, headers?: Headers): D1PreparedStatement {
     const now = Date.now();
-    return env.DB.prepare(`INSERT INTO "auditLog" (${fields}, "expiresAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    const actorClientId = text(event.actorClientId);
+    return env.DB.prepare(`INSERT INTO "auditLog" (${fields}, "expiresAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(crypto.randomUUID(), code(event.event) ?? 'operation', event.outcome,
-            text(event.actorUserId), text(event.targetUserId), text(event.clientId), code(event.targetType), text(event.targetId), code(event.reason),
+            actorClientId ? null : text(event.actorUserId), actorClientId, text(event.targetUserId), text(event.clientId), code(event.targetType), text(event.targetId), code(event.reason),
             text(event.requestId ?? headers?.get(auditRequestHeader), 100) ?? crypto.randomUUID(),
             text(headers?.get('CF-Connecting-IP'), 64), text(headers?.get('User-Agent'), 512), new Date(now).toISOString(), now + auditRetention);
 }
@@ -42,34 +45,44 @@ export async function writeAudit(env: Pick<Env, 'DB'>, event: AuditEvent, header
     await auditStatement(env, event, headers).run();
 }
 
-export const auditLogs = new Hono<{ Bindings: Env }>();
-auditLogs.onError((error, c) => {
-    if (error instanceof PaginationError) return c.json({ code: error.code }, 400);
-    throw error;
-});
-auditLogs.use('*', async (c, next) => {
-    if (c.req.method !== 'GET') return c.json({ code: 'METHOD_NOT_ALLOWED' }, 405);
-    const identity = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
-    if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
-    if (identity.user.role !== 'admin' || identity.user.banned || !identity.user.emailVerified) return c.json({ code: 'FORBIDDEN' }, 403);
-    const rate = await databaseRateLimit(c.env.DB).consume(`loginflare:audit-read:${identity.user.id}`, { window: 60, max: 100 });
-    if (!rate.allowed) { c.header('Retry-After', String(rate.retryAfter)); return c.json({ code: 'TOO_MANY_REQUESTS' }, 429); }
-    await next();
-});
-auditLogs.get('/', async (c) => {
-    const input = await readPageInput(new URL(c.req.url), c.env.BETTER_AUTH_SECRET, 'audit-logs', 'loginflare', ['event', 'outcome', 'actorUserId', 'targetUserId', 'clientId']);
-    const boundary = pageBoundary(input, 'id');
-    const filter = input.lookupField ? ` AND "${input.lookupField}" = ?` : '';
-    const rows = await c.env.DB.prepare(`SELECT ${fields} FROM "auditLog" WHERE "expiresAt" > ?${filter}${boundary.sql}
-        ORDER BY "createdAt" ${boundary.order}, "id" ${boundary.order} LIMIT ?`)
-        .bind(Date.now(), ...(input.lookupValue ? [input.lookupValue] : []), ...boundary.values, input.limit + 1).all<AuditRow>();
-    return c.json(await pageResult(rows.results, input, c.env.BETTER_AUTH_SECRET, (item) => ({ createdAt: item.createdAt, id: item.id })));
-});
-auditLogs.get('/:id', async (c) => {
-    if (!/^[a-f0-9-]{36}$/.test(c.req.param('id')) || new URL(c.req.url).search) return c.json({ code: 'INVALID_INPUT' }, 400);
-    const row = await c.env.DB.prepare(`SELECT ${fields} FROM "auditLog" WHERE "id" = ? AND "expiresAt" > ?`).bind(c.req.param('id'), Date.now()).first<AuditRow>();
-    return row ? c.json(row) : c.json({ code: 'AUDIT_LOG_NOT_FOUND' }, 404);
-});
+type AuditEnv = { Bindings: Env; Variables: { machine?: MachinePrincipal } };
+export function createAuditLogs(service = false) {
+    const auditLogs = new Hono<AuditEnv>();
+    auditLogs.onError((error, c) => {
+        if (error instanceof PaginationError) return c.json({ code: error.code }, 400);
+        throw error;
+    });
+    auditLogs.use('*', async (c, next) => {
+        if (c.req.method !== 'GET') return c.json({ code: 'METHOD_NOT_ALLOWED' }, 405);
+        if (service) {
+            if (!c.var.machine) return c.json({ code: 'UNAUTHORIZED' }, 401);
+            if (!c.var.machine.scopes.includes('management:audit:read')) return c.json({ code: 'FORBIDDEN' }, 403);
+            return next();
+        }
+        const identity = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
+        if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
+        if (identity.user.role !== 'admin' || identity.user.banned || !identity.user.emailVerified) return c.json({ code: 'FORBIDDEN' }, 403);
+        const rate = await databaseRateLimit(c.env.DB).consume(`loginflare:audit-read:${identity.user.id}`, { window: 60, max: 100 });
+        if (!rate.allowed) { c.header('Retry-After', String(rate.retryAfter)); return c.json({ code: 'TOO_MANY_REQUESTS' }, 429); }
+        await next();
+    });
+    auditLogs.get('/', async (c) => {
+        const input = await readPageInput(new URL(c.req.url), c.env.BETTER_AUTH_SECRET, 'audit-logs', service ? `machine:${c.var.machine!.clientId}` : 'loginflare', ['event', 'outcome', 'actorUserId', 'actorClientId', 'targetUserId', 'clientId']);
+        const boundary = pageBoundary(input, 'id');
+        const filter = input.lookupField ? ` AND "${input.lookupField}" = ?` : '';
+        const rows = await c.env.DB.prepare(`SELECT ${fields} FROM "auditLog" WHERE "expiresAt" > ?${filter}${boundary.sql}
+            ORDER BY "createdAt" ${boundary.order}, "id" ${boundary.order} LIMIT ?`)
+            .bind(Date.now(), ...(input.lookupValue ? [input.lookupValue] : []), ...boundary.values, input.limit + 1).all<AuditRow>();
+        return c.json(await pageResult(rows.results, input, c.env.BETTER_AUTH_SECRET, (item) => ({ createdAt: item.createdAt, id: item.id })));
+    });
+    auditLogs.get('/:id', async (c) => {
+        if (!/^[a-f0-9-]{36}$/.test(c.req.param('id')) || new URL(c.req.url).search) return c.json({ code: 'INVALID_INPUT' }, 400);
+        const row = await c.env.DB.prepare(`SELECT ${fields} FROM "auditLog" WHERE "id" = ? AND "expiresAt" > ?`).bind(c.req.param('id'), Date.now()).first<AuditRow>();
+        return row ? c.json(row) : c.json({ code: 'AUDIT_LOG_NOT_FOUND' }, 404);
+    });
+    return auditLogs;
+}
+export const auditLogs = createAuditLogs();
 
 async function responseBody(response: Response): Promise<Record<string, unknown> | null> {
     if (!response.headers.get('content-type')?.includes('application/json') || !response.body) return null;
@@ -150,16 +163,27 @@ export function auditAuthentication(env: Env): BetterAuthPlugin {
             const candidateTarget = path.startsWith('/admin/') ? text(ctx.body?.userId) : !failed && path === '/sign-up/email' ? text(returnedUser?.id) : actorUserId;
             let targetUserId = candidateTarget ? await env.DB.prepare('SELECT "id" FROM "user" WHERE "id" = ?').bind(candidateTarget).first<string>('id') : null;
             let clientId: string | null = null;
+            let actorClientId: string | null = null;
+            const machineGrant = path === '/oauth2/token' && ctx.body?.grant_type === 'client_credentials';
             if (path === '/oauth2/token' && !failed && payload) {
                 // These are token responses produced by the provider itself, never caller-supplied JWTs.
                 for (const value of [payload.access_token, payload.id_token]) {
                     if (typeof value !== 'string' || value.length > 16_384 || value.split('.').length !== 3) continue;
                     try {
                         const claims = decodeJwt(value);
-                        clientId ??= text(claims.client_id) ?? (typeof claims.aud === 'string' ? text(claims.aud) : null);
-                        if (text(claims.sub)) targetUserId = await env.DB.prepare('SELECT "id" FROM "user" WHERE "id" = ?').bind(claims.sub!).first<string>('id');
+                        clientId ??= text(claims.client_id) ?? text(claims.azp) ?? (typeof claims.aud === 'string' ? text(claims.aud) : null);
+                        if (machineGrant) {
+                            // Machine `sub` is a client ID, even when a human
+                            // account happens to have the same identifier.
+                            if (claims.lf_principal === 'machine' && clientId && claims.sub === clientId)
+                                actorClientId = await env.DB.prepare('SELECT "clientId" FROM "machineApp" WHERE "clientId" = ?').bind(clientId).first<string>('clientId');
+                        } else if (text(claims.sub)) targetUserId = await env.DB.prepare('SELECT "id" FROM "user" WHERE "id" = ?').bind(claims.sub!).first<string>('id');
                     } catch { /* Opaque tokens do not contain audit identity claims. */ }
                 }
+            }
+            if (machineGrant) {
+                actorUserId = null; targetUserId = null;
+                if (!failed && actorClientId) event = 'machine.token_issued';
             }
             if (path.startsWith('/oauth2/')) {
                 const candidate = clientId ?? text(ctx.body?.client_id) ?? text(ctx.query?.client_id);
@@ -168,7 +192,7 @@ export function auditAuthentication(env: Env): BetterAuthPlugin {
             }
             if (['/sign-in/email', '/sign-in/username'].includes(path) && (failed || challenge)) { actorUserId = null; targetUserId = null; }
             const nativeError = redirectError ?? (error ? error.body?.code ?? error.body?.error : payload?.code ?? payload?.error);
-            const entry: AuditEvent = { event, outcome: failed ? 'failure' : 'success', actorUserId, targetUserId, clientId,
+            const entry: AuditEvent = { event, outcome: failed ? 'failure' : 'success', actorUserId, actorClientId, targetUserId, clientId,
                 reason: failed ? code(nativeError) ?? (response ? `HTTP_${response.status}` : 'AUTHENTICATION_FAILED') : null,
                 targetType: path.startsWith('/admin/') ? 'user' : path.startsWith('/oauth2/') ? 'application' : null,
                 targetId: path.startsWith('/admin/') ? targetUserId : clientId };

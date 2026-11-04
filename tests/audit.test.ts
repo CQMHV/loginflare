@@ -20,7 +20,7 @@ afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 
 async function rows(event?: string) {
     return (await env.DB.prepare(`SELECT * FROM "auditLog" ${event ? 'WHERE "event" = ?' : ''} ORDER BY "createdAt", "id"`)
-        .bind(...(event ? [event] : [])).all<{ id: string; event: string; actorUserId: string | null; targetUserId: string | null; targetId: string | null;
+        .bind(...(event ? [event] : [])).all<{ id: string; event: string; actorUserId: string | null; actorClientId: string | null; targetUserId: string | null; targetId: string | null;
             requestId: string; outcome: string; reason: string | null; createdAt: string; expiresAt: number }>()).results;
 }
 
@@ -53,6 +53,35 @@ it('persists only the audit schema and rolls back an audit append with its faile
         env.DB.prepare('INSERT INTO "auditLog" ("id") VALUES (?)').bind('violates-required-fields'),
     ])).rejects.toThrow();
     expect(await rows('resource.rollback')).toHaveLength(0);
+});
+
+it('records machine and human actors separately and retains machine references independently of application lifecycle', async () => {
+    await writeAudit(env, { event: 'machine.operation', outcome: 'success', actorClientId: 'verified-machine', actorUserId: 'unrelated-human', targetType: 'resource', targetId: 'resource-id' });
+    expect(await rows('machine.operation')).toEqual([expect.objectContaining({ actorClientId: 'verified-machine', actorUserId: null, targetUserId: null })]);
+    await writeAudit(env, { event: 'machine.updated', outcome: 'success', actorUserId: 'verified-administrator', clientId: 'managed-machine', targetType: 'machine', targetId: 'managed-machine' });
+    expect(await rows('machine.updated')).toEqual([expect.objectContaining({ actorUserId: 'verified-administrator', actorClientId: null })]);
+    const now = new Date().toISOString();
+    await expect(env.DB.prepare(`INSERT INTO "auditLog" ("id", "event", "outcome", "actorUserId", "actorClientId", "requestId", "createdAt", "expiresAt")
+        VALUES (?, 'invalid.principal', 'success', 'human', 'machine', ?, ?, ?)`)
+        .bind(crypto.randomUUID(), crypto.randomUUID(), now, Date.now() + auditRetention).run()).rejects.toThrow();
+    expect(await rows('invalid.principal')).toHaveLength(0);
+});
+
+it('filters and paginates machine actors without accepting a cursor from a different principal filter', async () => {
+    const client = harness(), cookie = await client.administrator();
+    for (let index = 0; index < 3; index++) await writeAudit(env, { event: 'machine.operation', outcome: 'success', actorClientId: 'filtered-machine', targetId: `resource-${index}` });
+    await writeAudit(env, { event: 'machine.operation', outcome: 'success', actorClientId: 'other-machine' });
+    const response = await client.request('/api/admin/audit-logs?limit=2&lookupField=actorClientId&lookupValue=filtered-machine', { cookie });
+    expect(response.status, await response.clone().text()).toBe(200);
+    const page = await response.json<{ items: { id: string; actorClientId: string; actorUserId: null }[]; pageInfo: { nextCursor: string } }>();
+    expect(page.items).toHaveLength(2);
+    for (const item of page.items) expect(item).toMatchObject({ actorClientId: 'filtered-machine', actorUserId: null });
+    const next = await client.request(`/api/admin/audit-logs?${new URLSearchParams({ limit: '2', lookupField: 'actorClientId', lookupValue: 'filtered-machine', cursor: page.pageInfo.nextCursor })}`, { cookie });
+    expect((await next.json<{ items: unknown[] }>()).items).toHaveLength(1);
+    const foreign = await client.request(`/api/admin/audit-logs?${new URLSearchParams({ lookupField: 'actorUserId', lookupValue: 'filtered-machine', cursor: page.pageInfo.nextCursor })}`, { cookie });
+    expect(foreign.status).toBe(400);
+    const detail = await client.request(`/api/admin/audit-logs/${page.items[0].id}`, { cookie });
+    expect(await detail.json()).toMatchObject({ actorClientId: 'filtered-machine', actorUserId: null });
 });
 
 it('records successful and failed password sign-in without credentials, mail links, or caller-provided request IDs', async () => {
