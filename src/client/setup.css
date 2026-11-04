@@ -1,0 +1,43 @@
+.setup-shell { min-height: 100dvh; max-width: 1060px; margin: 0 auto; padding: 32px clamp(20px, 5vw, 64px) 64px; }
+.setup-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 56px; }
+.setup-brand { display: inline-flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 500; }
+.setup-brand img { width: 36px; height: 36px; }
+.setup-heading { max-width: 700px; margin-bottom: 32px; }
+.setup-heading h1 { font-size: clamp(30px, 5vw, 42px); letter-spacing: -.8px; line-height: 1.2; margin-bottom: 16px; }
+.setup-heading p, .setup-card > p { color: var(--md-sys-color-on-surface-variant); }
+.setup-grid { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 36px; align-items: start; }
+.setup-steps { position: sticky; top: 24px; display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
+.setup-steps li { display: flex; align-items: center; gap: 10px; min-height: 48px; color: var(--md-sys-color-on-surface-variant); }
+.setup-steps [aria-current='step'] { color: var(--md-sys-color-primary); font-weight: 500; }
+.setup-step-number { width: 28px; height: 28px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; font-size: 12px; }
+[aria-current='step'] .setup-step-number { background: var(--md-sys-color-primary-container); border-color: transparent; color: var(--md-sys-color-on-primary-container); }
+.setup-content { display: grid; gap: 20px; min-width: 0; }
+.setup-card { border: 1px solid var(--md-sys-color-outline-variant); border-radius: 24px; padding: clamp(20px, 4vw, 32px); display: grid; gap: 20px; background: var(--md-sys-color-surface-container-low); }
+.setup-card h2 { font-size: 22px; line-height: 1.3; }
+.setup-card form { display: grid; gap: 18px; }
+.setup-label { display: grid; gap: 8px; font-size: 13px; font-weight: 500; }
+.setup-label input, .setup-label select { width: 100%; min-height: 52px; padding: 14px; font: inherit; font-weight: 400; color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface); border: 1px solid var(--md-sys-color-outline); border-radius: 8px; }
+.setup-label input:focus-visible, .setup-label select:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.setup-label input:disabled, .setup-label select:disabled { opacity: .6; }
+.setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.setup-button { min-height: 44px; border-radius: 24px; padding: 10px 22px; font: inherit; font-weight: 500; cursor: pointer; border: 1px solid transparent; background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.setup-button.secondary { background: transparent; border-color: var(--md-sys-color-outline); color: var(--md-sys-color-primary); }
+.setup-button:focus-visible { outline: 3px solid var(--md-sys-color-primary); outline-offset: 3px; }
+.setup-button:disabled { cursor: default; opacity: .45; }
+.setup-check { display: flex; align-items: flex-start; gap: 12px; }
+.setup-check input { width: 20px; height: 20px; flex-shrink: 0; margin: 2px 0; accent-color: var(--md-sys-color-primary); }
+.setup-notice { border-radius: 16px; padding: 16px 20px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); overflow-wrap: anywhere; }
+.setup-notice.error { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.setup-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 20px; margin: 0; font-size: 12px; }
+.setup-details dt { color: var(--md-sys-color-on-surface-variant); }
+.setup-details dd { margin: 0; overflow-wrap: anywhere; }
+.setup-meta { margin-top: 24px; color: var(--md-sys-color-on-surface-variant); }
+.setup-captcha { min-height: 65px; }
+@media (max-width: 700px) {
+    .setup-header { margin-bottom: 36px; }
+    .setup-grid { grid-template-columns: 1fr; gap: 24px; }
+    .setup-steps { position: static; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+    .setup-steps li { flex-direction: column; align-items: center; gap: 6px; text-align: center; font-size: 11px; }
+    .setup-details { grid-template-columns: 1fr; gap: 4px; }
+    .setup-details dd { margin-bottom: 8px; }
+}

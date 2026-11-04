@@ -1,4 +1,17 @@
-export type Env = Cloudflare.Env;
+export type Env = Omit<Cloudflare.Env, 'APP_ENV' | 'AUTH_URL' | 'EMAIL_FROM' | 'TURNSTILE_SITE_KEY'> & {
+    APP_ENV: 'development' | 'staging' | 'production';
+    AUTH_URL: string;
+    EMAIL_FROM: string;
+    TURNSTILE_SITE_KEY: string;
+    CF_SETUP_TOKEN?: string;
+    CF_VERSION_METADATA?: { id: string; tag?: string; timestamp?: string };
+    LOGINFLARE_WORKER_NAME?: string;
+    LOGINFLARE_ACCOUNT_ID?: string;
+    LOGINFLARE_BUILD_ID?: string;
+    LOGINFLARE_BUILD_TIME?: string;
+    LOGINFLARE_CONFIG_REVISION?: string;
+    LOGINFLARE_TRANSITION?: string;
+};
 
 export class ConfigurationError extends Error {}
 

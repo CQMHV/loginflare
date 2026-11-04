@@ -2,184 +2,131 @@
 
 [English](deployment.md) · [中文 README](../README.zh-CN.md)
 
-## 前置条件
+## 首次部署
 
-部署机器身份和版本化管理 API 前应用 `0021_machines.sql` 与 `0022_machine_audit.sql`，新增机器角色、权限映射、凭据代次、受保护的管理资源和独立机器审计操作者。主 Worker 复用现有 D1、签名密钥和清理任务，不转换已有用户或登录应用；每个可信自动化服务分别配置机器凭据。[定时管理 Worker](../examples/management-worker/README.md)是默认只读的独立示例，不随 Loginflare 自动部署。
+默认流程是 **部署按钮 → 网页配置 → 验证邮箱并创建管理员**。Cloudflare 创建 D1、私有 R2 桶并部署单个 Worker；安装向导管理公开地址、发信和 Turnstile 配置。完整流程的真实 Cloudflare 隔离验收仍是发布条件，不能以本地测试替代。
 
-部署 API 访问控制与审计版本前应用 `0019_api_access.sql` 和 `0020_audit_logs.sql`。业务资源、权限及角色复用 D1 与原生 OAuth 资源表；审计使用相同数据库及现有有界定时清理，保留 90 天。主 Worker 无须新增绑定或密钥。保持 issuer 稳定，检查资源与应用的显式关联及用户业务角色，并验证移除角色后的实时令牌检查。独立的 [Workers/Hono API 示例](../examples/worker-api/README.md)另行配置 issuer、资源标识和机密客户端密钥，不随主 Worker 自动部署。
+1. 准备 Cloudflare 账号、同账号中已经接入 Cloudflare DNS 的域名和 Workers Paid。向任意用户发送事务邮件还需要开通 Cloudflare Email Service；Email Routing 本身不提供这项能力。[Email Service](https://developers.cloudflare.com/email-service/)
+2. 在用户个人资料的 API Tokens 中创建专用 **User API Token**，按下表限定账号及 Zone。不要创建 Account API Token：官方目前将 Turnstile 标为不兼容该类型。[令牌兼容性](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)
+3. 点击部署按钮，选择账号和资源名称，仅在首次安装时提供 `CF_SETUP_TOKEN`。它与 Cloudflare Builds 自身用于上传代码的部署凭据不同。
 
-部署浏览器多账号版本前应用 `0018_browser_accounts.sql`，新增浏览器账号登记、有效账号的原子名额、短期认证流程以及会话、密码和停用清理钩子。复用现有 D1 绑定与服务端密钥，无须新增资源或密钥。本版本统一使用新的浏览器登记流程，不提供旧单会话的自动登记路径。发布前在隔离环境验证多标签页、MFA、账号选择和应用发起的退出，并保持现有定时清理任务启用，以回收过期账号提示和认证流程。
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
-已授权应用管理需要 `0017_account_applications.sql`，请在切换到该 Worker 版本前应用。迁移将已有同意记录映射到账户列表，并为待兑换授权码登记撤销状态，保留已签发授权和普通离线刷新行为，无须新增绑定或密钥。
+4. 构建命令使用 `pnpm build:deploy`，部署命令使用 `pnpm run deploy`；Node.js 使用 24，pnpm 使用 `packageManager` 指定版本。部署命令只上传代码，不执行数据库迁移或重新上传初始机密文件。
+5. 打开部署地址的 `/setup`。再次输入专用令牌验证归属，准备数据库，选择公开 HTTPS 地址与发信域名，再继续向导配置域名、邮件和正式 Turnstile。默认可使用 `workers.dev` 地址；自定义域名需要额外的目标 Zone 路由写权限。公开地址属于另一个 Origin 时，请前往该地址并重新输入安装令牌；跳转链接不携带凭据。
+6. 创建候选管理员并查收邮件。验证链接可以在其他设备打开；验证后返回原先已授权的安装页面，下载并私密保存恢复资料，再完成安装。邮件链接本身不能授予管理员权限。
+7. 在页面确认临时凭据已清理，然后在 Cloudflare 撤销专用安装令牌。后续代码部署不再需要这个令牌。
 
-开发者自助接入需要 `0016_developer_applications.sql`，请在切换到该 Worker 版本前应用。原有客户端的 ID、密钥、授权和停用状态保留，且不会被分配给开发者。迁移增加应用所有权、独立的所有者/管理员停用控制及管理写入约束，无须新增绑定或密钥。
+向导默认建议单独的发信子域，例如 `notify.example.com`。DNS 冲突会停止该步骤，不会覆盖既有记录。套餐开通、域名转入及服务资格等账号操作由用户在控制台完成，返回向导后复检。
 
-切换到新 Worker 版本前，先应用全部待执行迁移。Microsoft/Discord 和 X/Telegram 预设分别需要 `0014_social_provider_presets.sql`、`0015_social_x_telegram.sql`。第三方登录自定义图标需要 `0013_social_icons.sql`，用于保存图标引用和清理元数据。图标复用现有 `AVATARS` R2 绑定，无须新增存储桶或密钥，详见[第三方登录](social.zh-CN.md#连接器图标)。
+### 令牌权限
 
-部署包含 MFA 的版本前，须通过已有迁移封装应用 `0011_mfa.sql`。迁移保留原有账号，默认关闭 MFA，并添加双重验证凭据表。无须新增绑定或密钥，须保持 `BETTER_AUTH_SECRET` 稳定，因为它用于加密 TOTP 密钥和恢复码。用户在「安全」页管理 MFA，找回密码不会关闭 MFA。
-
-本地测试和生产构建通过后再部署。任何远程变更前，核对目标账号、环境、Worker、数据库 ID、公开地址和发信域名。
-
-- 具有 Workers Paid 的 Cloudflare 账号，用于向任意用户发送事务邮件。
-- 由 Cloudflare DNS 管理且已接入 Cloudflare Email Sending 的域名。
-- 发信域名所需的 SPF、DKIM 和退信 DNS 记录。
-- 覆盖部署域名的正式 Turnstile 组件及密钥。
-- staging 与 production 分别使用独立 D1 数据库、私有 R2 头像桶、Worker 密钥和公开地址。
-- 安装并登录 Cloudflare CLI（`cf`），具有目标账号的适当权限。
-
-Email Sending 当前为 Beta，生产上线前应核对最新的 [Email Service 官方说明](https://developers.cloudflare.com/email-service/)。仅配置 Email Routing 不等于可以向任意收件人发送事务邮件。
-
-本仓库不会在安装依赖、本地开发、测试或构建时自动创建远程资源或部署。
-
-## 配置环境
-
-维护者的测试实例位于 `https://loginflare-staging.cqmhv.workers.dev`，使用独立 D1 和 Turnstile 组件，production 尚未配置。独立使用者配置自己的环境。通过 Cloudflare Workers Builds 部署时，设置 `CLOUDFLARE_ENV=staging`、`NODE_VERSION=24` 和 `PNPM_VERSION=11.25.0`，构建命令使用 `pnpm build`，部署命令使用 `node scripts/database.mjs migrate --env staging && pnpm exec wrangler deploy`。迁移封装完成数据预处理与结构检查后才允许继续部署，构建令牌需要目标环境的 Worker 部署和 D1 迁移、查询权限。认证与 Turnstile 密钥保存为运行时 Worker Secrets，不放入构建变量或仓库。升级已有实例时须另外核实远程构建配置。
-
-已提交的 `wrangler.jsonc` 包含本地配置以及独立的 `staging`、`production` 节。构建远程环境前，先填入其 D1 数据库 ID 和公开配置。本地密钥放在被忽略的 `.dev.vars` 中；`pnpm setup:local` 可安全生成，已有文件不会覆盖。远程认证和 Turnstile 密钥使用 Worker Secrets，不写进已提交配置。不同环境的认证密钥应独立，常规重新部署时保持稳定。
-
-保留 `nodejs_compat` 和 `global_fetch_strictly_public` 两个兼容标志。OIDC 退出会请求 issuer 的 `/api/auth/jwks` 验证 ID Token hint；后一个标志让同区请求经过公开 Worker 入口，即使使用较新的兼容日期也需要显式配置。参见 [Cloudflare 请求路由说明](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public)。
-
-| 配置 | 位置 | 用途 |
+| 接口操作 | 权限 | 资源范围 |
 | --- | --- | --- |
-| `APP_ENV` | 对应环境的 `vars` | `development`、`staging` 或 `production` |
-| `AUTH_URL` | 对应环境的 `vars` | 完整应用 Origin，远程使用 HTTPS，不带结尾斜杠 |
-| `EMAIL_FROM` | 对应环境的 `vars` | 使用已验证域名的发件人 |
-| `TURNSTILE_SITE_KEY` | 对应环境的 `vars` | 部署域名对应的公开站点密钥 |
-| `BETTER_AUTH_SECRET` | Worker Secret | 至少 32 字符的随机认证密钥 |
-| `TURNSTILE_SECRET_KEY` | Worker Secret | 与正式站点密钥配对的私密密钥 |
-| `DB` | 对应环境的 D1 绑定 | 独立数据库 ID 与迁移目录 |
-| `AVATARS` | 对应环境的 R2 绑定 | 该环境保存头像与品牌 Logo 的私有存储桶 |
-| `EMAIL` | 对应环境的 `send_email` 绑定 | Cloudflare Email Service 发信能力 |
+| 查询账号 | Account Settings Read | 目标账号 |
+| 查询 Worker/版本/部署/机密名称，更新和删除机密、写入恢复挑战 | Workers Scripts Read/Write，或对应 Workers Editor | 目标账号；可用时进一步限到当前 Worker |
+| 确认 Zone 归属 | Zone Read | 选择的目标 Zone |
+| 查询、创建所需 DNS 记录 | DNS Read/Write | 选择的目标 Zone |
+| 绑定自定义域名 | Worker 编辑权限及 Workers Routes Write | 当前 Worker 和每个受影响 Zone |
+| 查询、创建、配置 Turnstile | Turnstile Sites Read/Write | 目标账号 |
+| 查询、配置发信子域 | Email Sending 读取及编辑 | 目标账号和发信 Zone；最小权限映射需要隔离实测确认 |
 
-可信 Origin 取自 `AUTH_URL`，应与公开 Origin 一致。必需配置缺失时明确报错，不跳过邮箱验证或防机器人校验。开发环境以外会拒绝 Turnstile 测试密钥。
+Worker 编辑权限不能代替自定义域名需要的 Zone > Workers Routes > Write。[Workers 权限](https://developers.cloudflare.com/workers/authorization/workers/)
 
-开发默认使用本地模拟绑定。远程邮件绑定会发送真实邮件，本地测试不需要启用。
+D1/R2 资源创建由部署工具的凭据完成；安装和迁移通过绑定访问，不要求安装令牌另有 D1/R2 管理权限。不授予账号令牌创建、删除其他 Worker 等无关权限。发信接口的最小权限尚未得到完整公开文档确认，不能将推测的权限清单当作已经验收。
 
-远程部署前先创建该环境的私有头像桶，并在 `r2_buckets` 填入 `bucket_name`。staging 声明使用 `loginflare-staging-avatars`，production 名称仍为占位值；声明本身不会创建存储桶。保持桶的公开访问关闭，由 Worker 的 `/avatars/:id` 路由返回头像。开发绑定使用 `remote: false` 和 `.cloudflare/state`，浏览器/规模测试使用各自的隔离目录。部署账号需能绑定目标桶。本次功能的本地开发和测试不会创建远程桶。
+## 配置归属与再次部署
 
-同一私有桶也存储 `branding/` 下的品牌 Logo，由 `/branding/logos/:id` 返回受限图片响应。切换至此 Worker 版本前，应应用全部迁移，包括 `0009_branding.sql` 与 `0010_branding_color_scheme.sql`。品牌名、Logo、主题色与配色方案在管理后台维护，不使用环境变量配置。迁移时现有品牌设置会获得调性点缀（Tonal Spot）方案，保持原有生成配色。
+`wrangler.jsonc` 是公开发布模板；`wrangler.local.jsonc` 只用于本地开发。迁移前的维护者配置应移至 Git 忽略的私有配置文件，核实资源后显式选择；不得将公共模板的新资源名直接用于已有实例。
 
-## Cloudflare CLI
+仓库管理入口、兼容标志、资产、D1/R2/邮件绑定、Cron 声明和环境类别。安装向导通过 Worker Secrets 管理：
 
-资源管理优先使用 `cf`。当前锁定的 `cf` 开发/构建路径要求 Beta 版 Vite 插件，因此项目使用稳定 Cloudflare Vite 插件和 Wrangler 完成开发、构建、类型生成和部署。该版 `cf` 尚未实现本地 D1 查询，故本地提权使用 Wrangler，远程迁移和查询使用 `cf`。
+- `AUTH_URL`：固定公开 Origin，也决定 `${AUTH_URL}/api/auth` issuer。
+- `EMAIL_FROM`：已经接入发信服务的域名地址。
+- `TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY`：配对的正式组件密钥。
+- `BETTER_AUTH_SECRET`：实例认证及加密密钥，常规部署保持不变。
+- `LOGINFLARE_CONFIG_REVISION`：向导写入的配置修订号。
 
-先发现合适的资源命令并阅读对应帮助，再执行：
+这些字段不能同时出现在发布模板的 `vars` 中，空字符串也不允许。发布校验会拒绝冲突；`keep_vars` 不是防覆盖的唯一依据。根 `.dev.vars.example` 仅声明首次安装令牌，本地示例为 `.dev.vars.local.example`。安装令牌不是后续部署的 required secret。
 
-```powershell
-cf cli search "apply SQL database migrations from local files"
-cf cli search "deploy a worker project"
-cf cli search "set a worker secret"
-```
+配置更新不保证重启运行实例。页面区分应用构建、Worker 运行时版本和配置修订号，并等待目标运行配置被观察到；不以代码提交号判断配置生效。[绑定更新](https://developers.cloudflare.com/workers/runtime-apis/bindings/#making-changes-to-bindings)
 
-命令发现查询保持匿名，不加入账号标识、域名、邮箱、资源名或令牌。
+认证密钥的唯一选定值先以加密恢复材料持久化，再写入 Worker Secrets。请求超时后必须先查询实际状态；不能通过重新生成密钥重试。安装恢复资料包含认证材料，应保存在 Git 之外。全部配置生效并完成安装后，临时恢复材料和安装凭据进入持久化清理流程。
 
-使用仓库提供的封装执行迁移，确保不会跳过数据预处理和结构检查。核实目标后：
+Cloudflare Builds 只部署用户仓库中的代码，不会自动替用户同步上游。更新代码后，待执行的数据库升级在维护页面推进。再次部署不得更换 D1/R2 绑定、issuer、认证密钥或重放初始机密文件。
 
-```powershell
-node scripts/database.mjs migrate --env staging
-node scripts/database.mjs check --env staging
-```
-
-`pnpm db:migrate`、`pnpm db:check` 均针对 `.cloudflare/state` 中的本地数据。远程操作明确使用 `node scripts/database.mjs ... --env staging|production`；封装解析并打印所选数据库 ID，底层 `cf` 迁移使用该 ID。初始化本地数据库时不要使用远程目标。`check` 仅检查，不修复；`migrate` 预处理数据、应用已提交 SQL 并检查最终结果。
-
-构建与部署分开。Cloudflare Vite 插件要求在**构建时**选择目标环境，不能靠部署时的 `--env` 参数选择。使用 PowerShell 构建 staging：
+本地检查发布构建：
 
 ```powershell
-$env:CLOUDFLARE_ENV = 'staging'
-pnpm build
+pnpm install --frozen-lockfile
+pnpm build:deploy
+pnpm run deploy --dry-run
 ```
 
-检查生成的 Worker 配置及绑定数据库 ID，然后在不上传的情况下检查：
+实际上传仅在核对目标后运行 `pnpm run deploy`。常规构建、依赖安装和本地测试不创建远程资源。
+
+## 已有实例首次切换
+
+旧部署说明采用“迁移后部署”。当前实现对 legacy/adoption 实例固定返回 `VERIFIED_LEGACY_DRAIN_REQUIRED`，没有强行解除入口；平台排空证据机制验证前，不允许旧实例迁移。以下是必须先验收的停服及过渡流程，不能视为当前已经放行的操作，也不能直接沿用旧 Builds 命令。
+
+1. 暂停云端生产、非生产和预览构建触发器，核对实际部署命令，处理已经排队或正在执行的旧任务。先将云端命令改为只构建、部署，并收回旧构建凭据的业务数据库写权限。
+2. 部署不改变业务结构的过渡版本：建立独立控制表，开放维护与恢复入口，关闭业务准入并停用 Cron。过渡版本配置需明确启用过渡模式；普通新安装不要启用。
+3. 核对旧版本入口全部停止接收新调用，并取得旧 HTTP 请求、延后工作、定时任务以及已发出 D1/R2 操作的终态证据。过渡版本不能追溯登记旧版本工作；固定等 3–5 秒、流量切换或没有新日志都不是充分证据。
+4. 私密保存恢复点、对应 R2 对象和认证密钥，核对原密钥能够解密现有材料，再通过已验证的切换流程进入独占迁移。
+5. 全部迁移及检查通过后恢复业务和 Cron，最后恢复已经修正的构建触发器。
+
+旧版本排空判据必须在真实 Cloudflare 环境确认。无法证明时保持停服并阻止 DDL，不提供忽略排空记录的快捷开关。此前实例不会因管理员数量变化重新进入首次安装。
+
+## 网页升级与维护恢复
+
+访问 `/maintenance`。正常服务期间或新构建刚关闭准入、尚未越过排空屏障时，可用管理员会话换取绑定升级任务的短期维护会话；业务结构不可用时，可用新的临时 User API Token 恢复。恢复必须向当前实例可信绑定的 Worker 写入一次性临时挑战，由目标运行时观察后签发会话。令牌有效、只读 Worker 或能写其他 Worker 均不足以证明权限。挑战不轮换已有认证密钥。
+
+新构建会自动关闭业务准入。即使已经显示 draining，网页和 CLI 仍须保存当前升级任务的备份确认，才能推进排空与迁移；上一次任务的确认不会沿用。备份确认不代替旧版本排空的终态证据。
+
+安装及维护入口先于浏览器账号、品牌和普通认证初始化运行。控制表有独立引导和协议版本；旧库、迁移中途失败和未知业务迁移不会使维护入口依赖最新业务表。
+
+网页和 CLI 共用持久化维护协议：原子关闭新准入，登记请求及后台任务，排空 D1 与 R2 工作，再获取独占执行代次。执行锁默认 90 秒，执行期间每 15 秒尝试续期，使用数据库时间。接管增加代次；每个写事务在同事务校验代次，旧执行者不能继续提交。R2 和 Cloudflare 配置操作先登记意图，结果不明时阻止冲突执行；租约过期不能证明它们已经结束。
+
+安装会话使用随机令牌及数据库摘要，删除安装令牌不会丢失清理恢复能力。管理员提权、永久完成标记与 `cleanup_pending` 同事务提交；之后只允许授权主体重试清理，不重新开放配置和首个管理员创建。`waitUntil()` 仅能辅助推进，不能保证清理完成。[后台执行限制](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil)
+
+### 迁移和 CLI
+
+历史 SQL 保持原样。构建迁移包识别完整触发器与顶层事务；一个迁移文件的全部语句、执行代次校验、迁移登记及进度提交必须处于同一个 D1 `batch()` 事务。保留外键延迟指令的原有顺序，不能按分号切开触发器或为分批拆散文件事务。
+
+可以按文件、预处理批次和检查批次推进。确认 `MIGRATION_FILE_ROLLED_BACK` 时，当前文件已整体回滚，之前成功文件仍已提交；`MIGRATION_COMMIT_UNCONFIRMED` 或 `UPGRADE_STEP_FAILED` 表示提交结果待确认，须先核对持久化进度，不可盲目重试。其他检查失败保持维护状态。页面分别显示失败文件、当前文件和此前已提交列表，不将整轮未完成误称为整轮回滚。大规模回填超出平台限制时停止，保持维护并说明所需专项迁移，不能假设 CLI 可绕过 D1 限制。[批量事务](https://developers.cloudflare.com/d1/worker-api/d1-database/) · [执行限制](https://developers.cloudflare.com/d1/platform/limits/)
+
+远程 CLI 通过同一维护接口推进，凭据只从私密文件读取：
 
 ```powershell
-pnpm exec wrangler deploy --dry-run
+node scripts/database.mjs check --url https://accounts.example.com --cookie-file private-cookie.txt
+node scripts/database.mjs migrate --url https://accounts.example.com --cookie-file private-cookie.txt --backup-confirmed
 ```
 
-明确需要部署后，上传同一份 staging 构建：
+也可用 `--token-file private-token.txt` 进行写挑战恢复。Cookie 文件保存原始 Cookie 请求头；两个文件都不要提交 Git。只有明确核对可信原密钥、且没有旧密文可验证时，才可使用 `--confirm-key`；错误密文不能通过该参数跳过。旧 `--env staging|production` 远程直写方式不再用于升级。
+
+## 本地开发、备份与发布验收
 
 ```powershell
-pnpm exec wrangler deploy --secrets-file .dev.vars.staging
-Remove-Item Env:CLOUDFLARE_ENV
+pnpm install --frozen-lockfile
+pnpm setup:local
+pnpm db:migrate
+pnpm db:check
+pnpm dev
 ```
 
-`.dev.vars.staging` 必须保存真实的 staging 认证与 Turnstile 密钥，不能使用本地示例的测试密钥；该文件已被 Git 忽略。生产环境需要重新以 `CLOUDFLARE_ENV=production` 构建，并使用生产密钥文件，不能复用本地或 staging 构建。参见 [Cloudflare 环境说明](https://developers.cloudflare.com/workers/vite-plugin/reference/cloudflare-environments/)。
+访问 `http://localhost:5173`。本地配置、模拟发信和测试 Turnstile 与公开模板分开，不发送真实邮件。`pnpm build` 在本地选择本地配置；`pnpm build:deploy` 及 Workers Builds 选择公开发布配置。手动选择私有部署配置时使用 `LOGINFLARE_CONFIG`，并在构建阶段确认目标。
 
-预先创建并核实目标 D1 数据库，将 ID 填入对应配置；部署时不要接受意外的资源创建。真实密钥不得写入已提交脚本或可能被历史记录保存的命令行参数。临时密钥文件应妥善保护，不再需要时清理。
+`pnpm db:backup` 保存本地 D1/R2 快照与必要配置；联合备份前先停止写入。远程升级前另行核实 D1 恢复点、匹配的 R2 对象及认证密钥。Worker 回滚不撤销数据库和对象变化，恢复旧数据库不能重新生成已删除对象。完整远程备份系统不属于此安装向导。
 
-## 数据库与管理员初始化
+发布必须通过 `pnpm check`、相关浏览器测试，并在明确授权的真实 Cloudflare 隔离资源完成以下验收：
 
-启动新 Worker 版本前，先备份已核实的目标，通过封装应用已提交迁移，并要求结构检查通过。常规更新不得以新空数据库替换已有数据库。远程执行前审阅 SQL，并保留该数据库的恢复点。
+- 全新部署、配置生效、跨设备邮箱验证及首个管理员完成；普通注册和未授权提权被拒绝。
+- 已有实例首次停服切换，旧命令、请求和 R2 清理均得到处理；证据不足时拒绝升级。
+- 网页/CLI 竞争、租约过期接管、旧执行者恢复均不会并发迁移或越代提交。
+- 迁移失败后维护页仍可用；只读令牌、其他 Worker 令牌及重放挑战被拒绝。
+- 完成提交后中断、删除令牌成功但响应丢失均可恢复，安装不会重开。
+- 长度合法但与旧密文不匹配的密钥阻止升级。
+- 对 `0014`、`0015` 的表复制、删除、重命名、触发器及登记步骤注入失败，当前文件整体回滚，之前文件保持已提交。
+- 删除并撤销安装令牌后，再次自动构建部署仍保留资源、配置和认证凭据。
 
-升级前暂停应用注册、回调编辑及其他涉及预处理数据的写入，保持停写窗口直到预处理、迁移、结构与 URI 索引检查、新 Worker 切换全部完成。Origin 回填同时比较原回调和元数据，遇到并发变更会中止；检查会双向核对派生元数据和索引登记。这些检查只负责发现不一致，不会自行暂停写入或完成版本切换。已有远程构建触发器须单独检查和更新，仓库不会自动建立停写窗口。
-
-OAuth/OIDC 在 `0002_oauth.sql`、`0003_oauth_policy.sql` 中增加上游数据表和 `oauthGrantPolicy` 安全状态，启动新版前须应用两份迁移。保留已有账号、签名密钥、授权策略状态与稳定的 `BETTER_AUTH_SECRET`；删除策略记录不是支持的撤销或恢复方式。外部应用开始接入后，保持 `${AUTH_URL}/api/auth` issuer 稳定。
-
-用户名登录通过 `0004_username.sql` 增加可为空、按大小写不敏感规则保持唯一的 `user.username`，部署包含用户名功能的版本前须先应用。已有账号仍可通过邮箱登录，再在个人资料中自行选择用户名；迁移不会代为生成或占用用户名。
-
-邮箱管理通过 `0005_emails.sql` 增加 `userEmail` 和 `emailChallenge`，部署包含此功能的版本前须先应用。迁移登记已有主邮箱并保留验证状态；主辅邮箱共享大小写不敏感的唯一约束，数据库触发器保护注册、主邮箱切换和验证凭据失效。每个账号最多管理十个邮箱；未验证辅助邮箱占用超过一天后，再次添加该地址时可回收。密码恢复改为向指定的已验证绑定邮箱发送验证码，再交给原生流程重置密码，原公开重置链接请求入口已移除。不需要新增绑定或密钥。
-
-`0006_management.sql` 增加游标列表索引和 OAuth URI 投影表，`0007_maintenance.sql` 增加过期索引与授权策略回收边界。应用 SQL 前，封装通过 URL 解析器生成回调 Origin 元数据，并分批将原生日期列统一为 ISO UTC 文本。无效的已有回调必须先处理。最终检查按已提交迁移核对表、列、索引和触发器，检查外键及回调元数据与索引一致性，并拒绝无效原生日期存储；不会悄悄修复结构差异，也不在请求中支持两种日期格式。自动部署必须保留预处理和结构检查步骤。
-
-五分钟 Cron Trigger 在现有 Worker 和 D1 上执行有界过期清理，无需新增资源或密钥。凭据使用时仍检查有效期，清理延后不会使过期令牌恢复有效。关注 `database_maintenance` 和 `database_maintenance_failed` 事件；持续积压或预算耗尽时应评估流量和数据库，不应删除仍有效的授权策略记录。运行边界参见[规模说明](scaling.md)。
-
-在管理后台创建生产应用，配置精确 HTTPS 登录回调和退出回跳地址。服务端客户端密钥应存放在相应应用受保护的服务端配置中，不能发给浏览器应用。SPA 已注册 Origin 只获得协议接口的 CORS 权限，不获得账号或管理接口访问权。刷新与安全撤销规则参见[应用接入](oauth.zh-CN.md)。
-
-先通过普通注册创建预期的管理员账号，并完成邮箱验证。运维命令必须针对指定的已存在、已验证账号；账号不存在或邮箱未验证时应失败。重复执行已成功的提权没有额外影响。
-
-本地开发：
-
-```powershell
-pnpm admin:promote -- --email admin@example.com --local
-```
-
-远程执行时，明确指定环境，并核实打印出的数据库目标：
-
-```powershell
-pnpm admin:promote -- --email admin@example.com --env staging
-```
-
-仅当目标确实是生产时使用 `--env production`。未指定目标、数据库 ID 为占位符或无效、远程复用本地数据库 ID 时，命令会拒绝执行。远程查询使用参数绑定；本地 Wrangler 查询使用正确转义的 SQL 字面量，以无 shell 的结构化进程参数传递。不能把“第一个注册用户”作为自动初始化管理员的依据。提权后退出并重新登录。
-
-## 备份与恢复
-
-本地快照命令：
-
-```powershell
-pnpm db:backup
-```
-
-可在后面传入输出目录，默认创建 `work/backups/` 下的新时间戳目录。头像和数据库联合备份前先停止开发服务。Node SQLite 备份 API 保存 D1 与 R2 元数据，manifest 同时记录 `r2/` 下的文件，以及本地配置、托管测试凭据和存在时的 `.dev.vars`。备份包含认证材料和用户文件，应私密保存并保持在 Git 之外。该命令不会访问远程存储。
-
-恢复时先停止开发服务，将现有状态移至旁边保留，再把 manifest 的 `d1/`、`r2/` 文件分别恢复到 `.cloudflare/state/v3/d1`、`.cloudflare/state/v3/r2`，配置和凭据恢复到各自原相对路径。认证密钥和 Origin 应与数据库匹配，因为签名私钥经过加密，已有凭据属于该实例。使用 `pnpm db:check` 检查后再打开；恢复演练仅在隔离目录进行，不覆盖正在使用的开发数据库。
-
-staging 或 production 迁移前，通过 D1 支持的恢复机制记录并核实恢复点。单独备份相匹配的 R2 对象，并覆盖计划保留的数据库恢复窗口：恢复旧头像引用不能重新生成已被维护任务删除的文件。联合备份与恢复时协调写入和清理任务。实际远程恢复前核对数据库、存储桶和恢复点。本地 SQLite 快照不等于远程 D1/R2 备份，Worker 版本回滚也不会撤销数据库结构、数据或文件变化。
-
-## staging 验收
-
-上线第三方登录前，使用现有迁移流程应用 `0012_social_connections.sql`，无须新增绑定。保留 `BETTER_AUTH_SECRET` 以解密客户端密钥和未完成流程。按[连接器配置指引](social.zh-CN.md)在管理控制台配置并测试，向提供方登记完整回调。真实平台验收需要运营者提供自己的客户端凭据与测试账号。停用连接器会使未完成流程及后续登录失效，已建立会话保留；停用唯一提供方前，应确认用户有其他可用登录方式或已验证邮箱恢复渠道。连接器故障不影响本地密码登录。
-
-使用自己控制的邮箱与账号。真实邮件送达检查是明确的远程操作，不属于本地自动化测试。
-
-将构建提升到生产前检查：
-
-1. 两套小写语言路径均可访问。根入口优先采用已保存或账号偏好，再匹配浏览器语言，无法匹配时回退英文；显式语言网址不被覆盖，跳转保留查询参数和片段。
-2. 注册、验证邮箱、登录、密码恢复和本地化邮件链接可用。
-3. 普通用户不能访问管理接口或修改受保护的账号字段。
-4. 停用普通用户会使旧会话失效，恢复后需重新登录。
-5. Turnstile 使用正式密钥并拒绝无效挑战，限流数据在请求间持久保存。
-6. API 失败返回安全的 JSON，而非 SPA HTML 或内部诊断信息。
-7. 日志不含密码、会话令牌、完整验证或重置链接。
-8. Web、SPA 应用能够发现配置的 issuer、完成同意并通过 PKCE S256 交换授权码；无效回调和未注册 Origin 被拒绝。
-9. 重置密码、主动撤销会话和停用账号使相应 OAuth 授权失效；恢复账号不会恢复旧授权。普通中心退出保留原生离线刷新语义。
-10. 常规部署后签名密钥仍可使用；日志不包含 OAuth 授权码、客户端密钥或令牌。
-11. 迁移与结构检查通过，游标翻页和精确检索可用，定时任务报告有界清理且不删除仍有效的凭据。
-12. 头像上传、裁剪、替换与移除可用，UserInfo 仅在 `profile` 范围返回 `picture`，外部应用可显示头像，旧文件清理不会删除当前头像。
-
-## 更新与故障排查
-
-- 部署经过测试的锁文件和迁移集合，不对生产运行未经审阅的结构生成。
-- 判断部署工具不可用之前，先检查登录、权限、目标账号和网络连接。
-- 远程写入结果不确定时，先查询资源或版本的实际状态，再决定是否重试。
-- 邮件发送失败时检查 Email Service 配置与投递记录，不跳过邮箱验证。
-- Turnstile 不可用或配置错误时修复配置，不能伪造验证成功。
-- Worker 回滚不会自动撤销 D1 结构或数据变化，切换版本前核对数据库兼容性。
+发布阻断的待验证项包括：旧版本与 R2 排空的可靠证据、发信接口最小权限、Secrets/挑战更新的实际观测与恢复、部署按钮及再次发布的绑定保留行为，以及远程 D1 历史迁移回滚和执行限制。每项记录官方依据或隔离实测证据；本地通过不代表完整线上流程已验证。

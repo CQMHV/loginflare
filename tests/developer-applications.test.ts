@@ -5,6 +5,7 @@ import app from '../src/server/index';
 import { harness, origin, session } from './helpers';
 import { applicationPrivileges } from '../src/server/application-policy';
 import { applicationCreateSchema, applicationFieldErrors } from '../src/shared/application-validation';
+import { interceptSql } from './sql-race';
 
 const developerPath = '/api/developer/applications';
 const settings = { name: 'Developer website', type: 'web', redirectUris: ['https://developer.example.test/callback'], postLogoutRedirectUris: ['https://developer.example.test/'], scopes: ['openid', 'profile', 'email'] };
@@ -213,28 +214,7 @@ it('uses owner-seeking indexes for ordering and exact-name lookup', async () => 
 });
 
 function beforeClientWrite(database: D1Database, mutation: () => Promise<void>) {
-    let invoked = false;
-    const proxy = new Proxy(database, { get(target, property) {
-        if (property === 'prepare') return (sql: string) => {
-            const statement = target.prepare(sql);
-            if (!/^(?:insert into|update) ["`]?oauthClient["`]? /i.test(sql)) return statement;
-            return new Proxy(statement, { get(prepared, operation) {
-                if (operation === 'bind') return (...values: Parameters<D1PreparedStatement['bind']>) => {
-                    const bound = prepared.bind(...values);
-                    return new Proxy(bound, { get(query, method) {
-                        if (method === 'all' || method === 'run') return async () => {
-                            if (!invoked) { invoked = true; await mutation(); }
-                            return method === 'all' ? query.all() : query.run();
-                        };
-                        const member = Reflect.get(query, method); return typeof member === 'function' ? member.bind(query) : member;
-                    } });
-                };
-                const member = Reflect.get(prepared, operation); return typeof member === 'function' ? member.bind(prepared) : member;
-            } });
-        };
-        const member = Reflect.get(target, property); return typeof member === 'function' ? member.bind(target) : member;
-    } });
-    return { proxy, invoked: () => invoked };
+    return interceptSql(database, /^\s*(?:insert into|update) ["`]?oauthClient["`]? /i, mutation);
 }
 async function racingRequest(client: Client, cookie: string, path: string, body: Record<string, unknown>, method: string, mutate: () => Promise<void>) {
     const database = beforeClientWrite(env.DB, mutate), context = createExecutionContext();

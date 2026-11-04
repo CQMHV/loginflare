@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { decodeJwt } from 'jose';
 import app from '../src/server/index';
 import { harness, origin, session } from './helpers';
+import { interceptSql } from './sql-race';
 
 const audience = 'https://access-races.example.test', callback = 'https://client.example.test/callback';
 type Client = ReturnType<typeof harness>;
@@ -130,17 +131,11 @@ it.each(['role-permission', 'permission-record', 'user-role', 'resource'] as con
 it('rechecks administrator authority inside the write transaction after its HTTP authorization was revoked', async () => {
     const f = await fixture(), administrator = (await session(f.client, f.administrator))!;
     let revoked = false;
-    const database = new Proxy(f.client.bindings.DB, { get(target, property) {
-        if (property === 'batch') return async (statements: D1PreparedStatement[]) => {
-            if (!revoked) {
-                revoked = true;
-                await env.DB.prepare('UPDATE "user" SET "role" = \'user\' WHERE "id" = ?').bind(administrator.user.id).run();
-            }
-            return target.batch(statements);
-        };
-        const value = Reflect.get(target, property, target);
-        return typeof value === 'function' ? value.bind(target) : value;
-    } });
+    const race = interceptSql(f.client.bindings.DB, /^\s*INSERT INTO "apiAccessWrite"/i, async () => {
+        revoked = true;
+        await env.DB.prepare('UPDATE "user" SET "role" = \'user\' WHERE "id" = ?').bind(administrator.user.id).run();
+    });
+    const database = race.proxy;
     const context = createExecutionContext();
     const response = await app.fetch(new Request(`${origin}/api/admin/access/resources`, {
         method: 'POST', headers: { Origin: origin, Cookie: f.administrator, 'Content-Type': 'application/json' },
@@ -148,6 +143,7 @@ it('rechecks administrator authority inside the write transaction after its HTTP
     }), { ...f.client.bindings, DB: database }, context);
     await waitOnExecutionContext(context);
     expect(revoked).toBe(true);
+    expect(race.invoked()).toBe(true);
     expect(response.status, await response.clone().text()).toBe(403);
     expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "oauthResource" WHERE "identifier" = ?').bind('https://racing-write.example.test').first('n')).toBe(0);
     expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "apiAccessWrite"').first('n')).toBe(0);
@@ -157,28 +153,11 @@ it('rechecks administrator authority inside the write transaction after its HTTP
 it('preserves a capability added after the developer scope lookup but before the native client update', async () => {
     const f = await fixture();
     let inserted = false;
-    const database = new Proxy(f.client.bindings.DB, { get(target, property) {
-        if (property === 'prepare') return (query: string) => {
-            const statement = target.prepare(query);
-            if (!query.startsWith('SELECT p."scope" FROM "apiPermission" p JOIN "oauthResource"')) return statement;
-            const wrap = (prepared: D1PreparedStatement): D1PreparedStatement => new Proxy(prepared, { get(preparedTarget, key) {
-                if (key === 'bind') return (...values: unknown[]) => wrap(preparedTarget.bind(...values));
-                if (key === 'all') return async () => {
-                    const result = await preparedTarget.all();
-                    if (!inserted) {
-                        inserted = true;
-                        await created(f.client, f.administrator, `/resources/${f.resource.id}/permissions`, { name: 'Write granted concurrently', scope: 'races:write' });
-                    }
-                    return result;
-                };
-                const value = Reflect.get(preparedTarget, key, preparedTarget);
-                return typeof value === 'function' ? value.bind(preparedTarget) : value;
-            } });
-            return wrap(statement);
-        };
-        const value = Reflect.get(target, property, target);
-        return typeof value === 'function' ? value.bind(target) : value;
-    } });
+    const race = interceptSql(f.client.bindings.DB, /^SELECT p\."scope" FROM "apiPermission" p JOIN "oauthResource"/, async () => {
+        inserted = true;
+        await created(f.client, f.administrator, `/resources/${f.resource.id}/permissions`, { name: 'Write granted concurrently', scope: 'races:write' });
+    }, true);
+    const database = race.proxy;
     const context = createExecutionContext();
     const response = await app.fetch(new Request(`${origin}/api/developer/applications/${f.clientId}`, {
         method: 'PATCH', headers: { Origin: origin, Cookie: f.cookie, 'Content-Type': 'application/json' },
@@ -186,6 +165,7 @@ it('preserves a capability added after the developer scope lookup but before the
     }), { ...f.client.bindings, DB: database }, context);
     await waitOnExecutionContext(context);
     expect(inserted).toBe(true);
+    expect(race.invoked()).toBe(true);
     expect(response.status, await response.clone().text()).toBe(200);
     const scopes = JSON.parse((await env.DB.prepare('SELECT "scopes" FROM "oauthClient" WHERE "clientId" = ?').bind(f.clientId).first<string>('scopes'))!);
     expect(scopes).toEqual(expect.arrayContaining(['openid', 'profile', 'offline_access', 'races:read', 'races:write']));

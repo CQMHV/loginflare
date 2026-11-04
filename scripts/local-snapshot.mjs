@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync, backup } from 'node:sqlite';
 
 export async function snapshotLocal(root, output, stateRoot) {
-    const settings = JSON.parse(await readFile(join(root, 'wrangler.jsonc'), 'utf8'));
+    const settings = JSON.parse(await readFile(join(root, 'wrangler.local.jsonc'), 'utf8'));
     const binding = settings.d1_databases?.find((value) => value.binding === 'DB');
     if (settings.vars?.APP_ENV !== 'development' || binding?.remote !== false || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(settings.vars.AUTH_URL).hostname)) throw new Error('Local snapshots require explicit development bindings.');
     if (settings.r2_buckets?.some((bucket) => bucket.remote !== false)) throw new Error('Local snapshots require explicit local R2 bindings.');

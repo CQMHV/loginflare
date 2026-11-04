@@ -200,7 +200,7 @@ function localConfiguration(directory, overrides = {}) {
         ...overrides,
     };
     mkdirSync(directory, { recursive: true });
-    writeFileSync(join(directory, 'wrangler.jsonc'), JSON.stringify(configuration));
+    writeFileSync(join(directory, 'wrangler.local.jsonc'), JSON.stringify(configuration));
 }
 
 test('an online WAL snapshot restores independently with complete rows, schema and local-only secrets', async (t) => {

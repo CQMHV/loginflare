@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { brandColors } from './src/shared/brand-colors.ts';
 import { defaultBranding } from './src/shared/branding.ts';
+import { randomUUID } from 'node:crypto';
+import { validateDeploymentConfiguration } from './scripts/deployment.mjs';
 
-export default defineConfig({
+const applicationBuild = process.env.WORKERS_CI_BUILD_UUID ?? randomUUID();
+const applicationBuildTime = Date.now().toString();
+export default defineConfig(({ mode }) => ({
     cacheDir: 'node_modules/.vite/loginflare',
     optimizeDeps: { include: ['@xmldom/xmldom'] },
     plugins: [{
@@ -28,7 +32,22 @@ export default defineConfig({
                 next();
             });
         },
-    }, react(), cloudflare({ persistState: { path: '.cloudflare/state' } })],
+    }, react(), cloudflare({
+        configPath: process.env.LOGINFLARE_CONFIG ?? (mode === 'deployment' || process.env.WORKERS_CI === '1' ? 'wrangler.jsonc' : 'wrangler.local.jsonc'),
+        persistState: { path: '.cloudflare/state' },
+        config: (configuration) => {
+            if (!configuration.name) throw new Error('The selected Worker configuration must have a name.');
+            if (mode === 'deployment' || process.env.WORKERS_CI === '1' || configuration.vars?.APP_ENV !== 'development') validateDeploymentConfiguration(configuration);
+            const account = process.env.CLOUDFLARE_ACCOUNT_ID ?? configuration.account_id;
+            return { vars: {
+                ...configuration.vars,
+                LOGINFLARE_WORKER_NAME: configuration.name,
+                LOGINFLARE_BUILD_ID: configuration.vars?.APP_ENV === 'development' ? 'development' : applicationBuild,
+                LOGINFLARE_BUILD_TIME: configuration.vars?.APP_ENV === 'development' ? '0' : applicationBuildTime,
+                ...(account ? { LOGINFLARE_ACCOUNT_ID: account } : {}),
+            } };
+        },
+    })],
     css: {
         postcss: {
             plugins: [{
@@ -57,4 +76,4 @@ export default defineConfig({
     },
     server: { host: 'localhost', port: 5173, strictPort: true },
     build: { target: 'es2022' },
-});
+}));

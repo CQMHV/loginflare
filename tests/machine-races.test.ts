@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { harness, origin, session } from './helpers';
 import { managementResource } from '../src/shared/machines';
+import { interceptSql } from './sql-race';
 
 beforeEach(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -36,18 +37,13 @@ async function fixture() {
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 async function racedRequest(f: Fixture, path: string, body: Record<string, unknown>, race: () => Promise<unknown>, method = 'POST') {
     let raced = false;
-    const database = new Proxy(f.client.bindings.DB, { get(target, property) {
-        if (property === 'batch') return async (statements: D1PreparedStatement[]) => {
-            if (!raced) { raced = true; await race(); }
-            return target.batch(statements);
-        };
-        const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value;
-    } });
+    const injection = interceptSql(f.client.bindings.DB, /^\s*INSERT INTO "machineWrite"/i, async () => { raced = true; await race(); });
+    const database = injection.proxy;
     const context = createExecutionContext();
     const response = await app.fetch(new Request(`${origin}/api/management/v1${path}`, {
         method, headers: { Authorization: `Bearer ${f.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }), { ...f.client.bindings, DB: database }, context);
-    await waitOnExecutionContext(context); expect(raced).toBe(true); return response;
+    await waitOnExecutionContext(context); expect(raced).toBe(true); expect(injection.invoked()).toBe(true); return response;
 }
 it.each(['resources', 'applications'] as const)('rechecks machine authority atomically before %s creation and rolls back its success audit', async (kind) => {
     const f = await fixture();
@@ -72,18 +68,17 @@ it('protects an account promoted to administrator between the HTTP check and the
 it('atomically rejects machine administration after the human administrator loses the role', async () => {
     const f = await fixture(), identity = (await session(f.client, f.administrator))!;
     let raced = false;
-    const database = new Proxy(f.client.bindings.DB, { get(target, property) {
-        if (property === 'batch') return async (statements: D1PreparedStatement[]) => {
-            if (!raced) { raced = true; await env.DB.prepare('UPDATE "user" SET "role" = \'user\' WHERE "id" = ?').bind(identity.user.id).run(); }
-            return target.batch(statements);
-        };
-        const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value;
-    } });
+    const injection = interceptSql(f.client.bindings.DB, /^\s*INSERT INTO "apiAccessWrite"/i, async () => {
+        raced = true;
+        await env.DB.prepare('UPDATE "user" SET "role" = \'user\' WHERE "id" = ?').bind(identity.user.id).run();
+    });
+    const database = injection.proxy;
     const context = createExecutionContext();
     const response = await app.fetch(new Request(`${origin}/api/admin/machines/applications`, {
         method: 'POST', headers: { Origin: origin, Cookie: f.administrator, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Unapproved service' }),
     }), { ...f.client.bindings, DB: database }, context);
     await waitOnExecutionContext(context);
+    expect(raced).toBe(true); expect(injection.invoked()).toBe(true);
     expect(response.status, await response.clone().text()).toBe(403);
     expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "oauthClient" WHERE "name" = ?').bind('Unapproved service').first('n')).toBe(0);
     expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "apiAccessWrite"').first('n')).toBe(0);

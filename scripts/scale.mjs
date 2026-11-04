@@ -178,7 +178,7 @@ try {
         const sizeDirectory = join(directory, `users-${size}`);
         await mkdir(sizeDirectory);
         const state = join(sizeDirectory, '.cloudflare/state/v3/d1');
-        await writeFile(join(sizeDirectory, 'wrangler.jsonc'), JSON.stringify({ vars: { APP_ENV: 'development', AUTH_URL: origin }, d1_databases: [{ binding: 'DB', database_id: databaseId, remote: false }] }));
+        await writeFile(join(sizeDirectory, 'wrangler.local.jsonc'), JSON.stringify({ vars: { APP_ENV: 'development', AUTH_URL: origin }, d1_databases: [{ binding: 'DB', database_id: databaseId, remote: false }] }));
         await writeFile(join(sizeDirectory, '.dev.vars'), `BETTER_AUTH_SECRET=${secret}\n`, { mode: 0o600 });
         let mf = miniflare(state);
         let sequence = 0;

@@ -7,6 +7,7 @@ import { maximumImageBytes } from '../src/shared/image-limits';
 import { maintainDatabase } from '../src/server/maintenance';
 import { avatarPng, avatarJpeg, avatarWebp, avatarWebpWithMetadata } from './fixtures/avatars';
 import { harness, origin, session } from './helpers';
+import { interceptSql } from './sql-race';
 
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect width="256" height="256" fill="#6750a4"/></svg>';
 const settings = { name: 'Custom provider', type: 'google', config: { ...defaultConnectionConfig('google'), clientId: 'icon-client' }, clientSecret: 'test-only-icon-secret', enabled: false, archived: false, revision: 0 };
@@ -189,33 +190,18 @@ it('retains shared icons until their final reference is removed and cleans aband
 it('cannot attach an icon collected after preflight but before the atomic configuration update', async () => {
     const { client, cookie } = await admin(), value = await icon(cookie), row = await create(client, cookie);
     let collected = false;
-    const database = new Proxy(env.DB, { get(target, property) {
-        if (property === 'prepare') return (sql: string) => {
-            const statement = target.prepare(sql);
-            if (!sql.startsWith('UPDATE "socialConnection" SET')) return statement;
-            return new Proxy(statement, { get(prepared, operation) {
-                if (operation === 'bind') return (...values: Parameters<D1PreparedStatement['bind']>) => {
-                    const bound = prepared.bind(...values);
-                    return new Proxy(bound, { get(query, method) {
-                        if (method === 'run') return async () => {
-                            await env.DB.prepare('UPDATE "socialIcon" SET "deleteAfter" = ? WHERE "id" = ?').bind(Date.now() - 6 * 60_000, value.iconId).run();
-                            await maintainDatabase(client.bindings); collected = true;
-                            return query.run();
-                        };
-                        const member = Reflect.get(query, method); return typeof member === 'function' ? member.bind(query) : member;
-                    } });
-                };
-                const member = Reflect.get(prepared, operation); return typeof member === 'function' ? member.bind(prepared) : member;
-            } });
-        };
-        const member = Reflect.get(target, property); return typeof member === 'function' ? member.bind(target) : member;
-    } });
+    const injection = interceptSql(env.DB, /^UPDATE "socialConnection" SET/, async () => {
+        await env.DB.prepare('UPDATE "socialIcon" SET "deleteAfter" = ? WHERE "id" = ?').bind(Date.now() - 6 * 60_000, value.iconId).run();
+        await maintainDatabase(client.bindings); collected = true;
+    });
+    const database = injection.proxy;
     const context = createExecutionContext();
     const response = await app.fetch(new Request(`${origin}/api/admin/social-connections/${row.id}`, {
         method: 'PATCH', headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...settings, revision: row.revision, iconId: value.iconId }),
     }), { ...client.bindings, DB: database }, context);
     await waitOnExecutionContext(context);
     expect(collected).toBe(true);
+    expect(injection.invoked()).toBe(true);
     expect(response.status).toBe(400); expect(await response.json()).toEqual({ code: 'SOCIAL_ICON_UNAVAILABLE' });
     expect(await env.DB.prepare('SELECT "iconId" FROM "socialConnection" WHERE "id" = ?').bind(row.id).first('iconId')).toBeNull();
     expect(await env.AVATARS.head(`social-icons/${value.iconId}`)).toBeNull();

@@ -1,0 +1,3 @@
+# Local development only. pnpm setup:local generates .dev.vars with a random key.
+BETTER_AUTH_SECRET=replace-with-a-random-secret-at-least-32-characters
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
