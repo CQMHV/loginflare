@@ -23,10 +23,12 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - Create and manage your own server Web and SPA clients in the developer center, with exact redirects, consent, and client-secret rotation; administrators oversee all applications.
 - Configure an independent brand logo, brand name, theme source color and Material color scheme in the administrator console.
 - OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
+- Manage API resources, business permission scopes, roles and user assignments; issue resource-bound access tokens and protect Workers/Hono APIs. See [Access control](docs/access-control.md).
+- Inspect administrator-only audit logs for authentication, authorization, security and management events, with bounded retention.
 - English and Simplified Chinese pages, error messages, and transactional emails.
 - Better Auth account/session primitives, atomic D1-backed rate limiting, scheduled expiry cleanup, and server-verified Turnstile challenges.
 
-This release does not offer organizations, multi-tenancy, SAML, account deletion, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, upstream API token hosting and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
+This release does not offer organizations, multi-tenancy, SAML, account deletion, browser-based assignment of Loginflare console administrator privileges, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, upstream API token hosting and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed. Business roles and permission assignments are separate from console administrator privileges.
 
 Usernames are separate from display names. The registration form asks for a unique username of 3–30 ASCII letters, numbers, underscores, or dots; usernames are stored in lowercase and sign-in is case-insensitive. Existing accounts can continue using email and choose a username in their profile. Users can change their username; an existing username cannot be cleared. Email verification is required for both sign-in methods. Only the primary email works as an email sign-in identifier.
 
@@ -137,6 +139,8 @@ Sign in with a verified account, switch to **Developer center → My application
 Register the external application's exact sign-in and sign-out callbacks in Loginflare, then configure that application's OIDC settings with the generated client ID, the issuer and, for server clients, the one-time secret. Server applications use `client_secret_basic`; browser SPAs use `none` and never receive a secret. Both require authorization code + PKCE S256 and first-use consent. Discover the provider at `${AUTH_URL}/api/auth/.well-known/openid-configuration`.
 
 See the [integration guide](docs/oauth.md) for callbacks, token lifetimes, security-event revocation, and the standard `openid-client` / `oidc-client-ts` examples. The examples use local HTTPS subdomains and locally generated certificates; no system trust-store changes or remote resources are required.
+
+For a business API, an administrator registers its audience, permission scopes, allowed applications and business roles. Applications request a resource access token through the same OAuth flow. The [Workers/Hono example](examples/worker-api/README.md) validates signatures and audience, checks live authorization and enforces endpoint permissions. [Audit logs](docs/access-control.md#audit-logs) make security and access-management events available in the administrator console.
 
 Ordinary central logout retains native `offline_access` refresh authorization. Applications own their local sessions; logging out of Loginflare does not sign every application out. Security actions such as password recovery and account suspension have separate credential-invalidation rules described in the integration guide.
 

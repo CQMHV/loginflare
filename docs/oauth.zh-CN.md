@@ -15,9 +15,9 @@ Issuer 为 `${AUTH_URL}/api/auth`，例如 `https://identity.example.com/api/aut
 | 服务端 Web | `client_secret_basic` | 仅应用服务端 | 授权码与 PKCE S256 |
 | SPA | `none` | 无客户端密钥 | 授权码与 PKCE S256 |
 
-范围为 `openid profile email offline_access`：`openid` 用于用户身份，`profile` 允许读取资料字段，`email` 允许读取邮箱字段，`offline_access` 请求可刷新的授权。Loginflare 管理员角色不是外部应用的权限，不加入身份声明。ID Token 描述已认证身份，不能当作业务 API 的 Bearer 凭据。
+身份范围为 `openid profile email offline_access`：`openid` 用于用户身份，`profile` 允许读取资料字段，`email` 允许读取邮箱字段，`offline_access` 请求可刷新的授权。管理员配置的 API 资源通过明确的应用关联和用户业务角色，提供额外的业务权限 scope。Loginflare 本站管理员角色不是业务权限，不加入身份声明。ID Token 描述已认证身份，不能当作业务 API 的 Bearer 凭据。
 
-本轮不提供机器客户端授权、原生/移动客户端、设备授权、动态注册、自定义资源 audience 或业务 API 权限。UserInfo 使用不透明 Access Token，ID Token 由 Better Auth JWT 插件使用 RS256 签名。
+不请求业务资源时，UserInfo 使用不透明 Access Token，ID Token 由 Better Auth JWT 插件使用 RS256 签名。请求已登记的 `resource` 时，原生提供方签发绑定该 API 和用户权限的资源访问令牌。配置、资源与刷新参数、实时权限检查及 [Workers/Hono 示例](../examples/worker-api/README.md)详见 [API 访问控制](access-control.zh-CN.md)。机器客户端授权、原生/移动客户端、设备授权及动态注册仍不在本轮范围内。
 
 邮箱已验证且未停用的账号可在**开发者中心 → 我的应用**（`/zh-cn/developer/applications`）自行创建和管理应用。工作台通过卡片展示应用名称、类型、状态与客户端 ID，点击卡片进入配置；空列表只提供一个创建首个应用的入口。所有权由服务端根据当前账号确定，不能通过请求指定或转移；每位开发者最多拥有 20 个应用。管理员可管理全部应用，原有实例应用继续由管理员管理，迁移不会将其分配给某位开发者。
 
@@ -96,9 +96,9 @@ Loginflare 登录页允许使用主邮箱或用户名和同一密码登录，两
 
 刷新令牌会轮换。客户端应保存新令牌，串行处理同时发生的刷新请求，不能复用已消费的旧令牌。示例通过标准 SDK 处理协议。
 
-停用应用使用上游的停用标记，不会批量删除所有凭据；恢复后，原本仍有效且未过期的凭据可能重新可用。轮换 Web 客户端密钥会替换客户端认证密钥，但不会撤销所有已签发令牌。轮换后须更新应用服务端受保护的配置。
+停用应用设置上游停用标记，并永久撤销它的业务 API 授权。恢复应用后可以重新发起业务授权，旧的资源 JWT 与刷新令牌不会复活。纯身份授权继续沿用原生停用语义：恢复后，原本仍有效且未过期的凭据可能重新可用。轮换 Web 客户端密钥会替换客户端认证密钥，但不会撤销所有已签发令牌。轮换后须更新应用服务端受保护的配置。
 
-锁定版本的撤销和 introspection 接口要求机密客户端认证。因此 SPA 示例不会在没有密钥时调用这些接口并声称撤销成功。
+锁定版本的撤销和 introspection 接口要求机密客户端认证。因此 SPA 示例不会在没有密钥时调用这些接口并声称撤销成功。业务 API 可使用明确关联到资源的独立机密客户端，检查其他已关联应用取得的资源访问令牌；API 必须校验精确 audience 和当前权限结果，检查所用的密钥始终保存在服务端。
 
 原生刷新令牌撤销也会删除关联的 Access Token；重复撤销已撤销或不存在的令牌，在此版本可能返回错误。Web 示例先撤销 Access Token，再撤销 Refresh Token，始终清除本地会话。远程撤销失败时，会明确提示本地已退出，但远程撤销未能确认。
 
