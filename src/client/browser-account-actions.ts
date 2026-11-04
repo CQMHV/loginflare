@@ -1,6 +1,6 @@
 import type { Locale } from '../shared/locales';
 import { ApiError, fetchJson, request, type Identity, type User } from './api';
-import { browserFlowId, browserFlowKind, browserFlowOAuthQuery, clearBrowserFlow, priorBrowserAccount, rememberBrowserFlow, selectBrowserAccount, selectBrowserFlowAccount, selectedBrowserAccount } from './browser-context';
+import { browserContextVersion, browserFlowId, browserFlowKind, browserFlowOAuthQuery, clearBrowserFlow, priorBrowserAccount, rememberBrowserFlow, selectBrowserAccount, selectBrowserFlowAccount, selectedBrowserAccount } from './browser-context';
 
 export interface BrowserAccountSummary {
     id: string;
@@ -31,18 +31,25 @@ export async function ensureBrowserFlow(locale: Locale, oauthQuery?: string) {
     if (!browserFlowId()) await startBrowserFlow(oauthQuery ? 'oauth' : 'login', locale, undefined, oauthQuery);
 }
 export async function completeBrowserLogin(result?: { browserAccountId?: string }, keepFlow = false) {
+    const version = browserContextVersion(), flowId = browserFlowId(), page = `${window.location.pathname}${window.location.search}`;
+    function assertCurrent() {
+        if (browserContextVersion() !== version || browserFlowId() !== flowId || `${window.location.pathname}${window.location.search}` !== page) throw new ApiError('BROWSER_FLOW_EXPIRED', 409);
+    }
     const identity = result?.browserAccountId ? undefined : await request<(Identity & { browserAccountId?: string }) | null>('/get-session');
+    assertCurrent();
     const accountId = result?.browserAccountId ?? identity?.browserAccountId;
     if (accountId) {
         const sensitive = browserFlowKind() === 'security';
         selectBrowserFlowAccount(accountId);
         if (!keepFlow && !sensitive) {
-            if (browserFlowId()) await fetchJson(`/api/browser/auth-flows/${encodeURIComponent(browserFlowId())}`, undefined, undefined, 'DELETE');
+            if (flowId) await fetchJson(`/api/browser/auth-flows/${encodeURIComponent(flowId)}`, undefined, undefined, 'DELETE');
+            assertCurrent();
             clearBrowserFlow();
         }
         if (!sensitive || accountId !== selectedBrowserAccount()) selectBrowserAccount(accountId);
         window.dispatchEvent(new Event('loginflare:accounts-changed'));
     }
+    return { version: browserContextVersion(), flowId: browserFlowId() };
 }
 export async function cancelBrowserFlow() {
     const flowId = browserFlowId(), previous = priorBrowserAccount() || selectedBrowserAccount();

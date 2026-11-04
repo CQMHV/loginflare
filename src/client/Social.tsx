@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -14,7 +14,7 @@ import { useClearSecrets } from './page-state';
 import { encodeWebP } from './image-encoding';
 import { SecurityDialog, socialAuthorizationUrl, useSecurity, useSecurityIntent } from './security';
 import { ProviderIcon } from './ProviderIcon';
-import { browserContextHeaders, browserFlowId, clearBrowserFlow, flowPath, prepareOAuthRedirect, selectBrowserAccount, selectBrowserFlowAccount } from './browser-context';
+import { browserContextHeaders, browserContextVersion, browserFlowId, clearBrowserFlow, flowPath, prepareOAuthRedirect, selectBrowserAccount, selectBrowserFlowAccount } from './browser-context';
 import { cancelBrowserFlow, completeBrowserLogin } from './browser-account-actions';
 export function SocialButtons({ locale }: { locale: Locale }) {
     const { t } = useTranslation();
@@ -89,7 +89,13 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
     const [error, setError] = useState<string>(() => new URLSearchParams(location.search).get('error') ?? ''), [busy, setBusy] = useState(false);
     const [resending, setResending] = useState(false);
     const actions = useDataActions(), feedback = useFeedback();
-    const capture = useClearSecrets(() => setCode(''));
+    useClearSecrets(() => setCode(''));
+    const lifetime = useRef(0);
+    useEffect(() => {
+        const invalidate = () => { lifetime.current++; };
+        window.addEventListener('pagehide', invalidate);
+        return () => { lifetime.current++; window.removeEventListener('pagehide', invalidate); };
+    }, [location.pathname, location.search]);
     useEffect(() => {
         if (new URLSearchParams(location.search).has('error')) return;
         const controller = new AbortController();
@@ -99,12 +105,16 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
     }, [locale, location.search, navigate]);
     async function finish() {
         if (busy) return;
-        const current = capture();
+        const generation = lifetime.current, page = `${window.location.pathname}${window.location.search}`;
+        let version = browserContextVersion(), flowId = browserFlowId();
+        const samePage = () => lifetime.current === generation && `${window.location.pathname}${window.location.search}` === page;
+        const current = () => samePage() && browserContextVersion() === version && browserFlowId() === flowId;
+        function assertCurrent() { if (!current()) throw new ApiError('BROWSER_FLOW_EXPIRED', 409); }
         setBusy(true); setError('');
         try {
             if (status?.stage !== 'tested') {
                 const identity = await request<{ browserAccountId?: string } | null>('/get-session');
-                if (!current()) return;
+                assertCurrent();
                 if (identity?.browserAccountId) { selectBrowserFlowAccount(identity.browserAccountId); selectBrowserAccount(identity.browserAccountId, false); }
             }
             const headers = browserContextHeaders();
@@ -121,23 +131,27 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
                         const side = Math.min(bitmap.width, bitmap.height);
                         drawing.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
                         const body = await encodeWebP(canvas);
-                        if (!current()) return;
+                        assertCurrent();
                         await readResponse(await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { ...headers, 'Content-Type': 'image/webp', 'X-Avatar-Import': 'if-empty' }, body }));
                     } finally { bitmap.close(); }
                 } catch { /* Profile imports are retried on a later sign-in. */ }
             }
-            if (!current()) return;
+            assertCurrent();
             const result = await request<{ redirect: string | boolean; url?: string; browserAccountId?: string }>('/social/finish', {});
-            if (!current()) return;
-            await completeBrowserLogin(result, result.redirect === true);
+            assertCurrent();
+            const completed = await completeBrowserLogin(result, result.redirect === true);
+            if (!samePage() || browserContextVersion() !== completed.version || browserFlowId() !== completed.flowId) throw new ApiError('BROWSER_FLOW_EXPIRED', 409);
+            version = completed.version; flowId = completed.flowId;
             if (status && ['link', 'test'].includes(status.purpose) && browserFlowId()) {
-                await fetchJson(`/api/browser/auth-flows/${encodeURIComponent(browserFlowId())}`, undefined, undefined, 'DELETE'); clearBrowserFlow();
+                await fetchJson(`/api/browser/auth-flows/${encodeURIComponent(browserFlowId())}`, undefined, undefined, 'DELETE'); assertCurrent(); clearBrowserFlow();
+                version = browserContextVersion(); flowId = browserFlowId();
             }
             await refresh(); await actions.invalidate('security', 'profile');
+            assertCurrent();
             if (result.redirect === true && result.url) { prepareOAuthRedirect(result.url, result.browserAccountId, oauthSearch(new URL(result.url, window.location.origin).search)); window.location.assign(result.url); }
             else if (typeof result.redirect === 'string') navigate(result.redirect, { replace: true });
             else throw new ApiError('INVALID_OAUTH_QUERY', 400);
-        } catch (cause) { if (current()) { setError(errorCode(cause)); setBusy(false); } }
+        } catch (cause) { if (samePage()) { setError(current() ? errorCode(cause) : 'BROWSER_FLOW_EXPIRED'); setBusy(false); } }
     }
     async function sendCode(address: string) {
         if (busy || !status || !['email', 'code'].includes(status.stage)) return;

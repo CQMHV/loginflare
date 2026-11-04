@@ -1,5 +1,5 @@
 import type { Locale } from '../shared/locales';
-import { browserContextHeaders, clearBrowserFlow } from './browser-context';
+import { browserContextHeaders, browserContextVersion, clearBrowserFlow } from './browser-context';
 
 export interface User {
     id: string;
@@ -43,6 +43,7 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
 }
 
 export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', signal?: AbortSignal): Promise<T> {
+    const version = browserContextVersion();
     const headers: Record<string, string> = { Accept: 'application/json', ...browserContextHeaders() };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (captchaToken) headers['x-captcha-response'] = captchaToken;
@@ -61,11 +62,22 @@ export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: 
         throw new ApiError('NETWORK_ERROR', 0);
     }
 
-    return readResponse<T>(response);
+    const publicRequest = ['/api/config', '/api/branding', '/api/social/providers', '/api/health'].includes(path.split('?', 1)[0]);
+    const current = () => publicRequest || browserContextVersion() === version;
+    try {
+        const payload = await readResponse<T>(response, current);
+        if (!publicRequest && payload && typeof payload === 'object' && 'browserFlowComplete' in payload && payload.browserFlowComplete === true) clearBrowserFlow();
+        return payload;
+    } catch (cause) {
+        if (!current()) throw new ApiError('BROWSER_FLOW_EXPIRED', 409);
+        if (!publicRequest && cause instanceof ApiError && cause.code === 'BROWSER_FLOW_EXPIRED') clearBrowserFlow();
+        throw cause;
+    }
 }
 
-export async function readResponse<T>(response: Response): Promise<T> {
+export async function readResponse<T>(response: Response, current: () => boolean = () => true): Promise<T> {
     const payload: unknown = await response.json().catch(() => null);
+    if (!current()) throw new ApiError('BROWSER_FLOW_EXPIRED', 409);
     if (!response.ok) {
         const code = payload && typeof payload === 'object' && 'code' in payload
             && typeof payload.code === 'string' ? payload.code
@@ -78,10 +90,8 @@ export async function readResponse<T>(response: Response): Promise<T> {
         const fields = payload && typeof payload === 'object' && 'fieldErrors' in payload ? payload.fieldErrors : undefined;
         const fieldErrors = fields && typeof fields === 'object' && !Array.isArray(fields)
             ? Object.fromEntries(Object.entries(fields).filter(([, value]) => typeof value === 'string')) as Record<string, string> : undefined;
-        if (code === 'BROWSER_FLOW_EXPIRED') clearBrowserFlow();
         throw new ApiError(code, response.status, Math.max(0, retryAfterMs || 0), fieldErrors);
     }
-    if (payload && typeof payload === 'object' && 'browserFlowComplete' in payload && payload.browserFlowComplete === true) clearBrowserFlow();
     return payload as T;
 }
 
