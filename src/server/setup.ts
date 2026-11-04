@@ -26,6 +26,8 @@ type Config = {
 type Credentials = { authSecret: string; turnstileSecret?: string };
 type Challenge = { id: string; name: string; taskId: string; digest: string; nonceDigest: string; expiresAt: number; used: boolean; effectId: string };
 type StagedChallenge = Challenge & { replaces: string[] };
+type CleanupIntent = { id: string; names: string[]; instanceId: string };
+type CleanupEffect = { id: string; scopeId: string; kind: string; payload: string; status: 'pending' | 'done' | 'failed' };
 const tokenSchema = z.string().min(20).max(4096).regex(/^\S+$/);
 const candidateSchema = z.object({ name: z.string().trim().min(1).max(100),
     username: z.string().min(3).max(30).regex(/^[A-Za-z0-9_.]+$/), email: z.email().max(254),
@@ -524,6 +526,11 @@ async function startChallenge(env: SetupEnv, control: ControlRecord, input: Reco
     return leased(env, control.taskId!, async (lease) => {
         if (!control.accountId || !control.workerName) await fencedBatch(env.DB, lease, [env.DB.prepare('UPDATE "lfControl" SET "accountId" = ?, "workerName" = ?, "revision" = "revision" + 1 WHERE "id" = 1')
             .bind(deployment.accountId, deployment.workerName)]);
+        // Recovery must not require the expired installation session. An
+        // immutable deletion intent can be replayed using this explicitly
+        // supplied token, before proving control with a fresh nonce write.
+        const cleanup = await replayCleanupIntent(env, control, lease, api, deployment);
+        if (cleanup && !cleanup.complete) throw new SetupError('CLEANUP_RETRY_PENDING', 409);
         const staged = await readValue<StagedChallenge>(env.DB, 'setup:challengeStaged');
         if (staged) {
             if (staged.taskId !== control.taskId) throw new SetupError('CHALLENGE_TASK_MISMATCH', 409);
@@ -541,6 +548,7 @@ async function startChallenge(env: SetupEnv, control: ControlRecord, input: Reco
         }
         const previous = await readValue<Challenge>(env.DB, 'setup:challenge');
         if (previous && previous.taskId === control.taskId && !previous.used && previous.expiresAt > Date.now()
+            && !cleanup?.names.includes(previous.name)
             && await setupSecretEqual(previous.nonceDigest, await setupDigest(nonce.data))) {
             return json({ challengeId: previous.id, pending: true }, 202);
         }
@@ -620,11 +628,94 @@ async function verifyChallenge(env: SetupEnv, control: ControlRecord, input: Rec
         return setSession(env, control.installation === 'installing' || control.installation === 'new' ? 'setup' : 'maintenance', control.taskId!, { authenticated: true });
     }, ['new', 'installing', 'complete', 'legacy']);
 }
+
+function deletionNames(value: unknown): string[] {
+    if (!Array.isArray(value) || value.length === 0 || value.length > 100
+        || value.some((name) => typeof name !== 'string'
+            || (name !== 'CF_SETUP_TOKEN' && !/^LF_CONTROL_CHALLENGE_[0-9a-f]{32}$/.test(name)))) {
+        throw new SetupError('INVALID_CLEANUP_INTENT', 409);
+    }
+    return [...new Set(value as string[])].sort();
+}
+
+async function cleanupIntent(env: SetupEnv, control: ControlRecord): Promise<{ intent: CleanupIntent; effect: CleanupEffect | null } | null> {
+    const stored = await readValue<{ id?: unknown; names?: unknown; instanceId?: unknown }>(env.DB, 'setup:cleanupEffect');
+    const pending = await env.DB.prepare(`SELECT "id", "scopeId", "kind", "payload", "status" FROM "lfControlEffect"
+        WHERE "scopeId" = ? AND "kind" = 'setup-cleanup' AND "status" = 'pending' ORDER BY "createdAt" LIMIT 2`)
+        .bind(control.taskId).all<CleanupEffect>();
+    if (pending.results.length > 1) throw new SetupError('CLEANUP_INTENT_CONFLICT', 409);
+    if (!stored && !pending.results.length) return null;
+    if (stored && typeof stored.id !== 'string') throw new SetupError('INVALID_CLEANUP_INTENT', 409);
+    if (stored?.instanceId !== undefined && stored.instanceId !== control.instanceId) throw new SetupError('INVALID_CLEANUP_INTENT', 409);
+    const id = stored?.id as string | undefined ?? pending.results[0]!.id;
+    if (pending.results[0] && pending.results[0].id !== id) throw new SetupError('CLEANUP_INTENT_CONFLICT', 409);
+    const effect = pending.results[0] ?? await env.DB.prepare('SELECT "id", "scopeId", "kind", "payload", "status" FROM "lfControlEffect" WHERE "id" = ?')
+        .bind(id).first<CleanupEffect>();
+    if (effect && (effect.kind !== 'setup-cleanup' || effect.scopeId !== control.taskId)) throw new SetupError('INVALID_CLEANUP_INTENT', 409);
+    let payload: { names?: unknown; instanceId?: unknown } | null = null;
+    if (effect) {
+        try { payload = JSON.parse(effect.payload) as { names?: unknown; instanceId?: unknown }; }
+        catch { throw new SetupError('INVALID_CLEANUP_INTENT', 409); }
+        if (!payload || (payload.instanceId !== undefined && payload.instanceId !== control.instanceId)) throw new SetupError('INVALID_CLEANUP_INTENT', 409);
+    }
+    // Legacy {id} checkpoints are recoverable only when their durable effect
+    // still proves the original name set. Never infer it from newer challenges.
+    if (stored?.names === undefined && !payload?.names) throw new SetupError('CLEANUP_INTENT_NAMES_REQUIRED', 409);
+    const names = deletionNames(stored?.names ?? payload?.names);
+    if (payload?.names && JSON.stringify(deletionNames(payload.names)) !== JSON.stringify(names)) throw new SetupError('CLEANUP_INTENT_CONFLICT', 409);
+    return { intent: { id, names, instanceId: control.instanceId }, effect };
+}
+
+async function saveCleanupIntent(env: SetupEnv, lease: Lease, intent: CleanupIntent, effect: CleanupEffect | null): Promise<void> {
+    const pending = await env.DB.prepare(`SELECT 1 FROM "lfControlEffect" WHERE "status" = 'pending'
+        AND "kind" NOT LIKE 'r2:%' AND "id" <> ? LIMIT 1`).bind(intent.id).first();
+    if (pending) throw new SetupError('EXTERNAL_RESULT_UNCERTAIN', 409);
+    const assertion = crypto.randomUUID();
+    const guard = env.DB.prepare(`INSERT INTO "lfControlFence" ("id", "valid") SELECT ?, CASE WHEN NOT EXISTS (
+        SELECT 1 FROM "lfControlEffect" WHERE "status" = 'pending' AND "kind" NOT LIKE 'r2:%' AND "id" <> ?
+        ) THEN 1 ELSE 0 END`).bind(assertion, intent.id);
+    const record = effect ? env.DB.prepare(`UPDATE "lfControlEffect" SET "status" = 'pending', "generation" = ?
+        WHERE "id" = ? AND "scopeId" = ? AND "kind" = 'setup-cleanup'`).bind(lease.generation, intent.id, lease.taskId)
+        : env.DB.prepare(`INSERT INTO "lfControlEffect" ("id", "scopeId", "generation", "kind", "payload", "status", "createdAt")
+            VALUES (?, ?, ?, 'setup-cleanup', ?, 'pending', CAST(unixepoch('subsec') * 1000 AS INTEGER))`)
+            .bind(intent.id, lease.taskId, lease.generation, JSON.stringify({ names: intent.names, instanceId: intent.instanceId }));
+    await fencedBatch(env.DB, lease, [guard, record, valueStatement(env.DB, 'setup:cleanupEffect', intent),
+        env.DB.prepare('DELETE FROM "lfControlFence" WHERE "id" = ?').bind(assertion)]);
+}
+
+async function replayCleanupIntent(env: SetupEnv, control: ControlRecord, lease: Lease, api: SetupCloudflare, deployment: SetupTarget)
+    : Promise<{ complete: boolean; names: string[] } | null> {
+    const saved = await cleanupIntent(env, control);
+    if (!saved) return null;
+    if (control.installation !== 'complete') throw new SetupError('INVALID_CLEANUP_INTENT', 409);
+    const { intent, effect } = saved;
+    const bound = await api.secrets(deployment);
+    if (intent.names.some((name) => bound.some((item) => item.name === name))) {
+        await saveCleanupIntent(env, lease, intent, effect);
+        // Every attempt, including a delayed executor, sends this exact set of
+        // null values. These names are never reused; replay cannot overwrite
+        // authentication/configuration or a newer random challenge Secret.
+        // Even a rejected retry cannot settle an earlier timed-out attempt.
+        // Keep the logical deletion pending until its fixed names are absent.
+        await api.patchSecrets(deployment, Object.fromEntries(intent.names.map((name) => [name, null])));
+        const after = await api.secrets(deployment);
+        if (intent.names.some((name) => after.some((item) => item.name === name))) return { complete: false, names: intent.names };
+    }
+    await fencedBatch(env.DB, lease, [
+        env.DB.prepare(`UPDATE "lfControlEffect" SET "status" = 'done' WHERE "id" = ? AND "scopeId" = ? AND "kind" = 'setup-cleanup'`)
+            .bind(intent.id, lease.taskId),
+        env.DB.prepare(`DELETE FROM "lfControlValue" WHERE "key" = 'setup:cleanupEffect' AND json_extract("value", '$.id') = ?`).bind(intent.id),
+    ]);
+    return { complete: true, names: intent.names };
+}
+
 async function cleanupSetup(env: SetupEnv, control: ControlRecord, input: Record<string, unknown>): Promise<Response> {
     if (control.installation !== 'complete') throw new SetupError('INSTALLATION_NOT_COMPLETE', 409);
     if (!control.cleanupPending) return json({ cleanupPending: false });
     const api = new SetupCloudflare(credential(input, env)), deployment = target(control);
     return leased(env, control.taskId!, async (lease) => {
+        const replay = await replayCleanupIntent(env, control, lease, api, deployment);
+        if (replay && !replay.complete) return json({ cleanupPending: true }, 202);
         const staged = await readValue<StagedChallenge>(env.DB, 'setup:challengeStaged');
         if (staged) {
             const effect = await challengeEffect(env, control, staged);
@@ -645,25 +736,13 @@ async function cleanupSetup(env: SetupEnv, control: ControlRecord, input: Record
         const bound = await api.secrets(deployment);
         const present = remove.filter((name) => bound.some((item) => item.name === name));
         if (present.length) {
-            const existing = await readValue<{ id: string }>(env.DB, 'setup:cleanupEffect');
-            const id = existing?.id ?? crypto.randomUUID();
-            if (!existing) {
-                await writeValue(env.DB, lease, 'setup:cleanupEffect', { id });
-                await beginEffect(env.DB, lease, 'setup-cleanup', { names: present }, id);
-                try { await api.patchSecrets(deployment, Object.fromEntries(present.map((name) => [name, null]))); }
-                catch (error) {
-                    if (error instanceof SetupProviderError && !error.uncertain) {
-                        await finishEffect(env.DB, lease, id, 'failed'); await writeValue(env.DB, lease, 'setup:cleanupEffect', null);
-                    }
-                    throw error;
-                }
-            }
-            const after = await api.secrets(deployment);
-            if (remove.some((name) => after.some((item) => item.name === name))) return json({ cleanupPending: true }, 202);
-            await finishEffect(env.DB, lease, id, 'done');
-        } else {
-            const existing = await readValue<{ id: string }>(env.DB, 'setup:cleanupEffect');
-            if (existing) await finishEffect(env.DB, lease, existing.id, 'done');
+            // A newer challenge is a separate cleanup wave. It is never folded
+            // into an earlier deletion request whose executor could still run.
+            if (replay) return json({ cleanupPending: true }, 202);
+            const intent: CleanupIntent = { id: crypto.randomUUID(), names: deletionNames(present), instanceId: control.instanceId };
+            await saveCleanupIntent(env, lease, intent, null);
+            const result = await replayCleanupIntent(env, control, lease, api, deployment);
+            if (!result?.complete) return json({ cleanupPending: true }, 202);
         }
         await fencedBatch(env.DB, lease, [env.DB.prepare('DELETE FROM "lfControlValue" WHERE "key" IN (?, ?, ?, ?, ?)')
             .bind('setup:credentials', 'setup:challenge', 'setup:cleanupEffect', 'setup:challengeNames', 'setup:challengeStaged'),

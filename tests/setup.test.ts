@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations, reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createEmailVerificationToken } from 'better-auth/api';
-import { acquireLease, ensureControl, issueSession, readControl, readValue, releaseLease, writeValue } from '../src/server/control';
+import { acquireLease, beginEffect, ensureControl, issueSession, readControl, readValue, releaseLease, writeValue } from '../src/server/control';
 import { handleSetup } from '../src/server/setup';
 import { SetupCloudflare, SetupProviderError } from '../src/server/setup-cloudflare';
 import { openSetupValue, randomSetupToken, sealSetupValue, setupDigest, setupSecretEqual } from '../src/server/setup-crypto';
@@ -46,6 +46,18 @@ async function fixture() {
         }), bindings))!;
     }
     return { client, bindings, cookie, control, request };
+}
+
+async function cleanupFixture(names: string[], checkpoint: 'record-only' | 'effect' | 'legacy-record' = 'effect') {
+    const f = await fixture();
+    await env.DB.batch([env.DB.prepare(`UPDATE "lfControl" SET "installation" = 'complete', "cleanupPending" = 1 WHERE "id" = 1`),
+        env.DB.prepare(`UPDATE "lfControlSession" SET "purpose" = 'cleanup'`)]);
+    const id = crypto.randomUUID(), lease = await acquireLease(env.DB, f.control.taskId);
+    await writeValue(env.DB, lease, 'setup:cleanupEffect', checkpoint === 'legacy-record' ? { id }
+        : { id, names, instanceId: f.control.instanceId });
+    if (checkpoint !== 'record-only') await beginEffect(env.DB, lease, 'setup-cleanup', { names }, id);
+    await releaseLease(env.DB, lease);
+    return { ...f, effectId: id };
 }
 
 it('keeps pending credentials encrypted, instance-bound and recoverable with the same token', async () => {
@@ -301,6 +313,166 @@ it('finishes cleanup after a successful deletion loses its response, without reo
     expect(second.status, await second.clone().text()).toBe(200);
     expect(await readControl(env.DB)).toMatchObject({ installation: 'complete', cleanupPending: 0 });
     expect(await readValue(env.DB, 'setup:credentials')).toBeNull();
+});
+
+it.each(['record-only', 'effect', 'legacy-record'] as const)('resumes a %s pre-dispatch cleanup checkpoint using only its frozen names', async (checkpoint) => {
+    const oldName = `LF_CONTROL_CHALLENGE_${'1'.repeat(32)}`;
+    const newName = `LF_CONTROL_CHALLENGE_${'2'.repeat(32)}`;
+    const names = ['CF_SETUP_TOKEN', oldName];
+    const f = await cleanupFixture(names, checkpoint);
+    const lease = await acquireLease(env.DB, f.control.taskId);
+    await writeValue(env.DB, lease, 'setup:challengeNames', [newName]);
+    await releaseLease(env.DB, lease);
+    const remote = new Set([...names, newName, 'BETTER_AUTH_SECRET', 'LOGINFLARE_CONFIG_REVISION']);
+    const patches: Record<string, null>[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.method === 'GET' && request.url.endsWith('/secrets')) return Response.json({ success: true,
+            result: [...remote].map((name) => ({ name, type: 'secret_text' })) });
+        if (request.method === 'PATCH') {
+            const value = await request.json() as { secrets: Record<string, null> };
+            patches.push(value.secrets);
+            for (const [name, action] of Object.entries(value.secrets)) { expect(action).toBeNull(); remote.delete(name); }
+            return Response.json({ success: true, result: {} });
+        }
+        throw new Error('Unexpected API call');
+    });
+    const response = await f.request('/api/setup/cleanup', { cookie: f.cookie, body: { token: installationToken } });
+    expect(response.status, await response.clone().text()).toBe(202);
+    expect(patches).toEqual([{ CF_SETUP_TOKEN: null, [oldName]: null }]);
+    expect(remote.has(newName)).toBe(true);
+    expect(remote.has('BETTER_AUTH_SECRET')).toBe(true);
+    expect(remote.has('LOGINFLARE_CONFIG_REVISION')).toBe(true);
+    expect(await env.DB.prepare('SELECT "status" FROM "lfControlEffect" WHERE "id" = ?').bind(f.effectId).first('status')).toBe('done');
+    expect(await readValue(env.DB, 'setup:cleanupEffect')).toBeNull();
+    expect((await readControl(env.DB)).cleanupPending).toBe(1);
+});
+
+it('does not guess the name set of a legacy id-only cleanup checkpoint with no effect record', async () => {
+    const f = await cleanupFixture(['CF_SETUP_TOKEN'], 'record-only');
+    const lease = await acquireLease(env.DB, f.control.taskId);
+    await writeValue(env.DB, lease, 'setup:cleanupEffect', { id: f.effectId });
+    await releaseLease(env.DB, lease);
+    const outbound = vi.fn(async () => { throw new Error('The lost name set must not be inferred from current Secrets'); });
+    vi.stubGlobal('fetch', outbound);
+    const response = await f.request('/api/setup/cleanup', { cookie: f.cookie, body: { token: installationToken } });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'CLEANUP_INTENT_NAMES_REQUIRED' });
+    expect(outbound).not.toHaveBeenCalled();
+    expect(await readValue(env.DB, 'setup:cleanupEffect')).toEqual({ id: f.effectId });
+});
+
+it('replays an ambiguous cleanup that never reached Cloudflare with the identical null patch', async () => {
+    const f = await fixture();
+    await env.DB.batch([env.DB.prepare(`UPDATE "lfControl" SET "installation" = 'complete', "cleanupPending" = 1 WHERE "id" = 1`),
+        env.DB.prepare(`UPDATE "lfControlSession" SET "purpose" = 'cleanup'`)]);
+    const remote = new Set(['CF_SETUP_TOKEN', 'BETTER_AUTH_SECRET']);
+    const patches: Record<string, null>[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.method === 'GET' && request.url.endsWith('/secrets')) return Response.json({ success: true,
+            result: [...remote].map((name) => ({ name, type: 'secret_text' })) });
+        if (request.method === 'PATCH') {
+            const value = await request.json() as { secrets: Record<string, null> };
+            patches.push(value.secrets);
+            if (patches.length === 1) throw new Error('Connection failed before dispatch reached Cloudflare');
+            for (const [name, action] of Object.entries(value.secrets)) { expect(action).toBeNull(); remote.delete(name); }
+            return Response.json({ success: true, result: {} });
+        }
+        throw new Error('Unexpected API call');
+    });
+    const first = await f.request('/api/setup/cleanup', { cookie: f.cookie, body: { token: installationToken } });
+    expect(first.status).toBe(503);
+    expect(await readValue(env.DB, 'setup:cleanupEffect')).toMatchObject({ names: ['CF_SETUP_TOKEN'], instanceId: f.control.instanceId });
+    const second = await f.request('/api/setup/cleanup', { cookie: f.cookie, body: { token: installationToken } });
+    expect(second.status, await second.clone().text()).toBe(200);
+    expect(patches).toEqual([{ CF_SETUP_TOKEN: null }, { CF_SETUP_TOKEN: null }]);
+    expect(remote.has('BETTER_AUTH_SECRET')).toBe(true);
+    expect((await readControl(env.DB)).cleanupPending).toBe(0);
+});
+
+it('recovers pending cleanup with a fresh write token before issuing a new nonce challenge, keeping late deletion harmless', async () => {
+    const oldName = `LF_CONTROL_CHALLENGE_${'3'.repeat(32)}`;
+    const f = await cleanupFixture(['CF_SETUP_TOKEN', oldName]);
+    const nonce = randomSetupToken(), oldChallengeId = crypto.randomUUID(), oldProofEffect = crypto.randomUUID();
+    const seed = await acquireLease(env.DB, f.control.taskId);
+    await writeValue(env.DB, seed, 'setup:challenge', { id: oldChallengeId, name: oldName, taskId: f.control.taskId,
+        nonceDigest: await setupDigest(nonce), digest: await setupDigest('old-proof'), used: false, expiresAt: Date.now() + 600_000, effectId: oldProofEffect });
+    await writeValue(env.DB, seed, 'setup:challengeNames', [oldName]);
+    await env.DB.prepare(`INSERT INTO "lfControlEffect" ("id", "scopeId", "generation", "kind", "payload", "status", "createdAt")
+        VALUES (?, ?, ?, 'maintenance-challenge', ?, 'done', ?)`).bind(oldProofEffect, f.control.taskId, seed.generation,
+        JSON.stringify({ name: oldName }), Date.now()).run();
+    await releaseLease(env.DB, seed);
+    const remote = new Set(['CF_SETUP_TOKEN', oldName, 'BETTER_AUTH_SECRET', 'LOGINFLARE_CONFIG_REVISION']);
+    const patches: Record<string, null | { text: string }>[] = [];
+    let dispatched!: () => void, completeOld!: () => void;
+    const firstDispatch = new Promise<void>((resolve) => { dispatched = resolve; });
+    const oldCompletion = new Promise<void>((resolve) => { completeOld = resolve; });
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.url.endsWith('/tokens/verify')) return Response.json({ success: true, result: { status: 'active' } });
+        if (request.url.endsWith('/versions/runtime-one')) return Response.json({ success: true, result: { id: 'runtime-one' } });
+        if (request.method === 'GET' && request.url.endsWith('/secrets')) return Response.json({ success: true,
+            result: [...remote].map((name) => ({ name, type: 'secret_text' })) });
+        if (request.method === 'PATCH') {
+            const value = await request.json() as { secrets: Record<string, null | { text: string }> };
+            patches.push(value.secrets);
+            if (patches.length === 1) { dispatched(); await oldCompletion; }
+            for (const [name, action] of Object.entries(value.secrets)) {
+                if (action === null) remote.delete(name); else remote.add(name);
+            }
+            return Response.json({ success: true, result: {} });
+        }
+        throw new Error('Unexpected API call');
+    });
+    const oldRequest = f.request('/api/setup/cleanup', { cookie: f.cookie, body: { token: installationToken } });
+    await firstDispatch;
+    let staleResponse: Response | undefined;
+    let newName = '';
+    try {
+        await env.DB.prepare('UPDATE "lfControl" SET "leaseUntil" = 0 WHERE "id" = 1').run();
+        const recovered = await f.request('/api/maintenance/challenge', { body: { token: installationToken, nonce } });
+        expect(recovered.status, await recovered.clone().text()).toBe(202);
+        expect(recovered.headers.get('set-cookie')).toBeNull();
+        expect(await recovered.json()).not.toMatchObject({ challengeId: oldChallengeId });
+        expect(patches[1]).toEqual(patches[0]);
+        const created = Object.entries(patches[2]!).filter(([, value]) => value !== null);
+        expect(created).toHaveLength(1);
+        newName = created[0]![0];
+        expect(newName).not.toBe(oldName);
+        expect(remote.has(newName)).toBe(true);
+    } finally { completeOld(); staleResponse = await oldRequest; }
+    expect(staleResponse.status).toBe(409);
+    expect(remote.has(newName)).toBe(true);
+    expect(remote.has('BETTER_AUTH_SECRET')).toBe(true);
+    expect(remote.has('LOGINFLARE_CONFIG_REVISION')).toBe(true);
+    expect((await readControl(env.DB)).cleanupPending).toBe(1);
+});
+
+it('does not grant a read-only token a recovery session when old cleanup names are already absent', async () => {
+    const f = await cleanupFixture(['CF_SETUP_TOKEN']);
+    const sessions = await env.DB.prepare('SELECT COUNT(*) AS n FROM "lfControlSession"').first<number>('n');
+    const writes: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.url.endsWith('/tokens/verify')) return Response.json({ success: true, result: { status: 'active' } });
+        if (request.url.endsWith('/versions/runtime-one')) return Response.json({ success: true, result: { id: 'runtime-one' } });
+        if (request.method === 'GET' && request.url.endsWith('/secrets')) return Response.json({ success: true, result: [] });
+        if (request.method === 'PATCH') {
+            const value = await request.json() as { secrets: Record<string, unknown> };
+            writes.push(value.secrets);
+            return Response.json({ success: false }, { status: 403 });
+        }
+        throw new Error('Unexpected API call');
+    });
+    const response = await f.request('/api/maintenance/challenge', { body: { token: 'read-only-user-api-token-with-long-value', nonce: randomSetupToken() } });
+    expect(response.status).toBe(403);
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(await env.DB.prepare('SELECT "status" FROM "lfControlEffect" WHERE "id" = ?').bind(f.effectId).first('status')).toBe('done');
+    expect(writes).toHaveLength(1);
+    expect(Object.keys(writes[0]!)).toHaveLength(1);
+    expect(Object.keys(writes[0]!)[0]).toMatch(/^LF_CONTROL_CHALLENGE_/);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM "lfControlSession"').first<number>('n')).toBe(sessions);
 });
 
 it('configures resources in resumable steps and never regenerates a key after a lost Secrets response', async () => {
