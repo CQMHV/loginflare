@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { resolveLocale } from './locale';
+import { selectedBrowserAccountId } from './browser-account-selection';
 import './setup.css';
 
 interface ControlStatus {
@@ -96,9 +97,14 @@ const chinese: Copy = {
 class ControlRequestError extends Error {}
 async function api(path: string, body?: Record<string, unknown>) {
     let response: Response;
+    const headers: Record<string, string> = body ? { 'Content-Type': 'application/json' } : {};
+    if (path === '/api/maintenance/authorize' && body !== undefined) {
+        const accountId = selectedBrowserAccountId();
+        if (accountId) headers['X-Loginflare-Account'] = accountId;
+    }
     try {
         response = await fetch(path, { method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
-            headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+            headers, body: body ? JSON.stringify(body) : undefined });
     } catch { throw new ControlRequestError('NETWORK_ERROR'); }
     let value: Record<string, unknown>;
     try { value = await response.json(); } catch { throw new ControlRequestError('INVALID_RESPONSE'); }

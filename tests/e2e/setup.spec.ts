@@ -1,4 +1,6 @@
 import { test, expect } from './fixtures';
+import { testOrigin } from './runtime';
+import { browserAccountStorageKey } from '../../src/client/browser-account-selection';
 
 test('isolated installation UI advances migrations and requires the original authorized browser to finish', async ({ page, context }, testInfo) => {
     let authenticated = false; let prepared = 0; let configured = 0; let candidate = false; let verified = false;
@@ -152,3 +154,52 @@ test('configuration refresh restores the selected values without resetting an un
     await expect(page.getByRole('heading', { name: 'Continue on your public address' })).toBeVisible();
     expect(submitted).toEqual([selected]);
 });
+
+for (const selection of ['administrator', 'none', 'invalid'] as const) {
+    test(`maintenance administrator authorization preserves the tab account selection: ${selection}`, async ({ page, context }) => {
+        const administratorId = '28ad084b-8b27-4984-b8d9-93ce5171bbd0';
+        const selected = selection === 'administrator' ? administratorId : selection === 'invalid' ? 'not-an-account-id' : null;
+        // Two active-cookie fixtures reproduce the ambiguity that requires an explicit tab account.
+        await context.addCookies([
+            { name: 'better-auth.session_token_multi-admin', value: 'admin-session-cookie', url: testOrigin, httpOnly: true },
+            { name: 'better-auth.session_token_multi-user', value: 'user-session-cookie', url: testOrigin, httpOnly: true },
+        ]);
+        await page.addInitScript(({ key, value, administrator }) => {
+            if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key);
+            // A different storage surface and stale flow must not become implicit authorization.
+            localStorage.setItem(key, administrator);
+            sessionStorage.setItem('loginflare.auth-flow', 'b4c8f21a-a152-4bda-99a4-9cc8082143d9');
+        }, { key: browserAccountStorageKey, value: selected, administrator: administratorId });
+        let authenticated = false;
+        const authorization: Record<string, string>[] = [];
+        const statusHeaders: Record<string, string>[] = [];
+        const unexpected: string[] = [];
+        await context.route('**/api/**', async (route) => {
+            const path = new URL(route.request().url()).pathname;
+            const headers = await route.request().allHeaders();
+            if (path === '/api/maintenance/status') {
+                statusHeaders.push(headers);
+                await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ mode: 'ready', installed: true, authenticated }) });
+            } else if (path === '/api/maintenance/authorize') {
+                authorization.push(headers);
+                authenticated = headers['x-loginflare-account'] === administratorId;
+                await route.fulfill({ status: authenticated ? 200 : 403, contentType: 'application/json',
+                    body: JSON.stringify(authenticated ? { authenticated: true } : { code: 'FORBIDDEN' }) });
+            } else {
+                unexpected.push(path);
+                await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'UNEXPECTED_BUSINESS_QUERY' }) });
+            }
+        });
+        await page.goto('/en-us/maintenance');
+        await page.getByRole('button', { name: 'Continue with administrator session' }).click();
+        await expect.poll(() => authorization.length).toBe(1);
+        expect(authorization[0]['x-loginflare-account']).toBe(selection === 'administrator' ? administratorId : undefined);
+        expect(authorization[0]['x-loginflare-flow']).toBeUndefined();
+        expect(authorization[0].cookie).toContain('better-auth.session_token_multi-admin=admin-session-cookie');
+        expect(authorization[0].cookie).toContain('better-auth.session_token_multi-user=user-session-cookie');
+        expect(statusHeaders.every((headers) => headers['x-loginflare-account'] === undefined)).toBe(true);
+        if (selection === 'administrator') await expect(page.getByRole('button', { name: 'Enter maintenance' })).toBeVisible();
+        else await expect(page.getByRole('alert')).toContainText('FORBIDDEN');
+        expect(unexpected).toEqual([]);
+    });
+}
