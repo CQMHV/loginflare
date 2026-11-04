@@ -133,6 +133,8 @@ oauth.all('*', async (c) => {
             if (mediaType !== 'application/x-www-form-urlencoded') return c.json({ error: 'invalid_request' }, 400);
             form = new URLSearchParams(await c.req.raw.clone().text());
             if (form.getAll('resource').length > 1 || form.has('claims')) return c.json({ error: 'invalid_request' }, 400);
+            if (path === '/oauth2/token' && form.get('grant_type') === 'client_credentials'
+                && (!form.get('resource') || form.get('resource') === `${c.env.AUTH_URL}/api/auth/oauth2/userinfo`)) return c.json({ error: 'invalid_target' }, 400);
         }
     }
     if (path === '/oauth2/authorize') {

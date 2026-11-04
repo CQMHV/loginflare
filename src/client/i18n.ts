@@ -8,8 +8,10 @@ import { socialEn, socialZh, socialErrorsEn, socialErrorsZh } from './social-tra
 import { resolveLocale } from './locale';
 import { browserAccountsEn, browserAccountsZh, browserAccountErrorsEn, browserAccountErrorsZh } from './browser-account-translations';
 import { accessEn, accessZh, accessErrorsEn, accessErrorsZh } from './access-translations';
+import { machinesEn, machinesZh, machineErrorsEn, machineErrorsZh } from './machine-translations';
 
 const enUS = {
+    machines: machinesEn,
     access: accessEn,
     browserAccounts: browserAccountsEn,
     social: socialEn,
@@ -269,6 +271,7 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    machines: machinesZh,
     access: accessZh,
     browserAccounts: browserAccountsZh,
     social: socialZh,
@@ -534,6 +537,8 @@ Object.assign(enUS.errors, browserAccountErrorsEn);
 Object.assign(zhCN.errors, browserAccountErrorsZh);
 Object.assign(enUS.errors, accessErrorsEn);
 Object.assign(zhCN.errors, accessErrorsZh);
+Object.assign(enUS.errors, machineErrorsEn);
+Object.assign(zhCN.errors, machineErrorsZh);
 document.documentElement.lang = initialLocale;
 
 void i18n.use(initReactI18next).init({

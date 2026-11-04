@@ -14,10 +14,11 @@ Issuer 为 `${AUTH_URL}/api/auth`，例如 `https://identity.example.com/api/aut
 | --- | --- | --- | --- |
 | 服务端 Web | `client_secret_basic` | 仅应用服务端 | 授权码与 PKCE S256 |
 | SPA | `none` | 无客户端密钥 | 授权码与 PKCE S256 |
+| 机器 | `client_secret_basic` | 仅可信自动化服务端 | 客户端凭据，指定一个资源及已分配机器 scope |
 
 身份范围为 `openid profile email offline_access`：`openid` 用于用户身份，`profile` 允许读取资料字段，`email` 允许读取邮箱字段，`offline_access` 请求可刷新的授权。管理员配置的 API 资源通过明确的应用关联和用户业务角色，提供额外的业务权限 scope。Loginflare 本站管理员角色不是业务权限，不加入身份声明。ID Token 描述已认证身份，不能当作业务 API 的 Bearer 凭据。
 
-不请求业务资源时，UserInfo 使用不透明 Access Token，ID Token 由 Better Auth JWT 插件使用 RS256 签名。请求已登记的 `resource` 时，原生提供方签发绑定该 API 和用户权限的资源访问令牌。配置、资源与刷新参数、实时权限检查及 [Workers/Hono 示例](../examples/worker-api/README.md)详见 [API 访问控制](access-control.zh-CN.md)。机器客户端授权、原生/移动客户端、设备授权及动态注册仍不在本轮范围内。
+人类用户不请求业务资源时，UserInfo 使用不透明 Access Token，ID Token 由 Better Auth JWT 插件使用 RS256 签名。请求已登记的 `resource` 时，原生提供方签发绑定该 API 和用户权限的资源访问令牌。配置、资源与刷新参数、实时权限检查及 [Workers/Hono 示例](../examples/worker-api/README.md)详见 [API 访问控制](access-control.zh-CN.md)。管理员单独创建的[机器应用](management-api.zh-CN.md)使用原生客户端凭据及机器角色，不经过用户同意，不签发 ID Token 或刷新令牌。原生/移动客户端、设备授权及动态注册仍不在本轮范围内。
 
 邮箱已验证且未停用的账号可在**开发者中心 → 我的应用**（`/zh-cn/developer/applications`）自行创建和管理应用。工作台通过卡片展示应用名称、类型、状态与客户端 ID，点击卡片进入配置；空列表只提供一个创建首个应用的入口。所有权由服务端根据当前账号确定，不能通过请求指定或转移；每位开发者最多拥有 20 个应用。管理员可管理全部应用，原有实例应用继续由管理员管理，迁移不会将其分配给某位开发者。
 
@@ -36,7 +37,7 @@ Issuer 为 `${AUTH_URL}/api/auth`，例如 `https://identity.example.com/api/aut
 
 `GET /api/admin/applications` 是管理员查看全部实例应用和开发者应用的有界列表，与 OAuth 协议分开。两种管理列表接口均接受签名游标和完整客户端 ID 或名称的精确检索，只返回摘要字段、ISO UTC 创建日期、前后页游标和 issuer。后台表格在 URL 中保留游标与检索，仅显示本页条数；开发者工作台加载当前所有者的有界列表，不显示检索或分页控件。回调 Origin 和退出 URI 的索引投影避免协议检查枚举全部客户端，原生精确回调校验仍为准。接口约定和本地验证边界参见[规模说明](scaling.md)。
 
-所有应用首次接入都需要用户同意；新增权限范围需要再次授权，不提供跳过同意的“可信应用”开关。
+所有登录应用首次接入都需要用户同意；新增权限范围需要再次授权，不提供跳过同意的“可信应用”开关。机器访问由管理员分配机器角色及权限上限，Web 或 SPA 注册不能自行启用客户端凭据。
 
 用户在**账号中心 → 已授权应用**（`/zh-cn/account/applications`）管理已授予的访问权限。列表按实际保存的同意记录展示应用、允许的权限和授权时间，停用应用也可查看和撤销。创建开发者应用不会自动授权它访问当前账号。令牌过期后，同意记录仍会展示，因为它仍允许下次登录跳过重复确认。
 
@@ -90,6 +91,7 @@ Loginflare 登录页允许使用主邮箱或用户名和同一密码登录，两
 | --- | --- |
 | 授权码 | 600 秒 |
 | Access Token | 3,600 秒 |
+| 机器资源访问令牌 | 最长 300 秒，不提供刷新令牌 |
 | ID Token | 36,000 秒 |
 | Refresh Token | 2,592,000 秒 |
 | 刷新令牌重放宽限 | 0 秒 |

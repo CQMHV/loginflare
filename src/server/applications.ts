@@ -39,7 +39,7 @@ function createApplications(administrator: boolean) {
     }
     async function stored(c: Context<ApplicationEnv>, clientId: string): Promise<StoredApplication | null> {
         return c.env.DB.prepare(`SELECT "ownerId", "ownerDisabled", "adminSuspended", "metadata"${ownerSelection} FROM "oauthClient"
-            WHERE "clientId" = ? AND "referenceId" = 'loginflare' AND (? = 1 OR "ownerId" = ?)`)
+            WHERE "clientId" = ? AND "referenceId" = 'loginflare' AND "clientId" NOT IN (SELECT "clientId" FROM "machineApp") AND (? = 1 OR "ownerId" = ?)`)
             .bind(clientId, Number(administrator), c.var.identity.user.id).first<StoredApplication>();
     }
     applications.onError((error, c) => {
@@ -90,7 +90,7 @@ function createApplications(administrator: boolean) {
         const boundary = pageBoundary(input, 'clientId');
         const filter = input.lookupField ? ` AND "${input.lookupField}" = ?` : '';
         const ownerFilter = administrator ? '' : ' AND "ownerId" = ?';
-        const clients = await c.env.DB.prepare(`SELECT "clientId", "name", "tokenEndpointAuthMethod", "disabled", "createdAt", "ownerId", "ownerDisabled", "adminSuspended"${ownerSelection} FROM "oauthClient" WHERE "referenceId" = ?${ownerFilter}${filter}${boundary.sql} ORDER BY "createdAt" ${boundary.order}, "clientId" ${boundary.order} LIMIT ?`)
+        const clients = await c.env.DB.prepare(`SELECT "clientId", "name", "tokenEndpointAuthMethod", "disabled", "createdAt", "ownerId", "ownerDisabled", "adminSuspended"${ownerSelection} FROM "oauthClient" WHERE "referenceId" = ? AND "clientId" NOT IN (SELECT "clientId" FROM "machineApp")${ownerFilter}${filter}${boundary.sql} ORDER BY "createdAt" ${boundary.order}, "clientId" ${boundary.order} LIMIT ?`)
             .bind('loginflare', ...(administrator ? [] : [c.var.identity.user.id]), ...(input.lookupValue ? [input.lookupValue] : []), ...boundary.values, input.limit + 1)
             .all<OwnerSummaryFields & { clientId: string; name: string | null; tokenEndpointAuthMethod: string; disabled: number | null; createdAt: string }>();
         const items = clients.results.map((client) => ({ clientId: client.clientId, name: client.name ?? client.clientId, type: client.tokenEndpointAuthMethod === 'none' ? 'spa' : 'web', disabled: !!client.disabled, createdAt: client.createdAt, ownerId: client.ownerId, ownerDisabled: !!client.ownerDisabled, adminSuspended: !!client.adminSuspended, ...ownerSummary(client) }));

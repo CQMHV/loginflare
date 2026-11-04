@@ -15,7 +15,7 @@ export const accessEn = {
     userRoles: 'Business roles', userRolesDescription: 'These roles grant business API permissions. They do not change access to the Loginflare administrator console.',
     manageUserRoles: 'Manage business roles', noUserRoles: 'No business roles assigned.',
     audit: 'Audit logs', auditDescription: 'Review authentication, authorization and management events.', auditDetails: 'Event details', noEvents: 'No events.',
-    event: 'Event', outcome: 'Result', actorUserId: 'Actor user ID', targetUserId: 'Affected user ID', timestamp: 'Time', requestId: 'Request ID',
+    event: 'Event', outcome: 'Result', actor: 'Actor', actorUserId: 'Actor user ID', actorClientId: 'Machine actor', targetUserId: 'Affected user ID', timestamp: 'Time', requestId: 'Request ID',
     targetType: 'Target type', targetId: 'Target ID', reason: 'Reason', ipAddress: 'IP address', userAgent: 'Browser / client',
     success: 'Succeeded', failure: 'Failed', searchAudit: 'Find an audit event', value: 'Exact value', close: 'Close',
     invalidField: 'Check this value.', invalidIdentifier: 'Enter an absolute HTTPS URL without a query, fragment or user credentials.',
@@ -37,6 +37,9 @@ export const accessEn = {
         access_application_linked: 'Application allowed to access API', access_application_unlinked: 'Application API access removed',
         access_role_created: 'Business role created', access_role_updated: 'Business role updated', access_role_deleted: 'Business role deleted', access_user_roles_updated: 'User business roles changed',
         access_management_rejected: 'Access management operation rejected',
+        management_authentication_failed: 'Service authentication failed', management_access_denied: 'Service access denied', management_request_rejected: 'Service request rejected', management_read: 'Service read',
+        management_user_updated: 'User updated by service', management_user_sessions_revoked: 'User sessions revoked by service', management_application_created: 'Application created by service', management_application_updated: 'Application updated by service', management_application_secret_rotated: 'Application secret replaced by service',
+        machine_token_issued: 'Machine token issued', machine_application_created: 'Machine application created', machine_application_updated: 'Machine application updated', machine_secret_rotated: 'Machine client secret replaced', machine_tokens_revoked: 'Machine tokens revoked', machine_application_roles_updated: 'Machine application roles changed', machine_role_created: 'Machine role created', machine_role_updated: 'Machine role updated', machine_role_deleted: 'Machine role deleted', machine_management_rejected: 'Machine management rejected',
     },
 };
 
@@ -57,7 +60,7 @@ export const accessZh: typeof accessEn = {
     userRoles: '业务角色', userRolesDescription: '这些角色授予业务 API 权限，不影响 Loginflare 管理后台的访问资格。',
     manageUserRoles: '管理业务角色', noUserRoles: '尚未分配业务角色。',
     audit: '审计日志', auditDescription: '查看认证、授权和管理操作记录。', auditDetails: '事件详情', noEvents: '暂无事件。',
-    event: '事件', outcome: '结果', actorUserId: '操作用户 ID', targetUserId: '受影响用户 ID', timestamp: '时间', requestId: '请求 ID',
+    event: '事件', outcome: '结果', actor: '操作身份', actorUserId: '操作用户 ID', actorClientId: '机器身份', targetUserId: '受影响用户 ID', timestamp: '时间', requestId: '请求 ID',
     targetType: '目标类型', targetId: '目标 ID', reason: '原因', ipAddress: 'IP 地址', userAgent: '浏览器／客户端',
     success: '成功', failure: '失败', searchAudit: '查找审计事件', value: '完整值', close: '关闭',
     invalidField: '请检查此项内容。', invalidIdentifier: '请输入不含查询参数、片段和用户凭据的完整 HTTPS 地址。',
@@ -79,6 +82,9 @@ export const accessZh: typeof accessEn = {
         access_application_linked: '允许应用访问 API', access_application_unlinked: '移除应用 API 访问权限',
         access_role_created: '创建业务角色', access_role_updated: '更新业务角色', access_role_deleted: '删除业务角色', access_user_roles_updated: '变更用户业务角色',
         access_management_rejected: '权限管理操作被拒绝',
+        management_authentication_failed: '服务认证失败', management_access_denied: '拒绝服务访问', management_request_rejected: '拒绝服务请求', management_read: '服务读取数据',
+        management_user_updated: '服务更新用户', management_user_sessions_revoked: '服务撤销用户会话', management_application_created: '服务创建应用', management_application_updated: '服务更新应用', management_application_secret_rotated: '服务更新应用密钥',
+        machine_token_issued: '签发机器令牌', machine_application_created: '创建机器应用', machine_application_updated: '更新机器应用', machine_secret_rotated: '更新机器客户端密钥', machine_tokens_revoked: '撤销机器令牌', machine_application_roles_updated: '变更机器应用角色', machine_role_created: '创建机器角色', machine_role_updated: '更新机器角色', machine_role_deleted: '删除机器角色', machine_management_rejected: '拒绝机器管理操作',
     },
 };
 

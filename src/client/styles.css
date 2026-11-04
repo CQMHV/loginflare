@@ -149,6 +149,9 @@ md-icon-button { flex-shrink: 0; }
 .access-selection-items .check-label { overflow-wrap: anywhere; min-width: 0; }
 .access-selection .pagination { padding: 12px 0 0; }
 .access-role-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.machine-scopes { display: flex; flex-direction: column; gap: 8px; }
+.machine-permission-options { margin-top: 16px; }
+.machine-actor-label { display: block; color: var(--md-sys-color-on-surface-variant); margin-bottom: 4px; }
 .access-resource-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
 .access-resource-summary > p { flex-basis: 100%; margin: 0; }
 .access-resource-summary > p:empty { display: none; }

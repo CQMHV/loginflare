@@ -1,0 +1,19 @@
+{
+    "$schema": "../../node_modules/wrangler/config-schema.json",
+    "name": "loginflare-management-example",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-11-05",
+    "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+    "triggers": { "crons": ["*/15 * * * *"] },
+    "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "redact_query_string": true,
+        "logs": { "invocation_logs": false }
+    },
+    "vars": {
+        "AUTH_ISSUER": "https://identity.example.com/api/auth",
+        "MACHINE_CLIENT_ID": "replace-with-machine-client-id"
+    },
+    "secrets": { "required": ["MACHINE_CLIENT_SECRET"] }
+}

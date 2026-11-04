@@ -14,6 +14,7 @@ import { applicationPolicy, applicationPrivileges, type ApplicationManagement } 
 import { browserAccounts, browserSessionPlugin } from './browser-accounts';
 import { auditAuthentication } from './audit';
 import { apiAccessClaims } from './api-access-policy';
+import { managementScopes } from '../shared/machines';
 
 export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = []) {
     validateConfig(env);
@@ -124,9 +125,10 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                     page: '/en-us/select-account',
                     shouldRedirect: async ({ headers }) => (await browserAccounts(env, headers)).filter((account) => account.status === 'active').length > 1,
                 },
-                scopes: ['openid', 'profile', 'email', 'offline_access', ...businessScopes],
+                scopes: ['openid', 'profile', 'email', 'offline_access', ...managementScopes, ...businessScopes],
                 enforcePerClientResources: true,
-                grantTypes: ['authorization_code', 'refresh_token'],
+                grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'],
+                m2mAccessTokenExpiresIn: 300,
                 allowDynamicClientRegistration: false,
                 allowUnauthenticatedClientRegistration: false,
                 clientReference: () => 'loginflare',

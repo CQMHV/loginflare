@@ -1,6 +1,7 @@
 import { APIError } from 'better-auth/api';
 import { getOAuthProviderApi, type OAuthClaimExtensionInput, type OAuthProviderExtension } from '@better-auth/oauth-provider';
 import type { Env } from './config';
+import { activeMachineToken, machineAccess } from './machine-policy';
 
 export const identityScopes = ['openid', 'profile', 'email', 'offline_access'];
 export async function businessScopeCatalog(env: Env): Promise<string[]> {
@@ -51,6 +52,11 @@ export function apiAccessClaims(env: Env): OAuthProviderExtension {
     },
     async accessToken(input) {
         const resources = input.resources?.filter((value) => value !== `${env.AUTH_URL}/api/auth/oauth2/userinfo`) ?? [];
+        if (input.grantType === 'client_credentials') {
+            const version = !input.user ? await machineAccess(env, input.client.clientId, resources, input.scopes) : null;
+            if (version === null) throw new APIError('BAD_REQUEST', { error: 'invalid_scope', error_description: 'The machine authorization is unavailable.' });
+            return { lf_principal: 'machine', lf_machine_version: version };
+        }
         if (!resources.length && input.scopes.every((scope) => identityScopes.includes(scope))) return {};
         const invalid = () => new APIError('BAD_REQUEST', { error: 'invalid_scope', error_description: 'The requested API access is unavailable.' });
         if (!input.user?.id || !await permittedApiScopes(env, input.user.id, input.client.clientId, resources, input.scopes)) throw invalid();
@@ -72,6 +78,7 @@ export function apiAccessClaims(env: Env): OAuthProviderExtension {
 
 /** Called only after native introspection has authenticated the caller and JWT. */
 export async function activeApiToken(env: Env, payload: Record<string, unknown>): Promise<boolean> {
+    if (payload.lf_principal === 'machine') return activeMachineToken(env, payload);
     const audience = typeof payload.aud === 'string' ? [payload.aud] : Array.isArray(payload.aud) && payload.aud.every((value) => typeof value === 'string') ? payload.aud as string[] : [];
     const resources = audience.filter((value) => value !== `${env.AUTH_URL}/api/auth/oauth2/userinfo`);
     if (!resources.length) return true;
