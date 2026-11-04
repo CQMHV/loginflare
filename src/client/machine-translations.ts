@@ -1,0 +1,66 @@
+export const machinesEn = {
+    applications: 'Machine applications', applicationsDescription: 'Manage service identities and their API access.', createApplication: 'Create machine application',
+    applicationName: 'Application name', editApplication: 'Edit machine application', applicationDetails: 'Machine application details', backToApplications: 'Back to machine applications', emptyApplications: 'No machine applications.',
+    searchApplications: 'Find a machine application', clientId: 'Client ID', enabled: 'Enabled', disabled: 'Disabled', edit: 'Edit', details: 'Details',
+    roles: 'Machine roles', rolesDescription: 'Group API and management permissions for machine applications.', createRole: 'Create machine role', editRole: 'Edit machine role',
+    roleName: 'Role name', description: 'Description', emptyRoles: 'No machine roles.', searchRoles: 'Find a machine role', roleCount: '{{count}} roles',
+    assignRoles: 'Assign machine roles', assignedRoles: 'Assigned roles', noAssignedRoles: 'No machine roles assigned.', selectedCount: '{{count}} selected',
+    permissions: 'API permissions', findPermissions: 'Find an API permission', noPermissions: 'No API permissions match.', allowedScopes: 'Allowed scopes', noScopes: 'No permissions assigned.',
+    managementPermissions: 'Management API permissions', managementDescription: 'These permissions allow the service to manage Loginflare data.',
+    clientSecret: 'Client secret', secretTitle: 'Save your client secret', secretDescription: 'This secret is shown only now. Store it securely on your application server.', secretSaved: 'I have saved the secret',
+    connectionDetails: 'Connect your service', tokenEndpoint: 'Token endpoint', authenticationMethod: 'Client authentication', grantType: 'Grant type', managementResource: 'Management API identifier',
+    controls: 'Application controls', controlsDescription: 'Manage this service’s credentials and access.',
+    disable: 'Disable machine application', disableConfirm: 'Disable this application? It will no longer be able to request new access tokens.', enable: 'Enable machine application',
+    rotate: 'Rotate client secret', rotateConfirm: 'Replace the client secret? Update the service with the new secret after rotation.',
+    revoke: 'Revoke access tokens', revokeConfirm: 'Revoke current access tokens? APIs that validate JWTs offline may accept them until expiry. The service can request new tokens using its credentials.',
+    deleteRole: 'Delete machine role', deleteRoleConfirm: 'Delete this role and remove it from all assigned machine applications?',
+    invalidField: 'Check this value.', nameRequired: 'Enter a name.',
+    managementScopes: {
+        management_users_read: 'Read users', management_users_write: 'Manage users',
+        management_applications_read: 'Read applications', management_applications_write: 'Manage applications',
+        management_resources_read: 'Read API resources', management_resources_write: 'Manage API resources',
+        management_roles_read: 'Read roles', management_roles_write: 'Manage roles',
+        'management_role-assignments_read': 'Read role assignments', 'management_role-assignments_write': 'Manage role assignments',
+        management_audit_read: 'Read audit logs',
+    },
+};
+
+export const machinesZh: typeof machinesEn = {
+    applications: '机器应用', applicationsDescription: '管理服务之间调用 API 所使用的身份。', createApplication: '创建机器应用',
+    applicationName: '应用名称', editApplication: '编辑机器应用', applicationDetails: '机器应用详情', backToApplications: '返回机器应用', emptyApplications: '暂无机器应用。',
+    searchApplications: '查找机器应用', clientId: '客户端 ID', enabled: '已启用', disabled: '已停用', edit: '编辑', details: '详情',
+    roles: '机器角色', rolesDescription: '将 API 和管理权限组合为角色并分配给机器应用。', createRole: '创建机器角色', editRole: '编辑机器角色',
+    roleName: '角色名称', description: '描述', emptyRoles: '暂无机器角色。', searchRoles: '查找机器角色', roleCount: '{{count}} 个角色',
+    assignRoles: '分配机器角色', assignedRoles: '已分配角色', noAssignedRoles: '尚未分配机器角色。', selectedCount: '已选择 {{count}} 项',
+    permissions: 'API 权限', findPermissions: '查找 API 权限', noPermissions: '没有匹配的 API 权限。', allowedScopes: '允许的范围', noScopes: '尚未分配权限。',
+    managementPermissions: '管理 API 权限', managementDescription: '这些权限允许服务管理 Loginflare 数据。',
+    clientSecret: '客户端密钥', secretTitle: '保存客户端密钥', secretDescription: '密钥仅在此时显示，请妥善保存在应用服务端。', secretSaved: '我已保存密钥',
+    connectionDetails: '接入服务', tokenEndpoint: '令牌端点', authenticationMethod: '客户端认证方式', grantType: '授权类型', managementResource: '管理 API 标识',
+    controls: '应用控制', controlsDescription: '管理此服务的凭据与访问权限。',
+    disable: '停用机器应用', disableConfirm: '停用此应用？它将无法再请求新的访问令牌。', enable: '启用机器应用',
+    rotate: '轮换客户端密钥', rotateConfirm: '替换客户端密钥？轮换后请使用新密钥更新服务配置。',
+    revoke: '撤销访问令牌', revokeConfirm: '撤销此应用的现有访问令牌？离线验证 JWT 的 API 可能仍会接受这些令牌，直到令牌过期。服务仍可使用凭据请求新令牌。',
+    deleteRole: '删除机器角色', deleteRoleConfirm: '删除此角色，并取消所有机器应用的该角色分配？',
+    invalidField: '请检查此项内容。', nameRequired: '请输入名称。',
+    managementScopes: {
+        management_users_read: '读取用户', management_users_write: '管理用户',
+        management_applications_read: '读取应用', management_applications_write: '管理应用',
+        management_resources_read: '读取 API 资源', management_resources_write: '管理 API 资源',
+        management_roles_read: '读取角色', management_roles_write: '管理角色',
+        'management_role-assignments_read': '读取角色分配', 'management_role-assignments_write': '管理角色分配',
+        management_audit_read: '读取审计日志',
+    },
+};
+
+export const machineErrorsEn = {
+    MACHINE_INPUT_INVALID: 'Check the highlighted fields and try again.', MACHINE_NOT_FOUND: 'This machine application no longer exists.',
+    MACHINE_ROLE_NOT_FOUND: 'One or more machine roles are unavailable.', MACHINE_PERMISSION_NOT_FOUND: 'One or more API permissions are unavailable.',
+    MACHINE_NAME_EXISTS: 'This name is already in use.', MACHINE_LIMIT: 'The maximum number of items has been reached.',
+    MACHINE_CONFLICT: 'The selected permissions or roles changed. Reload this page and try again.', MACHINE_SYSTEM_RESOURCE: 'The built-in management API cannot be changed.',
+};
+export const machineErrorsZh: typeof machineErrorsEn = {
+    MACHINE_INPUT_INVALID: '请检查标出的字段后重试。', MACHINE_NOT_FOUND: '此机器应用已不存在。',
+    MACHINE_ROLE_NOT_FOUND: '部分机器角色已不可用。', MACHINE_PERMISSION_NOT_FOUND: '部分 API 权限已不可用。',
+    MACHINE_NAME_EXISTS: '此名称已被使用。', MACHINE_LIMIT: '已达到数量上限。',
+    MACHINE_CONFLICT: '所选权限或角色已发生变化，请刷新页面后重试。', MACHINE_SYSTEM_RESOURCE: '无法修改内置管理 API。',
+};

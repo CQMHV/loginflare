@@ -19,7 +19,7 @@ export function removeLocalFixtures(emails: readonly string[]): void {
 /** Remove only explicitly tracked generated clients with browser-test names. */
 export function removeLocalApplications(clientIds: readonly string[]): void {
     if (!clientIds.length) return;
-    if (clientIds.some((clientId) => !/^[A-Za-z]{32}$/.test(clientId))) {
+    if (clientIds.some((clientId) => !/^[A-Za-z0-9]{32}$/.test(clientId))) {
         throw new Error('Refusing to remove an application with an unexpected fixture client ID.');
     }
     const values = clientIds.map((clientId) => `'${clientId}'`).join(', ');

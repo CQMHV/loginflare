@@ -9,9 +9,9 @@ import { browserContextEvent, browserFlowId, selectedBrowserAccount, selectBrows
 
 export const identityKey = ['identity'] as const;
 export const freshness = { identity: 15_000, sessions: 15_000, ordinary: 60_000, configuration: 300_000 };
-export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections' | 'access' | 'audit';
+export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections' | 'access' | 'audit' | 'machines';
 type Group = Resource | 'profile';
-type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications' | 'accounts' | 'access'; owner?: string; accountId?: string; groups?: Group[] };
+type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications' | 'accounts' | 'access' | 'machines'; owner?: string; accountId?: string; groups?: Group[] };
 const SyncContext = createContext<(message: SyncMessage) => void>(() => {});
 const ScopeContext = createContext({ scope: '', owner: '' });
 
@@ -105,7 +105,10 @@ export function DataProvider({ children }: PropsWithChildren) {
                 void invalidate(client, identityScope(client.getQueryData(identityKey)), ['application', 'applications', 'authorized-applications']);
             }
             else if (message?.type === 'access') {
-                void invalidate(client, identityScope(client.getQueryData(identityKey)), ['access', 'audit', 'application', 'applications']);
+                void invalidate(client, identityScope(client.getQueryData(identityKey)), ['access', 'audit', 'application', 'applications', 'machines']);
+            }
+            else if (message?.type === 'machines') {
+                void invalidate(client, identityScope(client.getQueryData(identityKey)), ['machines', 'access', 'audit']);
             }
             else if (message?.type === 'social') {
                 void client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'social-providers' || (query.queryKey[0] === 'private' && ['security', 'social-connections'].includes(String(query.queryKey[2]))), refetchType: document.visibilityState === 'visible' ? 'active' : 'none' });
@@ -213,7 +216,12 @@ export function useDataActions() {
         async accessSaved() {
             if (scope !== identityScope(client.getQueryData(identityKey))) return;
             publish({ type: 'access' });
-            await invalidate(client, scope, ['access', 'audit', 'application', 'applications']);
+            await invalidate(client, scope, ['access', 'audit', 'application', 'applications', 'machines']);
+        },
+        async machinesSaved() {
+            if (scope !== identityScope(client.getQueryData(identityKey))) return;
+            publish({ type: 'machines' });
+            await invalidate(client, scope, ['machines', 'access', 'audit']);
         },
         async socialSaved() {
             publish({ type: 'social' });

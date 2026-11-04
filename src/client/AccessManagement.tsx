@@ -17,7 +17,7 @@ interface RoleDetail extends Role { permissionIds: string[]; permissions: Permis
 interface ResourceDetail extends ApiResource { permissions: Permission[] }
 interface AllowedApplication { clientId: string; name: string; createdAt: string }
 interface AuditEvent {
-    id: string; event: string; outcome: string; actorUserId: string | null; targetUserId: string | null; clientId: string | null;
+    id: string; event: string; outcome: string; actorUserId: string | null; actorClientId?: string | null; targetUserId: string | null; clientId: string | null;
     targetType: string | null; targetId: string | null; reason: string | null; requestId: string; ipAddress: string | null; userAgent: string | null; createdAt: string;
 }
 
@@ -195,7 +195,7 @@ export function UserBusinessRoles({ userId }: { userId: string }) {
 
 function AuditDetailDialog({ id, locale, onClose }: { id: string; locale: Locale; onClose: () => void }) {
     const { t } = useTranslation(), query = useResource<AuditEvent>('audit', `/api/admin/audit-logs/${encodeURIComponent(id)}`, `event:${id}`);
-    const fields = ['event', 'outcome', 'actorUserId', 'targetUserId', 'clientId', 'targetType', 'targetId', 'reason', 'requestId', 'ipAddress', 'userAgent'] as const;
+    const fields = ['event', 'outcome', 'actorUserId', 'actorClientId', 'targetUserId', 'clientId', 'targetType', 'targetId', 'reason', 'requestId', 'ipAddress', 'userAgent'] as const;
     return <FormDialog title={t('access.auditDetails')} cancelLabel={t('access.close')} onCancel={onClose}>
         <ResourceFeedback query={query} />{query.data && <dl className="access-event-details"><div><dt>{t('access.timestamp')}</dt><dd>{new Date(query.data.createdAt).toLocaleString(locale)}</dd></div>{fields.map((field) => <div key={field}><dt>{t(`access.${field}`)}</dt><dd>{field === 'event' ? <>{t(`access.events.${query.data!.event.replaceAll('.', '_')}`, { defaultValue: query.data!.event })}<code>{query.data!.event}</code></> : field === 'outcome' ? t(`access.${query.data!.outcome}`, { defaultValue: query.data!.outcome }) : query.data![field] || '—'}</dd></div>)}</dl>}
     </FormDialog>;
@@ -205,8 +205,8 @@ export function AuditLogsPage({ locale }: { locale: Locale }) {
     const { t } = useTranslation(), state = useListState('event'), [detail, setDetail] = useState<string>();
     const query = useResource<CursorPage<AuditEvent>>('audit', `/api/admin/audit-logs?${state.query}`, `events:${state.query}`);
     return <><div className="page-heading"><div><h1>{t('access.audit')}</h1><p>{t('access.auditDescription')}</p></div></div>
-        <section className="card user-table-card"><SearchBar state={state} fields={['event', 'outcome', 'actorUserId', 'targetUserId', 'clientId']} label={t('access.searchAudit')} />{query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
-            {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.timestamp')}</th><th>{t('access.event')}</th><th>{t('access.outcome')}</th><th>{t('access.actorUserId')}</th><th><span className="sr-only">{t('access.details')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{new Date(item.createdAt).toLocaleString(locale)}</td><td>{t(`access.events.${item.event.replaceAll('.', '_')}`, { defaultValue: item.event })}</td><td>{t(`access.${item.outcome}`, { defaultValue: item.outcome })}</td><td><code className="break-all">{item.actorUserId || '—'}</code></td><td><Button className="text-button" aria-label={`${t('access.details')}: ${item.event}`} onClick={() => setDetail(item.id)}>{t('access.details')}</Button></td></tr>)}</tbody></table>{!query.data.items.length && <p className="empty-state">{t('access.noEvents')}</p>}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
+        <section className="card user-table-card"><SearchBar state={state} fields={['event', 'outcome', 'actorUserId', 'actorClientId', 'targetUserId', 'clientId']} label={t('access.searchAudit')} />{query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
+            {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.timestamp')}</th><th>{t('access.event')}</th><th>{t('access.outcome')}</th><th>{t('access.actor')}</th><th><span className="sr-only">{t('access.details')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{new Date(item.createdAt).toLocaleString(locale)}</td><td>{t(`access.events.${item.event.replaceAll('.', '_')}`, { defaultValue: item.event })}</td><td>{t(`access.${item.outcome}`, { defaultValue: item.outcome })}</td><td>{item.actorClientId && <small className="machine-actor-label">{t('access.actorClientId')}</small>}<code className="break-all">{item.actorClientId || item.actorUserId || '—'}</code></td><td><Button className="text-button" aria-label={`${t('access.details')}: ${item.event}`} onClick={() => setDetail(item.id)}>{t('access.details')}</Button></td></tr>)}</tbody></table>{!query.data.items.length && <p className="empty-state">{t('access.noEvents')}</p>}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
         </section>{detail && <AuditDetailDialog id={detail} locale={locale} onClose={() => setDetail(undefined)} />}
     </>;
 }
