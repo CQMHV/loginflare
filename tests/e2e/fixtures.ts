@@ -1,4 +1,4 @@
-import { expect, test as base, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { testOrigin } from './runtime';
 
@@ -47,6 +47,22 @@ export const test = base.extend({
 export async function switchArea(page: Page, name: string) {
     await page.locator('.area-selector').getByRole('button').click();
     await page.getByRole('menuitem', { name, exact: true }).click();
+}
+
+/** Install both listeners before interaction and wait for the actual animation
+ * lifecycle. A visible option can still be moving with an opening menu. */
+export async function selectMaterialOption(select: Locator, option: Locator) {
+    const lifecycle = await select.evaluateHandle((element) => {
+        const opened = new Promise<void>((resolve) => element.addEventListener('opened', () => resolve(), { once: true }));
+        const closed = new Promise<void>((resolve) => element.addEventListener('closed', () => resolve(), { once: true }));
+        return { opened, closed };
+    });
+    try {
+        await select.getByRole('combobox').click();
+        await lifecycle.evaluate((events) => events.opened);
+        await option.click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally { await lifecycle.dispose(); }
 }
 
 export { expect };
