@@ -3,6 +3,8 @@ import { verifyOAuthQueryParams } from '@better-auth/oauth-provider';
 import { createAuth } from './auth';
 import type { Env } from './config';
 import { advanceBrowserOAuthFlow, browserAccounts, browserOAuthQueryMatches, consumeBrowserFlow, readBrowserFlow, resolveBrowserRequest } from './browser-accounts';
+import { activeApiToken, businessScopeCatalog, identityScopes, knownApiScopes, permittedApiScopes } from './api-access-policy';
+import { writeAudit } from './audit';
 
 export const protocolRoutes: Record<string, readonly string[]> = {
     '/.well-known/openid-configuration': ['GET', 'HEAD'],
@@ -19,8 +21,7 @@ export const protocolRoutes: Record<string, readonly string[]> = {
     '/oauth2/end-session/confirm': ['POST'],
 };
 const browserProtocol = new Set(['/oauth2/token', '/oauth2/userinfo', '/oauth2/revoke', '/oauth2/introspect']);
-const authorizationFields = new Set(['client_id', 'redirect_uri', 'response_type', 'response_mode', 'scope', 'state', 'nonce', 'code_challenge', 'code_challenge_method', 'prompt', 'max_age', 'login_hint', 'ui_locales', 'acr_values']);
-const allowedScopes = new Set(['openid', 'profile', 'email', 'offline_access']);
+const authorizationFields = new Set(['client_id', 'redirect_uri', 'response_type', 'response_mode', 'scope', 'state', 'nonce', 'code_challenge', 'code_challenge_method', 'prompt', 'max_age', 'login_hint', 'ui_locales', 'acr_values', 'resource']);
 
 async function validAccountSelection(env: Env, headers: Headers, query: string, required = false): Promise<boolean> {
     const flow = await readBrowserFlow(env, headers);
@@ -131,7 +132,7 @@ oauth.all('*', async (c) => {
         } else {
             if (mediaType !== 'application/x-www-form-urlencoded') return c.json({ error: 'invalid_request' }, 400);
             form = new URLSearchParams(await c.req.raw.clone().text());
-            if (form.has('resource') || form.has('claims')) return c.json({ error: 'invalid_request' }, 400);
+            if (form.getAll('resource').length > 1 || form.has('claims')) return c.json({ error: 'invalid_request' }, 400);
         }
     }
     if (path === '/oauth2/authorize') {
@@ -139,7 +140,12 @@ oauth.all('*', async (c) => {
             || (form.has('response_mode') && form.get('response_mode') !== 'query')
             || (form.get('prompt')?.split(' ').some((value) => !['login', 'consent', 'none', 'select_account'].includes(value)))) return c.json({ error: 'invalid_request' }, 400);
     }
-    const auth = createAuth(c.env);
+    if (path === '/oauth2/authorize') {
+        const scopes = form.get('scope')?.split(' ').filter(Boolean) ?? [];
+        if ((form.has('resource') || scopes.some((scope) => !identityScopes.includes(scope)))
+            && !await knownApiScopes(c.env, form.get('client_id') ?? '', form.has('resource') ? [form.get('resource')!] : [], scopes)) return c.json({ error: 'invalid_scope' }, 400);
+    }
+    const auth = createAuth(c.env, undefined, undefined, undefined, undefined, discovery ? await businessScopeCatalog(c.env) : []);
     if (jsonBody) {
         const signed = jsonBody.oauth_query;
         if (typeof signed !== 'string' || !await verifyOAuthQueryParams(signed, (await auth.$context).secret)
@@ -148,6 +154,14 @@ oauth.all('*', async (c) => {
     if (['/oauth2/authorize', '/oauth2/consent', '/oauth2/continue'].includes(path)) {
         const identity = await auth.api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (identity && (identity.user.banned || !identity.user.emailVerified)) return c.json({ error: 'access_denied' }, 403);
+        if (identity && jsonBody && (path !== '/oauth2/consent' || jsonBody.accept !== false)) {
+            const parameters = new URLSearchParams(jsonBody.oauth_query as string);
+            if (!await permittedApiScopes(c.env, identity.user.id, parameters.get('client_id') ?? '', parameters.getAll('resource'), parameters.get('scope')?.split(' ').filter(Boolean) ?? [])) {
+                const clientId = await c.env.DB.prepare('SELECT "clientId" FROM "oauthClient" WHERE "clientId" = ?').bind(parameters.get('client_id') ?? '').first<string>('clientId');
+                await writeAudit(c.env, { event: 'oauth.authorization_denied', outcome: 'failure', actorUserId: identity.user.id, targetUserId: identity.user.id, clientId, targetType: 'application', targetId: clientId, reason: 'API_ACCESS_DENIED' }, c.req.raw.headers);
+                return c.json({ code: 'API_ACCESS_DENIED' }, 403);
+            }
+        }
     }
     let request = c.req.raw;
     let logoutChoices: Awaited<ReturnType<typeof browserAccounts>> | undefined;
@@ -199,6 +213,10 @@ oauth.all('*', async (c) => {
         throw error;
     }
     if (response.status >= 500) return c.json({ error: 'server_error' }, 503);
+    if (path === '/oauth2/introspect' && response.ok) {
+        const payload = await response.clone().json<Record<string, unknown>>();
+        if (payload.active === true && !await activeApiToken(c.env, payload)) response = Response.json({ active: false }, { headers: response.headers });
+    }
     if (path === '/oauth2/end-session' && response.ok && response.headers.get('content-type')?.includes('text/html')) {
         if (logoutChoices) {
             const originalCookies = response.headers.getSetCookie();
@@ -244,13 +262,20 @@ consent.get('/consent', async (c) => {
     if (!query || !await verifyOAuthQueryParams(query, (await auth.$context).secret)) return c.json({ code: 'INVALID_OAUTH_QUERY' }, 400);
     if (!await validAccountSelection(c.env, c.req.raw.headers, query)) return c.json({ code: 'INVALID_OAUTH_QUERY' }, 400);
     const parameters = new URLSearchParams(query);
-    if (parameters.has('claims') || parameters.has('resource')) return c.json({ code: 'INVALID_OAUTH_QUERY' }, 400);
+    if (parameters.has('claims') || parameters.getAll('resource').length > 1) return c.json({ code: 'INVALID_OAUTH_QUERY' }, 400);
     const client = await c.env.DB.prepare('SELECT "clientId", "name", "scopes", "redirectUris" FROM "oauthClient" WHERE "clientId" = ? AND COALESCE("disabled", 0) = 0')
         .bind(parameters.get('client_id')).first<{ clientId: string; name: string; scopes: string; redirectUris: string }>();
     if (!client) return c.json({ code: 'APPLICATION_NOT_FOUND' }, 404);
     const scopes = parameters.get('scope')?.split(' ').filter(Boolean) ?? [];
     const permitted = JSON.parse(client.scopes) as string[];
-    if (!scopes.length || scopes.some((value) => !allowedScopes.has(value) || !permitted.includes(value))
+    if (!scopes.length || scopes.some((value) => !permitted.includes(value))
         || !(JSON.parse(client.redirectUris) as string[]).includes(parameters.get('redirect_uri') ?? '')) return c.json({ code: 'INVALID_OAUTH_QUERY' }, 400);
-    return c.json({ client: { clientId: client.clientId, name: client.name }, scopes });
+    const resources = parameters.getAll('resource');
+    if (!await permittedApiScopes(c.env, identity.user.id, client.clientId, resources, scopes)) {
+        await writeAudit(c.env, { event: 'oauth.authorization_denied', outcome: 'failure', actorUserId: identity.user.id, targetUserId: identity.user.id, clientId: client.clientId, targetType: 'application', targetId: client.clientId, reason: 'API_ACCESS_DENIED' }, c.req.raw.headers);
+        return c.json({ code: 'API_ACCESS_DENIED' }, 403);
+    }
+    const resource = resources.length ? await c.env.DB.prepare('SELECT "name", "identifier", "id" FROM "oauthResource" WHERE "identifier" = ? AND coalesce("disabled", 0) = 0').bind(resources[0]).first<{ name: string; identifier: string; id: string }>() : null;
+    const permissions = resource ? (await c.env.DB.prepare('SELECT "scope", "name", "description" FROM "apiPermission" WHERE "resourceId" = ? AND "scope" IN (SELECT value FROM json_each(?)) ORDER BY "scope"').bind(resource.id, JSON.stringify(scopes)).all()).results : [];
+    return c.json({ client: { clientId: client.clientId, name: client.name }, scopes, ...(resource ? { resource: { name: resource.name, identifier: resource.identifier }, permissions } : {}) });
 });

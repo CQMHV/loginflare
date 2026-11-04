@@ -187,13 +187,13 @@ it.each(['authorization_code', 'refresh_token'] as const)('prevents an actual in
 it('upgrades existing native consent, pending codes, issued offline grants and opaque verification values without a revocation gap', async () => {
     await reset();
     const migrationIndex = env.TEST_MIGRATIONS.findIndex((migration) => migration.name.startsWith('0017_'));
-    const browserMigration = env.TEST_MIGRATIONS.find((migration) => migration.name.startsWith('0018_'));
+    const infrastructureMigrations = env.TEST_MIGRATIONS.slice(migrationIndex + 1);
     expect(migrationIndex).toBeGreaterThan(0);
-    expect(browserMigration).toBeDefined();
+    expect(infrastructureMigrations.length).toBeGreaterThan(0);
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.slice(0, migrationIndex));
-    // The current HTTP harness needs the independent browser session tables;
+    // The current HTTP harness needs the independent browser/access/audit tables;
     // the account-authorization data still predates migration 0017.
-    await applyD1Migrations(env.DB, [browserMigration!]);
+    await applyD1Migrations(env.DB, infrastructureMigrations);
     const { client, cookie, identity, clientId } = await fixture();
     const tokens = await issue(client, clientId, cookie);
     const pending = await authorize(client, clientId, cookie), later = await authorize(client, clientId, cookie);

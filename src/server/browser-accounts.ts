@@ -254,6 +254,8 @@ async function revokeBrowserAccounts(env: Env, headers: Headers, accountId?: str
         // offline-consent policy. Only this account's cookies reach signOut.
         const cookie = await serializeSigned(cookieNames.session, row.token, env.BETTER_AUTH_SECRET);
         const scopedHeaders = new Headers({ origin: env.AUTH_URL, cookie: `${names(env).browser}=${encodeURIComponent(parse(headers.get('cookie') ?? '')[names(env).browser] ?? '')}; ${cookie.split(';', 1)[0]}` });
+        const requestId = headers.get('X-Loginflare-Request-ID');
+        if (requestId) scopedHeaders.set('X-Loginflare-Request-ID', requestId);
         await auth.api.signOut({ headers: scopedHeaders });
     }
     await env.DB.prepare(`UPDATE "browserAccount" SET "sessionId" = NULL, "slot" = NULL WHERE "browserHash" = ? ${accountId ? 'AND "id" = ?' : ''}`).bind(hash, ...(accountId ? [accountId] : [])).run();

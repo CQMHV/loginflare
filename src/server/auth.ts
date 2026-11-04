@@ -12,8 +12,10 @@ import { socialAuthentication } from './social-auth';
 import type { LoadedConnection } from './social-connections';
 import { applicationPolicy, applicationPrivileges, type ApplicationManagement } from './application-policy';
 import { browserAccounts, browserSessionPlugin } from './browser-accounts';
+import { auditAuthentication } from './audit';
+import { apiAccessClaims } from './api-access-policy';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement) {
+export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = []) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
     const multifactor = twoFactor({ issuer: 'Loginflare', allowPasswordless: true });
@@ -115,14 +117,15 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                 disableSettingJwtHeader: true,
             }),
             oauthProvider({
-                extensions: [policy.extension],
+                extensions: [policy.extension, apiAccessClaims(env)],
                 loginPage: '/en-us/login',
                 consentPage: '/en-us/consent',
                 selectAccount: {
                     page: '/en-us/select-account',
                     shouldRedirect: async ({ headers }) => (await browserAccounts(env, headers)).filter((account) => account.status === 'active').length > 1,
                 },
-                scopes: ['openid', 'profile', 'email', 'offline_access'],
+                scopes: ['openid', 'profile', 'email', 'offline_access', ...businessScopes],
+                enforcePerClientResources: true,
                 grantTypes: ['authorization_code', 'refresh_token'],
                 allowDynamicClientRegistration: false,
                 allowUnauthenticatedClientRegistration: false,
@@ -139,6 +142,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                 secretKey: env.TURNSTILE_SECRET_KEY,
                 endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/emails/recovery/start', '/send-verification-email'],
             }),
+            auditAuthentication(env),
         ],
     });
 }

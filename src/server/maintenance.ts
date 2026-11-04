@@ -26,6 +26,7 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
         { table: 'socialFlow', cutoff },
         { table: 'securityProof', cutoff },
         { table: 'browserAuthFlow', cutoff },
+        { table: 'auditLog', cutoff },
         { table: 'browserAccount', cutoff, guard: 'AND ("sessionId" IS NULL OR NOT EXISTS (SELECT 1 FROM "session" s WHERE s."id" = "browserAccount"."sessionId" AND s."expiresAt" > strftime(\'%Y-%m-%dT%H:%M:%fZ\', \'now\')))' },
         { table: 'verification', cutoff: cutoffIso },
         { table: 'userAvatar', cutoff, column: 'deleteAfter', avatars: true },
