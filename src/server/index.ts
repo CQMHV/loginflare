@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { APIError } from 'better-auth/api';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { createAuth } from './auth';
@@ -15,6 +16,7 @@ import { branding } from './branding';
 import { publicBranding, readBranding } from './branding-settings';
 import { socialConnections, connection } from './social-connections';
 import { databaseRateLimit } from './rate-limit';
+import { browserRequest, browserRoutes, signOutBrowserAccount } from './browser-accounts';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -101,6 +103,10 @@ const privatePaths = new Set(['/update-user', '/verify-password', '/change-passw
 const app = new Hono<{ Bindings: Env }>();
 
 function logPath(path: string): string {
+    if (['/api/browser/accounts', '/api/browser/accounts/select', '/api/browser/accounts/sign-out-all', '/api/browser/auth-flows'].includes(path)) return path;
+    if (/^\/api\/browser\/accounts\/[^/]+\/sign-out$/.test(path)) return '/api/browser/accounts/:id/sign-out';
+    if (/^\/api\/browser\/accounts\/[^/]+$/.test(path)) return '/api/browser/accounts/:id';
+    if (/^\/api\/browser\/auth-flows\/[^/]+$/.test(path)) return '/api/browser/auth-flows/:id';
     if (/^\/api\/auth\/callback\/[^/]+$/.test(path)) return '/api/auth/callback/:id';
     if (path === '/api/social/providers' || path === '/api/admin/social-connections' || path === '/api/admin/social-connections/icon') return path;
     if (/^\/api\/admin\/social-connections\/[^/]+$/.test(path)) return '/api/admin/social-connections/:id';
@@ -179,6 +185,7 @@ app.get('/api/config', (c) => {
 });
 
 app.route('/api/admin/applications', applications);
+app.route('/api/browser', browserRoutes);
 app.route('/api/developer/applications', developerApplications);
 app.route('/api/account/applications', accountApplications);
 app.route('/api', management);
@@ -267,7 +274,7 @@ app.all('/api/auth/*', async (c) => {
         }
     }
 
-    const response = await auth.handler(c.req.raw);
+    const response = (path === '/sign-out' ? await signOutBrowserAccount(c.env, c.req.raw.headers) : null) ?? await auth.handler(c.req.raw);
     if (delivery.failed) return c.json({ code: 'EMAIL_DELIVERY_FAILED' }, 503);
     if (response.status >= 500) {
         // A secondary reservation can win after the signup preflight. The
@@ -287,7 +294,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|select-account|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);
@@ -306,6 +313,9 @@ app.all('*', async (c) => {
     return document;
 });
 app.onError((error, c) => {
+    if (error instanceof APIError) {
+        if (error.statusCode >= 400 && error.statusCode < 500) return new Response(JSON.stringify({ code: error.body?.code ?? 'INVALID_INPUT' }), { status: error.statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    }
     c.header('Cache-Control', 'no-store');
     const configuration = error instanceof ConfigurationError;
     console.error(JSON.stringify({ event: configuration ? 'configuration_error' : 'request_failed', ...(configuration ? { reason: error.message } : {}), path: logPath(c.req.path) }));
@@ -313,7 +323,7 @@ app.onError((error, c) => {
 });
 
 export default {
-    fetch: app.fetch,
+    fetch: (request: Request, env: Env, ctx: ExecutionContext) => browserRequest(request, env, async (resolved) => app.fetch(resolved, env, ctx)),
     async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
         ctx.waitUntil(maintainDatabase(env).then((result) => {
             console.log(JSON.stringify({ event: 'database_maintenance', ...result }));

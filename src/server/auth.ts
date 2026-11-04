@@ -1,5 +1,5 @@
 import { betterAuth } from 'better-auth';
-import { admin, captcha, jwt, twoFactor, username } from 'better-auth/plugins';
+import { admin, captcha, jwt, multiSession, twoFactor, username } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { z } from 'zod';
 import { validateConfig, type Env } from './config.ts';
@@ -11,6 +11,7 @@ import { databaseRateLimit } from './rate-limit';
 import { socialAuthentication } from './social-auth';
 import type { LoadedConnection } from './social-connections';
 import { applicationPolicy, applicationPrivileges, type ApplicationManagement } from './application-policy';
+import { browserAccounts, browserSessionPlugin } from './browser-accounts';
 
 export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement) {
     validateConfig(env);
@@ -106,6 +107,8 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             username({ displayUsername: false }),
             multifactor,
             socialAuthentication(env, selected),
+            browserSessionPlugin(env),
+            multiSession({ maximumSessions: 5 }),
             jwt({
                 jwks: { keyPairConfig: { alg: 'RS256' } },
                 jwt: { issuer: `${env.AUTH_URL}/api/auth` },
@@ -115,6 +118,10 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                 extensions: [policy.extension],
                 loginPage: '/en-us/login',
                 consentPage: '/en-us/consent',
+                selectAccount: {
+                    page: '/en-us/select-account',
+                    shouldRedirect: async ({ headers }) => (await browserAccounts(env, headers)).filter((account) => account.status === 'active').length > 1,
+                },
                 scopes: ['openid', 'profile', 'email', 'offline_access'],
                 grantTypes: ['authorization_code', 'refresh_token'],
                 allowDynamicClientRegistration: false,

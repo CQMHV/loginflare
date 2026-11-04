@@ -16,17 +16,36 @@ const access = new Map<string, Profile>();
 let requests: string[] = [];
 let tokenFault = '';
 
-function browser(client = harness()) {
-    const jar = new Map<string, string>();
+function browser(client = harness(), jar = new Map<string, string>()) {
+    let flowId = '', flowPurpose = '';
+    const cookie = () => [...jar].map(([a, b]) => `${a}=${b}`).join('; ');
+    async function cancelFlow() {
+        const previous = flowId; flowId = ''; flowPurpose = '';
+        if (previous) await client.request(`/api/browser/auth-flows/${previous}`, { cookie: cookie(), method: 'DELETE' });
+    }
     async function request(path: string, body?: Record<string, unknown>, method?: string) {
-        const response = await client.request(path, { body, cookie: [...jar].map(([a, b]) => `${a}=${b}`).join('; '), method });
+        const socialStart = path === '/api/auth/social/start';
+        const passwordStart = ['/api/auth/sign-in/email', '/api/auth/sign-in/username'].includes(path);
+        const continueVerifiedLink = socialStart && body?.purpose === 'link' && flowPurpose === 'reauth';
+        if ((socialStart && !continueVerifiedLink) || passwordStart) await cancelFlow();
+        const response = await client.request(path, { body, cookie: cookie(), method, headers: flowId ? { 'X-Loginflare-Flow': flowId } : undefined });
         for (const line of response.headers.getSetCookie()) {
             const [pair] = line.split(';'), index = pair!.indexOf('='), name = pair!.slice(0, index), value = pair!.slice(index + 1);
             if (/max-age=0/i.test(line) || !value) jar.delete(name); else jar.set(name, value);
         }
+        if (response.ok && response.headers.get('content-type')?.includes('application/json')) {
+            const payload = await response.clone().json<{ browserFlowId?: string; browserAccountId?: string; twoFactorRedirect?: boolean; browserFlowComplete?: boolean } | null>();
+            if ((socialStart || passwordStart) && payload?.browserFlowId) {
+                flowId = payload.browserFlowId;
+                flowPurpose = socialStart ? String(body?.purpose ?? 'login') : 'password';
+            }
+            if (payload?.browserFlowComplete) { flowId = ''; flowPurpose = ''; }
+            else if (path === '/api/auth/social/finish' && flowPurpose !== 'reauth') await cancelFlow();
+            else if (flowPurpose === 'password' && payload?.browserAccountId && !payload.twoFactorRedirect) await cancelFlow();
+        }
         return response;
     }
-    return { client, jar, request, cookie: () => [...jar].map(([a, b]) => `${a}=${b}`).join('; ') };
+    return { client, jar, request, cookie };
 }
 async function admin() {
     const b = browser();
@@ -124,6 +143,33 @@ it('does not initialize any providers for ordinary session reads', async () => {
     const b = await admin(); await connector(b, 'oidc'); requests = [];
     await b.request('/api/auth/get-session');
     expect(requests).toEqual([]);
+});
+
+it('isolates concurrent social sign-ins in two tabs sharing one browser cookie jar', async () => {
+    const a = await admin(), row = await connector(a), first = browser(a.client), second = browser(a.client, first.jar);
+    const firstUrl = await start(first, row), secondUrl = await start(second, row);
+    const results = await Promise.all([
+        callback(first, row, firstUrl, { sub: 'tab-one', email: 'tab-one@example.com', email_verified: true }),
+        callback(second, row, secondUrl, { sub: 'tab-two', email: 'tab-two@example.com', email_verified: true }),
+    ]);
+    for (const response of results) {
+        expect(response.status, await response.clone().text()).toBe(302);
+        expect(response.headers.get('location')).not.toContain('error=');
+    }
+    const one = await (await first.request('/api/auth/get-session')).json<{ user: { id: string; email: string } }>();
+    const two = await (await second.request('/api/auth/get-session')).json<{ user: { id: string; email: string } }>();
+    expect(one.user.email).toBe('tab-one@example.com');
+    expect(two.user.email).toBe('tab-two@example.com');
+    expect(one.user.id).not.toBe(two.user.id);
+    const finished = await Promise.all([first.request('/api/auth/social/finish', {}), second.request('/api/auth/social/finish', {})]);
+    const accountIds: string[] = [];
+    for (const response of finished) {
+        expect(response.status, await response.clone().text()).toBe(200);
+        accountIds.push((await response.json<{ browserAccountId: string }>()).browserAccountId);
+    }
+    const selected = await Promise.all(accountIds.map((accountId) => a.client.request('/api/auth/get-session', { cookie: first.cookie(), headers: { 'X-Loginflare-Account': accountId } })));
+    expect((await selected[0]!.json<{ user: { id: string } }>()).user.id).toBe(one.user.id);
+    expect((await selected[1]!.json<{ user: { id: string } }>()).user.id).toBe(two.user.id);
 });
 
 it.each(['microsoft', 'discord'] as const)('stages an unverified %s email without creating an account or session', async (type) => {
@@ -260,7 +306,10 @@ it('rejects state replay, mismatched browser cookies, cancellation and changed c
     const a = await admin(), row = await connector(a), b = browser(a.client);
     const url = await start(b, row), profile = { sub: 'one', email: 'one@example.com', email_verified: true };
     const stranger = browser(a.client);
-    expect((await callback(stranger, row, url, profile)).status).toBe(400);
+    const foreignCallback = await callback(stranger, row, url, profile);
+    expect(foreignCallback.status).toBe(302);
+    expect(foreignCallback.headers.get('location')).toContain('/social/complete?error=BROWSER_FLOW_EXPIRED');
+    expect(await session(stranger.client, stranger.cookie())).toBeNull();
     await callback(b, row, url, profile);
     expect((await callback(b, row, url, profile)).status).toBe(302);
     const other = browser(a.client), pending = await start(other, row);
@@ -286,7 +335,7 @@ it('requires existing MFA on third-party sign-in and continues with a single-use
     await env.DB.prepare('UPDATE "socialConnection" SET "revision" = "revision" + 1 WHERE "id" = ?').bind(row.id).run();
     expect((await b.request('/api/auth/two-factor/verify-backup-code', { code: enrollment.backupCodes[0] })).status).toBe(400);
     expect(await session(b.client, b.cookie())).toBeNull();
-    for (const name of b.jar.keys()) if (name.endsWith('social_flow')) b.jar.delete(name);
+    for (const name of b.jar.keys()) if (name.includes('social_flow')) b.jar.delete(name);
     expect((await b.request('/api/auth/two-factor/verify-backup-code', { code: enrollment.backupCodes[0] })).status).toBe(400);
     await login(b, row, { sub: 'mfa', email: 'mfa@example.com', email_verified: true });
     expect((await b.request('/api/auth/two-factor/verify-backup-code', { code: enrollment.backupCodes[0] })).status).toBe(200);
@@ -304,6 +353,28 @@ async function loginReauth(b: ReturnType<typeof browser>, row: SocialConnection,
     const finish = await b.request('/api/auth/social/finish', {});
     expect(finish.status, await finish.clone().text()).toBe(200);
 }
+
+it('requires local MFA again before issuing a passwordless social operation proof', async () => {
+    const a = await admin(), row = await connector(a), b = browser(a.client);
+    const profile = { sub: 'mfa', email: 'sensitive-mfa@example.com', email_verified: true };
+    await login(b, row, profile); await b.request('/api/auth/social/finish', {});
+    await loginReauth(b, row, 'two-factor/enable');
+    const enabled = await b.request('/api/auth/two-factor/enable', {});
+    expect(enabled.status, await enabled.clone().text()).toBe(200);
+    const { totpURI } = await enabled.json<{ totpURI: string }>();
+    expect((await b.request('/api/auth/two-factor/verify-totp', { code: await authenticatorCode(totpURI) })).status).toBe(200);
+    const response = await callback(b, row, await start(b, row, { purpose: 'reauth', action: 'emails/add' }), profile);
+    expect(response.headers.get('location')).toContain('two-factor?social=1');
+    expect(await (await b.request('/api/auth/social/flow')).json()).toMatchObject({ stage: 'mfa' });
+    expect((await b.request('/api/auth/emails/add', { email: 'before-mfa@example.com' })).ok).toBe(false);
+    expect((await b.request('/api/auth/two-factor/verify-backup-code', { code: 'not-a-valid-recovery-code' })).ok).toBe(false);
+    expect((await b.request('/api/auth/two-factor/verify-totp', { code: await authenticatorCode(totpURI) })).status).toBe(200);
+    const finish = await b.request('/api/auth/social/finish', {});
+    expect(finish.status, await finish.clone().text()).toBe(200);
+    expect(await (await b.request('/api/auth/social/security')).json()).toMatchObject({ proofPurpose: 'emails/add' });
+    const added = await b.request('/api/auth/emails/add', { email: 'after-mfa@example.com' });
+    expect(added.status, await added.clone().text()).toBe(200);
+});
 
 it('reauthenticates the exact linked identity, protects the last method, and permits password recovery', async () => {
     const a = await admin(), row = await connector(a), b = browser(a.client);
@@ -335,6 +406,37 @@ it('tests a disabled connector without creating accounts and restricts administr
     expect(await (await a.request('/api/auth/social/flow')).json()).toMatchObject({ stage: 'tested' });
     expect(await env.DB.prepare('SELECT COUNT(*) FROM "user"').first('COUNT(*)')).toBe(1);
     expect(await env.DB.prepare('SELECT COUNT(*) FROM "account" WHERE "providerId" = ?').bind(row.id).first('COUNT(*)')).toBe(0);
+});
+
+it('tracks the administrator test-login alias through callback and completion without changing account sessions', async () => {
+    const a = await admin(), row = await connector(a);
+    await env.DB.prepare('UPDATE "socialConnection" SET "enabled" = 0 WHERE "id" = ?').bind(row.id).run();
+    const original = (await session(a.client, a.cookie()))!;
+    const counts = async () => Promise.all(['user', 'account', 'session'].map((table) => env.DB.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).first<number>('count')));
+    const before = await counts();
+    // This is the public administrator alias used by the UI, with the normal
+    // browser cookie and no pre-created flow or X-Loginflare-Flow header.
+    const started = await a.request(`/api/admin/social-connections/${row.id}/test`, { locale: 'zh-CN' });
+    expect(started.status, await started.clone().text()).toBe(200);
+    const pending = await started.json<{ url: string; browserFlowId: string }>();
+    expect(pending.browserFlowId).toMatch(/^[a-f0-9-]{36}$/);
+    const result = await callback(a, row, new URL(pending.url), { sub: 'alias-test-only', email: 'alias-test@example.com', email_verified: true, name: 'Test result' });
+    expect(result.status, await result.clone().text()).toBe(302);
+    expect(result.headers.get('location')).toContain('/zh-cn/social/complete?');
+    expect(result.headers.get('location')).not.toContain('error=');
+    const headers = { 'X-Loginflare-Flow': pending.browserFlowId };
+    const status = await a.client.request('/api/auth/social/flow', { cookie: a.cookie(), headers });
+    expect(status.status, await status.clone().text()).toBe(200);
+    expect(await status.json()).toMatchObject({ stage: 'tested', purpose: 'test', profile: { subject: 'alias-test-only', email: 'alias-test@example.com', name: 'Test result' } });
+    expect(await counts()).toEqual(before);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "account" WHERE "providerId" = ?').bind(row.id).first<number>('count')).toBe(0);
+    const finished = await a.client.request('/api/auth/social/finish', { cookie: a.cookie(), headers, body: {} });
+    expect(finished.status, await finished.clone().text()).toBe(200);
+    expect(await finished.json()).toMatchObject({ redirect: '/zh-cn/admin/social-connections' });
+    const after = (await session(a.client, a.cookie()))!;
+    expect(after.user.id).toBe(original.user.id);
+    expect(after.session.id).toBe(original.session.id);
+    expect(await counts()).toEqual(before);
 });
 
 it.each((['oidc', 'microsoft', 'telegram'] as const).flatMap((type) => [...['nonce', 'issuer', 'audience', 'signature', 'missing', 'upstream'], ...(type === 'telegram' ? ['expired'] : [])].map((fault) => ({ type, fault }))))('rejects $type $fault errors before account/session creation', async ({ type, fault }) => {
@@ -390,7 +492,8 @@ it('rejects a binding callback after the browser switches away from its initiati
     await a.client.verify('switched@example.com');
     expect((await a.request('/api/auth/sign-in/email', { email: 'switched@example.com', password })).status).toBe(200);
     const response = await callback(a, row, pending, { sub: 'must-not-bind', email: 'unrelated@example.com', email_verified: true });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toContain('/social/complete?error=BROWSER_FLOW_EXPIRED');
     expect(await env.DB.prepare('SELECT COUNT(*) FROM "account" WHERE "providerId" = ?').bind(row.id).first('COUNT(*)')).toBe(0);
 });
 

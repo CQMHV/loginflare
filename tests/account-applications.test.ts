@@ -186,7 +186,14 @@ it.each(['authorization_code', 'refresh_token'] as const)('prevents an actual in
 
 it('upgrades existing native consent, pending codes, issued offline grants and opaque verification values without a revocation gap', async () => {
     await reset();
-    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.slice(0, -1));
+    const migrationIndex = env.TEST_MIGRATIONS.findIndex((migration) => migration.name.startsWith('0017_'));
+    const browserMigration = env.TEST_MIGRATIONS.find((migration) => migration.name.startsWith('0018_'));
+    expect(migrationIndex).toBeGreaterThan(0);
+    expect(browserMigration).toBeDefined();
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.slice(0, migrationIndex));
+    // The current HTTP harness needs the independent browser session tables;
+    // the account-authorization data still predates migration 0017.
+    await applyD1Migrations(env.DB, [browserMigration!]);
     const { client, cookie, identity, clientId } = await fixture();
     const tokens = await issue(client, clientId, cookie);
     const pending = await authorize(client, clientId, cookie), later = await authorize(client, clientId, cookie);
@@ -194,7 +201,7 @@ it('upgrades existing native consent, pending codes, issued offline grants and o
     const now = new Date().toISOString(), expiry = new Date(Date.now() + 600_000).toISOString();
     await env.DB.prepare('INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)')
         .bind('opaque', 'opaque', 'opaque-value-that-is-not-json', expiry, now, now).run();
-    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.slice(-1));
+    await applyD1Migrations(env.DB, [env.TEST_MIGRATIONS[migrationIndex]]);
     const policies = await env.DB.prepare('SELECT "activatedAt", "gcAfter" FROM "oauthGrantPolicy" WHERE "userId" = ?').bind(identity.user.id).all<{ activatedAt: string | null; gcAfter: string }>();
     expect(policies.results.filter((policy) => policy.activatedAt === null)).toHaveLength(2);
     expect(policies.results.filter((policy) => policy.activatedAt !== null)).toHaveLength(1);

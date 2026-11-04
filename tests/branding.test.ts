@@ -83,7 +83,7 @@ it('persists every supported scheme and publishes matching palettes to HTML and 
     await update(client, cookie, await current(client), { colorScheme: 'monochrome' });
     const value = await current(client);
     expect(value.colors.light.primary).toBe('#000000');
-    const response = await app.fetch(new Request(`${origin}/en-us/login`), { ...client.bindings, ASSETS: { fetch: async () => new Response('<html><head><title></title></head></html>', { headers: { 'Content-Type': 'text/html' } }) } }, createExecutionContext());
+    const response = await app.fetch(new Request(`${origin}/en-us/login`), { ...client.bindings, ASSETS: { ...client.bindings.ASSETS, fetch: async () => new Response('<html><head><title></title></head></html>', { headers: { 'Content-Type': 'text/html' } }) } }, createExecutionContext());
     expect(await response.text()).toContain('monochrome');
     await client.signup('scheme-mail@example.test');
     expect(client.messages.at(-1)?.html).toContain(`background:${value.colors.light.primary}`);
@@ -163,7 +163,7 @@ it('does not publish a logo uploaded by a session that was revoked during storag
 it('escapes branding in HTML bootstrap metadata and transactional mail', async () => {
     const { client, cookie } = await admin(), name = 'Example </title><script>alert(1)</script> &quot; Co';
     await update(client, cookie, await current(client), { name });
-    const response = await app.fetch(new Request(`${origin}/en-us/login`), { ...client.bindings, ASSETS: { fetch: async () => new Response('<!doctype html><html><head><title>Loginflare</title><meta name="description"><link rel="icon"></head><body></body></html>', { headers: { 'Content-Type': 'text/html' } }) } }, createExecutionContext());
+    const response = await app.fetch(new Request(`${origin}/en-us/login`), { ...client.bindings, ASSETS: { ...client.bindings.ASSETS, fetch: async () => new Response('<!doctype html><html><head><title>Loginflare</title><meta name="description"><link rel="icon"></head><body></body></html>', { headers: { 'Content-Type': 'text/html' } }) } }, createExecutionContext());
     const html = await response.text();
     const scripts: string[] = [];
     let hydratedName = '';

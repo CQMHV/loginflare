@@ -1,7 +1,7 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from 'better-auth';
 import { APIError, createAuthEndpoint, createAuthMiddleware, sessionMiddleware } from 'better-auth/api';
 import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
-import { parseSetCookieHeader, setSessionCookie } from 'better-auth/cookies';
+import { expireCookie, parseSetCookieHeader, setSessionCookie } from 'better-auth/cookies';
 import { generateState, parseState, generateIdTokenNonce, handleOAuthUserInfo, linkOAuthAccount } from 'better-auth/oauth2';
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ import { consumeEmailQuota } from './email-operations';
 import { socialFetch } from './social-network';
 import { inspectImage } from '../shared/avatars';
 import { maximumSourceBytes } from '../shared/image-limits';
+import { browserOAuthQueryMatches, readBrowserFlow } from './browser-accounts';
 
 interface Profile { subject: string; email?: string; verified: boolean; name: string; image?: string }
 interface FlowData {
@@ -69,6 +70,8 @@ export function socialAuthentication(env: Env, selected?: LoadedConnection) {
         if (!flow) return fail();
         if (flow.userId && ['link', 'reauth', 'test'].includes(flow.purpose)) {
             if (flow.stage === 'authorization') {
+                const browserFlow = ctx.headers ? await readBrowserFlow(env, ctx.headers) : null;
+                if (browserFlow?.accountId && ctx.headers?.get('X-Loginflare-Account') !== browserFlow.accountId) fail();
                 const actor = await currentUser(ctx);
                 if (actor.user.id !== flow.userId || actor.session.id !== flow.sessionId) fail();
             }
@@ -290,12 +293,14 @@ export function socialAuthentication(env: Env, selected?: LoadedConnection) {
                 const flow = await cookieFlow(ctx), data = await unpack(flow);
                 if (flow.stage === 'tested') {
                     await env.DB.prepare('DELETE FROM "socialFlow" WHERE "id" = ?').bind(flow.id).run();
+                    expireCookie(ctx, ctx.context.createAuthCookie('social_flow'));
                     return ctx.json({ redirect: localizedPath(data.locale, 'admin/social-connections') });
                 }
                 const identity = await currentUser(ctx);
                 if (!['authenticated', 'linked'].includes(flow.stage) || identity.user.id !== flow.userId || identity.session.id !== data.verifiedSessionId) fail();
                 const consumed = await env.DB.prepare('DELETE FROM "socialFlow" WHERE "id" = ? AND "stage" = ? RETURNING "id"').bind(flow.id, flow.stage).first();
                 if (!consumed) fail();
+                expireCookie(ctx, ctx.context.createAuthCookie('social_flow'));
                 if (flow.purpose === 'reauth') {
                     const id = crypto.randomUUID();
                     await env.DB.prepare('INSERT INTO "securityProof" ("id", "userId", "sessionId", "purpose", "expiresAt") VALUES (?, ?, ?, ?, ?)')
@@ -362,7 +367,10 @@ export function socialAuthentication(env: Env, selected?: LoadedConnection) {
             matcher: (ctx) => ctx.path === '/social/finish',
             handler: createAuthMiddleware(async (ctx) => {
                 const flow = await cookieFlow(ctx), data = await unpack(flow);
-                if (data.oauthQuery) ctx.body.oauth_query = data.oauthQuery;
+                if (data.oauthQuery) {
+                    if (!ctx.headers || !await browserOAuthQueryMatches(env, ctx.headers, data.oauthQuery)) fail('INVALID_OAUTH_QUERY');
+                    ctx.body.oauth_query = data.oauthQuery;
+                }
             }),
         }, {
             matcher: (ctx) => ['/two-factor/enable', '/two-factor/disable', '/two-factor/generate-backup-codes'].includes(ctx.path ?? ''),
@@ -392,6 +400,17 @@ export function socialAuthentication(env: Env, selected?: LoadedConnection) {
                     if (next.user.id !== flow.userId) fail('SOCIAL_WRONG_IDENTITY');
                     data.verifiedSessionId = next.session.id;
                     await save(flow, data, 'authenticated');
+                }
+                if (flow.purpose === 'reauth' && flow.stage === 'authenticated' && next) {
+                    // Native multi-session replaces the previous session for this
+                    // user. Follow that replacement only after MFA has completed;
+                    // the unfinished callback still requires its original actor.
+                    if (next.user.id !== flow.userId || next.session.id !== data.verifiedSessionId) fail('SOCIAL_WRONG_IDENTITY');
+                    const changed = await env.DB.prepare(`UPDATE "socialFlow" SET "sessionId" = ?
+                        WHERE "id" = ? AND "sessionId" = ? AND "userId" = ? AND "stage" = 'authenticated' AND "expiresAt" > ?`)
+                        .bind(next.session.id, flow.id, flow.sessionId, flow.userId, Date.now()).run();
+                    if (!changed.meta.changes) fail();
+                    flow.sessionId = next.session.id;
                 }
             }),
         }] },
