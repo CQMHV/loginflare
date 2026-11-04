@@ -220,7 +220,10 @@ export async function dispatch(request: Request, env: Env, ctx: ExecutionContext
     const controlPage = /^\/(?:setup|maintenance)$|^\/(en-us|zh-cn)\/(setup|maintenance)(\/verified)?\/?$/.test(new URL(request.url).pathname);
     if ((controlPage || headers.get('Content-Type')?.includes('text/html')) && !headers.has('Content-Security-Policy')) {
         headers.set('Cache-Control', 'no-store');
-        headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+        // The independent shell bypasses the application's header middleware,
+        // including the allowances required by Vite's React Refresh preamble.
+        const development = env.APP_ENV === 'development';
+        headers.set('Content-Security-Policy', `default-src 'self'; script-src 'self' https://challenges.cloudflare.com${development ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self' https://challenges.cloudflare.com${development ? ' ws://localhost:5173' : ''}; frame-src https://challenges.cloudflare.com; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
     }
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

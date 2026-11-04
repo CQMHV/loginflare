@@ -30,6 +30,21 @@ it('serves both control pages and status with no business tables, branding, or a
     expect((await (await request('/api/auth/sign-up/email', undefined, { email: 'outside@example.test' })).json()) as object).toMatchObject({ code: 'SETUP_REQUIRED' });
 });
 
+it('allows the Vite development preamble and HMR on standalone control pages only in development', async () => {
+    for (const path of ['/setup', '/en-us/maintenance']) {
+        const development = await request(path);
+        expect(development.headers.get('Content-Security-Policy')).toMatch(/script-src[^;]*'unsafe-inline'/);
+        expect(development.headers.get('Content-Security-Policy')).toMatch(/connect-src[^;]*ws:\/\/localhost:5173/);
+        for (const APP_ENV of ['staging', 'production'] as const) {
+            const deployed = await request(path, undefined, undefined, { ...bindings, APP_ENV });
+            expect(deployed.status).toBe(200);
+            expect(deployed.headers.get('Content-Security-Policy')).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+            expect(deployed.headers.get('Content-Security-Policy')).not.toContain('ws://');
+            expect(deployed.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+        }
+    }
+});
+
 it('does not bypass an unconfirmed R2 operation when a failed drain is retried', async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
     await ensureControl(bindings);
