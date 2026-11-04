@@ -104,6 +104,15 @@ function decodeBase64url(value: string) {
     return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), (character) => character.charCodeAt(0));
 }
 
+function mergeCookies(...values: string[]): string {
+    const jar = new Map<string, string>();
+    for (const value of values) for (const cookie of value.split(';')) {
+        const split = cookie.indexOf('=');
+        if (split > 0) jar.set(cookie.slice(0, split).trim(), cookie.slice(split + 1).trim());
+    }
+    return Array.from(jar, ([name, value]) => `${name}=${value}`).join('; ');
+}
+
 async function authorizationParameters(registered: Registered, overrides: Record<string, string> = {}) {
     const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
     const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
@@ -183,6 +192,113 @@ async function userInfo(client: Harness, token: string) {
 }
 
 describe('OAuth/OIDC protocol in the Workers runtime', () => {
+    it('selects between browser accounts and binds code issuance to the selected account', async () => {
+        const { client, registered, cookie } = await fixture();
+        await client.verify('second@example.test');
+        const add = await client.request('/api/browser/auth-flows', { cookie, body: { kind: 'add', locale: 'en-US' } });
+        expect(add.status, await add.clone().text()).toBe(200);
+        const { flowId: addFlow } = await add.json<{ flowId: string }>();
+        const signin = await client.request('/api/auth/sign-in/email', { cookie, body: { email: 'second@example.test', password }, headers: { 'X-Loginflare-Flow': addFlow } });
+        expect(signin.status, await signin.clone().text()).toBe(200);
+        const browserCookie = mergeCookies(cookie, cookies(add), cookies(signin));
+        const listed = await client.request('/api/browser/accounts', { cookie: browserCookie });
+        const { accounts } = await listed.json<{ accounts: { id: string; user: { id: string; email: string }; status: string }[] }>();
+        expect(accounts.filter((account) => account.status === 'active')).toHaveLength(2);
+        const first = accounts.find((account) => account.user.email === 'person@example.test')!;
+        const second = accounts.find((account) => account.user.email === 'second@example.test')!;
+        const parameters = await authorizationParameters(registered);
+        const initial = await protocol(client, `/api/auth/oauth2/authorize?${parameters.query}`, { cookie: browserCookie });
+        const chooser = await redirectUrl(initial);
+        expect(chooser.pathname).toBe('/en-us/select-account');
+        expect(chooser.searchParams.get('state')).toBe(parameters.query.get('state'));
+        const signed = chooser.search.slice(1);
+        const started = await client.request('/api/browser/auth-flows', { cookie: browserCookie, body: { kind: 'oauth', locale: 'en-US', oauth_query: signed } });
+        const { flowId } = await started.json<{ flowId: string }>();
+        const flowHeaders = { 'X-Loginflare-Flow': flowId, 'X-Loginflare-Account': second.id };
+        const selected = await client.request('/api/browser/accounts/select', { cookie: browserCookie, body: { accountId: second.id, oauth_query: signed }, headers: flowHeaders });
+        expect(selected.status, await selected.clone().text()).toBe(200);
+        for (const name of ['state', 'nonce']) {
+            const tampered = new URLSearchParams(signed);
+            tampered.set(name, 'replaced-by-another-request');
+            const rejected = await client.request('/api/auth/oauth2/continue', { cookie: browserCookie, body: { selected: true, oauth_query: tampered.toString() }, headers: flowHeaders });
+            expect(rejected.status).toBe(400);
+        }
+        const wrongAccount = await client.request('/api/auth/oauth2/continue', { cookie: browserCookie, body: { selected: true, oauth_query: signed }, headers: { ...flowHeaders, 'X-Loginflare-Account': first.id } });
+        expect([400, 401]).toContain(wrongAccount.status);
+        const continued = await client.request('/api/auth/oauth2/continue', { cookie: browserCookie, body: { selected: true, oauth_query: signed }, headers: flowHeaders });
+        expect(continued.status, await continued.clone().text()).toBe(200);
+        const consentPage = await redirectUrl(continued);
+        expect(consentPage.pathname).toBe('/en-us/consent');
+        const consentQuery = consentPage.search.slice(1);
+        const unboundHeaderCases: Record<string, string>[] = [{}, { 'X-Loginflare-Account': second.id }];
+        for (const unboundHeaders of unboundHeaderCases) {
+            const unbound = await client.request('/api/auth/oauth2/consent', { cookie: browserCookie, body: { accept: true, oauth_query: consentQuery }, headers: unboundHeaders });
+            expect(unbound.status).toBe(400);
+        }
+        const accepted = await client.request('/api/auth/oauth2/consent', { cookie: browserCookie, body: { accept: true, oauth_query: consentQuery }, headers: flowHeaders });
+        expect(accepted.status, await accepted.clone().text()).toBe(200);
+        const result = await redirectUrl(accepted);
+        const exchanged = await exchange(client, registered, result.searchParams.get('code')!, parameters.verifier);
+        expect(exchanged.status, await exchanged.clone().text()).toBe(200);
+        const tokens = await exchanged.json<Tokens>();
+        expect(JSON.parse(new TextDecoder().decode(decodeBase64url(tokens.id_token.split('.')[1]!)))).toMatchObject({ sub: second.user.id, nonce: parameters.query.get('nonce') });
+        const identity = await (await userInfo(client, tokens.access_token)).json<{ sub: string; email: string }>();
+        expect(identity).toMatchObject({ sub: second.user.id, email: second.user.email });
+        const replay = await client.request('/api/auth/oauth2/consent', { cookie: browserCookie, body: { accept: true, oauth_query: consentQuery }, headers: flowHeaders });
+        expect([400, 401]).toContain(replay.status);
+        const silent = await authorizationParameters(registered, { prompt: 'none' });
+        const silentResponse = await protocol(client, `/api/auth/oauth2/authorize?${silent.query}`, { cookie: browserCookie });
+        expect((await redirectUrl(silentResponse)).searchParams.get('error')).toBe('account_selection_required');
+    });
+
+    it('supports explicit selection for a single browser account and rejects unchecked continuation flags', async () => {
+        const { client, registered, cookie } = await fixture();
+        const parameters = await authorizationParameters(registered, { prompt: 'select_account' });
+        const requested = await protocol(client, `/api/auth/oauth2/authorize?${parameters.query}`, { cookie });
+        const chooser = await redirectUrl(requested);
+        expect(chooser.pathname).toBe('/en-us/select-account');
+        const unchecked = await client.request('/api/auth/oauth2/continue', { cookie, body: { selected: true, oauth_query: chooser.search.slice(1) } });
+        expect(unchecked.status).toBe(400);
+        const extra = await client.request('/api/auth/oauth2/continue', { cookie, body: { selected: true, created: true, oauth_query: chooser.search.slice(1) } });
+        expect(extra.status).toBe(400);
+    });
+
+    it.each(['prompt', 'max_age'] as const)('rejects a different valid signed query that weakens %s within an existing flow', async (requirement) => {
+        const { client, registered, cookie } = await fixture();
+        const parameters = await authorizationParameters(registered, requirement === 'prompt' ? { prompt: 'login' } : { max_age: '0' });
+        const original = await protocol(client, `/api/auth/oauth2/authorize?${parameters.query}`, { cookie });
+        const loginPage = await redirectUrl(original);
+        expect(loginPage.pathname).toBe('/en-us/login');
+        const expected = loginPage.search.slice(1);
+        const weakerParameters = new URLSearchParams(parameters.query); weakerParameters.delete(requirement);
+        const weakerResponse = await protocol(client, `/api/auth/oauth2/authorize?${weakerParameters}`, { cookie });
+        const weaker = (await redirectUrl(weakerResponse)).search.slice(1);
+        const listed = await client.request('/api/browser/accounts', { cookie });
+        const accountId = (await listed.json<{ accounts: { id: string }[] }>()).accounts[0]!.id;
+        const started = await client.request('/api/browser/auth-flows', { cookie, body: { kind: 'oauth', locale: 'en-US', oauth_query: expected } });
+        const { flowId } = await started.json<{ flowId: string }>();
+        const headers = { 'X-Loginflare-Flow': flowId, 'X-Loginflare-Account': accountId };
+        expect((await client.request('/api/browser/accounts/select', { cookie, body: { accountId }, headers })).status).toBe(200);
+        const sessionCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM "session"').first<number>('count');
+        const downgraded = await client.request('/api/auth/oauth2/continue', { cookie, body: { selected: true, oauth_query: weaker }, headers });
+        expect(downgraded.status).toBe(400);
+        const downgradedLogin = await client.request('/api/auth/sign-in/email', { cookie, body: { email: 'person@example.test', password, oauth_query: weaker }, headers });
+        expect(downgradedLogin.status).toBe(400);
+        expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "session"').first<number>('count')).toBe(sessionCount);
+        const reordered = new URLSearchParams(expected); reordered.sort();
+        const continued = await client.request('/api/auth/oauth2/continue', { cookie, body: { selected: true, oauth_query: reordered.toString() }, headers });
+        expect(continued.status, await continued.clone().text()).toBe(200);
+        const freshLogin = await redirectUrl(continued);
+        expect(freshLogin.pathname).toBe('/en-us/login');
+        const authenticated = await client.request('/api/auth/sign-in/email', { cookie, body: { email: 'person@example.test', password, oauth_query: freshLogin.search.slice(1) }, headers });
+        expect(authenticated.status, await authenticated.clone().text()).toBe(200);
+        const consentPage = await redirectUrl(authenticated);
+        expect(consentPage.pathname).toBe('/en-us/consent');
+        const currentCookie = mergeCookies(cookie, cookies(authenticated));
+        const consent = await client.request(`/api/oauth/consent?${new URLSearchParams({ oauth_query: consentPage.search.slice(1) })}`, { cookie: currentCookie, headers });
+        expect(consent.status, await consent.clone().text()).toBe(200);
+    });
+
     it('continues a signed OAuth request only after MFA and revokes older grants on enrollment and disable', async () => {
         const { client, registered, cookie } = await fixture();
         const old = await tokensFor(client, registered, cookie);
@@ -488,6 +604,67 @@ describe('OAuth/OIDC protocol in the Workers runtime', () => {
         expect([200, 302]).toContain(response.status);
         expect((await redirectUrl(response)).origin).toBe(appOrigin);
         expect(await session(client, cookie)).toBeNull();
+    });
+
+    it('logs out the hinted account without terminating a different browser account', async () => {
+        const { client, registered, cookie } = await fixture();
+        const tokens = await tokensFor(client, registered, cookie);
+        await client.verify('another@example.test');
+        const other = await client.signin('another@example.test');
+        const response = await protocol(client, `/api/auth/oauth2/end-session?${new URLSearchParams({
+            id_token_hint: tokens.id_token, post_logout_redirect_uri: `${appOrigin}/`,
+        })}`, { cookie: other, headers: { Accept: 'text/html' } });
+        expect([200, 302]).toContain(response.status);
+        expect((await redirectUrl(response)).origin).toBe(appOrigin);
+        expect(await session(client, cookie)).toBeNull();
+        expect((await session(client, other))?.user.email).toBe('another@example.test');
+    });
+
+    it('does not turn an invalid logout hint into confirmation for an unrelated account', async () => {
+        const { client, registered, cookie } = await fixture();
+        const response = await protocol(client, `/api/auth/oauth2/end-session?${new URLSearchParams({
+            id_token_hint: 'invalid.jwt.hint', client_id: registered.application.clientId,
+        })}`, { cookie, headers: { Accept: 'text/html' } });
+        expect(response.ok).toBe(false);
+        expect(await response.text()).not.toContain('data-oidc-logout-confirmation');
+        expect(await session(client, cookie)).not.toBeNull();
+    });
+
+    it('requires one-shot account selection before ambiguous RP logout', async () => {
+        const { client, registered, cookie } = await fixture();
+        await client.verify('logout-second@example.test');
+        const add = await client.request('/api/browser/auth-flows', { cookie, body: { kind: 'add', locale: 'en-US' } });
+        const { flowId } = await add.json<{ flowId: string }>();
+        const signin = await client.request('/api/auth/sign-in/email', { cookie, body: { email: 'logout-second@example.test', password }, headers: { 'X-Loginflare-Flow': flowId } });
+        expect(signin.status, await signin.clone().text()).toBe(200);
+        const browserCookie = mergeCookies(cookie, cookies(add), cookies(signin));
+        const listed = await client.request('/api/browser/accounts', { cookie: browserCookie });
+        const { accounts } = await listed.json<{ accounts: { id: string; user: { email: string }; status: string }[] }>();
+        const first = accounts.find((account) => account.user.email === 'person@example.test')!;
+        const second = accounts.find((account) => account.user.email === 'logout-second@example.test')!;
+        expect(accounts.filter((account) => account.status === 'active')).toHaveLength(2);
+        const requested = await protocol(client, `/api/auth/oauth2/end-session?${new URLSearchParams({ client_id: registered.application.clientId, post_logout_redirect_uri: `${appOrigin}/` })}`, {
+            cookie: browserCookie, headers: { Accept: 'text/html', 'Accept-Language': 'zh-CN' },
+        });
+        expect(requested.status, await requested.clone().text()).toBe(200);
+        const html = await requested.text();
+        expect(html).toContain('选择要退出的账号');
+        expect(html).toContain(first.user.email);
+        expect(html).toContain(second.user.email);
+        const confirmationId = /name="confirmationId" value="([a-f0-9-]+)"/.exec(html)![1]!;
+        const confirmationCookie = mergeCookies(browserCookie, cookies(requested));
+        const confirmed = await protocol(client, '/api/auth/oauth2/end-session/confirm', {
+            cookie: confirmationCookie, form: { action: 'confirm', accountId: first.id, confirmationId }, headers: { Accept: 'text/html', Origin: origin },
+        });
+        expect([200, 302]).toContain(confirmed.status);
+        expect((await redirectUrl(confirmed)).origin).toBe(appOrigin);
+        const replay = await protocol(client, '/api/auth/oauth2/end-session/confirm', {
+            cookie: confirmationCookie, form: { action: 'confirm', accountId: second.id, confirmationId }, headers: { Accept: 'text/html', Origin: origin },
+        });
+        expect(replay.status).toBe(400);
+        const remaining = await (await client.request('/api/browser/accounts', { cookie: confirmationCookie })).json<{ accounts: { id: string; status: string }[] }>();
+        expect(remaining.accounts.find((account) => account.id === first.id)?.status).toBe('signed-out');
+        expect(remaining.accounts.find((account) => account.id === second.id)?.status).toBe('active');
     });
 
     it('ban and restore never resurrect OAuth tokens from the revoked session', async () => {

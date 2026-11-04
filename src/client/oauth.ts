@@ -2,9 +2,11 @@ import { createAuthClient } from 'better-auth/client';
 import { usernameClient } from 'better-auth/client/plugins';
 import { oauthProviderClient } from '@better-auth/oauth-provider/client';
 import { ApiError } from './api';
+import { browserContextHeaders, browserContextVersion, browserFlowId, prepareOAuthRedirect } from './browser-context';
 
 const authClient = createAuthClient({
     basePath: '/api/auth',
+    disableDefaultFetchPlugins: true,
     plugins: [usernameClient({ displayUsername: false }), oauthProviderClient()],
 });
 
@@ -23,15 +25,17 @@ export function oauthSearch(search: string): string {
 }
 
 export function withOAuthSearch(path: string, search: string, extra?: Record<string, string>): string {
-    const query = [oauthSearch(search), extra ? new URLSearchParams(extra).toString() : ''].filter(Boolean).join('&');
+    const flowId = browserFlowId();
+    const query = [oauthSearch(search), flowId ? new URLSearchParams({ flow: flowId }).toString() : '', extra ? new URLSearchParams(extra).toString() : ''].filter(Boolean).join('&');
     return query ? `${path}?${query}` : path;
 }
 
 export async function providerRequest(path: string, body: Record<string, unknown>, captchaToken?: string) {
+    const version = browserContextVersion(), page = `${window.location.pathname}${window.location.search}`;
     try {
-        const result = await authClient.$fetch<{ redirect?: boolean; url?: string; twoFactorRedirect?: boolean }>(path, {
+        const result = await authClient.$fetch<{ redirect?: boolean; url?: string; twoFactorRedirect?: boolean; browserAccountId?: string }>(path, {
             method: 'POST', body,
-            headers: captchaToken ? { 'x-captcha-response': captchaToken } : undefined,
+            headers: { ...browserContextHeaders(), ...(captchaToken ? { 'x-captcha-response': captchaToken } : {}) },
         });
         if (result.error) {
             const error = result.error;
@@ -41,6 +45,13 @@ export async function providerRequest(path: string, body: Record<string, unknown
                 : error.status === 401 ? 'UNAUTHORIZED'
                 : error.status === 403 ? 'FORBIDDEN' : 'UNKNOWN_ERROR';
             throw new ApiError(code, error.status);
+        }
+        if (browserContextVersion() !== version || `${window.location.pathname}${window.location.search}` !== page) throw new ApiError('BROWSER_FLOW_EXPIRED', 409);
+        if (result.data?.redirect && result.data.url) {
+            const destination = new URL(result.data.url, window.location.origin);
+            if (!['https:', 'http:'].includes(destination.protocol)) throw new ApiError('INVALID_OAUTH_QUERY', 400);
+            prepareOAuthRedirect(destination.href, result.data.browserAccountId, oauthSearch(destination.search));
+            window.location.assign(destination.href);
         }
         return result.data;
     } catch (cause) {

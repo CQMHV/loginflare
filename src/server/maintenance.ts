@@ -25,6 +25,9 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
         { table: 'emailChallenge', cutoff },
         { table: 'socialFlow', cutoff },
         { table: 'securityProof', cutoff },
+        { table: 'browserAuthFlow', cutoff },
+        { table: 'auditLog', cutoff },
+        { table: 'browserAccount', cutoff, guard: 'AND ("sessionId" IS NULL OR NOT EXISTS (SELECT 1 FROM "session" s WHERE s."id" = "browserAccount"."sessionId" AND s."expiresAt" > strftime(\'%Y-%m-%dT%H:%M:%fZ\', \'now\')))' },
         { table: 'verification', cutoff: cutoffIso },
         { table: 'userAvatar', cutoff, column: 'deleteAfter', avatars: true },
         { table: 'brandLogo', cutoff, column: 'deleteAfter', logos: true },
@@ -51,6 +54,9 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
                 FROM "${task.table}" WHERE "${column}" <= ?
                 ${position?.id ? `AND ("${column}", "id") > (?, ?)` : ''} ORDER BY "${column}", "id" LIMIT ?`)
                 .bind(...values).all<{ id: string; expiresAt: string | number; referenced?: number }>();
+            // Empty tables need neither a cursor write nor a batch reservation.
+            // Reserve the bounded write budget for actual collection progress.
+            if (!rows.results.length && !position?.id) continue;
             if (!canContinue()) break;
             if (task.avatars || task.logos || task.icons) {
                 const obsolete = rows.results.filter((row) => !row.referenced).map((row) => task.logos ? `branding/${row.id}` : task.icons ? `social-icons/${row.id}` : row.id);

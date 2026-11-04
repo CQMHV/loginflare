@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -14,6 +14,8 @@ import { useClearSecrets } from './page-state';
 import { encodeWebP } from './image-encoding';
 import { SecurityDialog, socialAuthorizationUrl, useSecurity, useSecurityIntent } from './security';
 import { ProviderIcon } from './ProviderIcon';
+import { browserContextHeaders, browserContextVersion, browserFlowId, clearBrowserFlow, flowPath, prepareOAuthRedirect, selectBrowserAccount, selectBrowserFlowAccount } from './browser-context';
+import { cancelBrowserFlow, completeBrowserLogin } from './browser-account-actions';
 export function SocialButtons({ locale }: { locale: Locale }) {
     const { t } = useTranslation();
     const location = useLocation();
@@ -88,20 +90,37 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
     const [resending, setResending] = useState(false);
     const actions = useDataActions(), feedback = useFeedback();
     useClearSecrets(() => setCode(''));
+    const lifetime = useRef(0);
+    useEffect(() => {
+        const invalidate = () => { lifetime.current++; };
+        window.addEventListener('pagehide', invalidate);
+        return () => { lifetime.current++; window.removeEventListener('pagehide', invalidate); };
+    }, [location.pathname, location.search]);
     useEffect(() => {
         if (new URLSearchParams(location.search).has('error')) return;
         const controller = new AbortController();
-        void request<FlowStatus>('/social/flow', undefined, controller.signal).then((value) => { setStatus(value); setEmail(value.email ?? ''); if (value.stage === 'mfa') navigate(`${localizedPath(locale, 'two-factor')}?social=1`, { replace: true }); })
+        void request<FlowStatus>('/social/flow', undefined, controller.signal).then((value) => { setStatus(value); setEmail(value.email ?? ''); if (value.stage === 'mfa') navigate(flowPath(`${localizedPath(locale, 'two-factor')}?social=1`), { replace: true }); })
             .catch((cause) => { if (!controller.signal.aborted) setError(errorCode(cause)); });
         return () => controller.abort();
     }, [locale, location.search, navigate]);
     async function finish() {
         if (busy) return;
+        const generation = lifetime.current, page = `${window.location.pathname}${window.location.search}`;
+        let version = browserContextVersion(), flowId = browserFlowId();
+        const samePage = () => lifetime.current === generation && `${window.location.pathname}${window.location.search}` === page;
+        const current = () => samePage() && browserContextVersion() === version && browserFlowId() === flowId;
+        function assertCurrent() { if (!current()) throw new ApiError('BROWSER_FLOW_EXPIRED', 409); }
         setBusy(true); setError('');
         try {
+            if (status?.stage !== 'tested') {
+                const identity = await request<{ browserAccountId?: string } | null>('/get-session');
+                assertCurrent();
+                if (identity?.browserAccountId) { selectBrowserFlowAccount(identity.browserAccountId); selectBrowserAccount(identity.browserAccountId, false); }
+            }
+            const headers = browserContextHeaders();
             if (status?.hasAvatarSource) {
                 try {
-                    const source = await fetch('/api/auth/social/avatar-source', { credentials: 'same-origin' });
+                    const source = await fetch('/api/auth/social/avatar-source', { credentials: 'same-origin', headers });
                     if (!source.ok) throw new Error('avatar');
                     const bytes = new Uint8Array(await source.arrayBuffer()); inspectImage(bytes);
                     const bitmap = await createImageBitmap(new Blob([bytes]));
@@ -111,16 +130,28 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
                         drawing.imageSmoothingQuality = 'high';
                         const side = Math.min(bitmap.width, bitmap.height);
                         drawing.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
-                        await readResponse(await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'image/webp', 'X-Avatar-Import': 'if-empty' }, body: await encodeWebP(canvas) }));
+                        const body = await encodeWebP(canvas);
+                        assertCurrent();
+                        await readResponse(await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { ...headers, 'Content-Type': 'image/webp', 'X-Avatar-Import': 'if-empty' }, body }));
                     } finally { bitmap.close(); }
                 } catch { /* Profile imports are retried on a later sign-in. */ }
             }
-            const result = await request<{ redirect: string | boolean; url?: string }>('/social/finish', {});
+            assertCurrent();
+            const result = await request<{ redirect: string | boolean; url?: string; browserAccountId?: string }>('/social/finish', {});
+            assertCurrent();
+            const completed = await completeBrowserLogin(result, result.redirect === true);
+            if (!samePage() || browserContextVersion() !== completed.version || browserFlowId() !== completed.flowId) throw new ApiError('BROWSER_FLOW_EXPIRED', 409);
+            version = completed.version; flowId = completed.flowId;
+            if (status && ['link', 'test'].includes(status.purpose) && browserFlowId()) {
+                await fetchJson(`/api/browser/auth-flows/${encodeURIComponent(browserFlowId())}`, undefined, undefined, 'DELETE'); assertCurrent(); clearBrowserFlow();
+                version = browserContextVersion(); flowId = browserFlowId();
+            }
             await refresh(); await actions.invalidate('security', 'profile');
-            if (result.redirect === true && result.url) window.location.assign(result.url);
+            assertCurrent();
+            if (result.redirect === true && result.url) { prepareOAuthRedirect(result.url, result.browserAccountId, oauthSearch(new URL(result.url, window.location.origin).search)); window.location.assign(result.url); }
             else if (typeof result.redirect === 'string') navigate(result.redirect, { replace: true });
             else throw new ApiError('INVALID_OAUTH_QUERY', 400);
-        } catch (cause) { setError(errorCode(cause)); setBusy(false); }
+        } catch (cause) { if (samePage()) { setError(current() ? errorCode(cause) : 'BROWSER_FLOW_EXPIRED'); setBusy(false); } }
     }
     async function sendCode(address: string) {
         if (busy || !status || !['email', 'code'].includes(status.stage)) return;
@@ -142,7 +173,7 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
         try {
             const result = await request<{ twoFactorRedirect?: boolean }>('/social/verify-email', { code });
             setCode('');
-            if (result.twoFactorRedirect) { navigate(`${localizedPath(locale, 'two-factor')}?social=1`); return; }
+            if (result.twoFactorRedirect) { navigate(flowPath(`${localizedPath(locale, 'two-factor')}?social=1`)); return; }
             setStatus(await request<FlowStatus>('/social/flow')); await refresh();
         } catch (cause) { setError(errorCode(cause)); } finally { setBusy(false); }
     }
@@ -155,5 +186,6 @@ export function SocialCompletion({ locale, refresh }: { locale: Locale; refresh:
             <Button className="full" busy={busy} onClick={() => { void finish(); }}>{t('social.finish')}</Button>
         </>}
         {error && <Link className="back-link" to={localizedPath(locale, 'login')}>{t('backToLogin')}</Link>}
+        {browserFlowId() && <Button className="text-button full" disabled={busy} onClick={() => { void cancelBrowserFlow().then(async (previous) => { await refresh(); navigate(localizedPath(locale, previous ? 'account' : 'select-account'), { replace: true }); }).catch((cause) => setError(errorCode(cause))); }}>{t('browserAccounts.cancel')}</Button>}
     </>;
 }

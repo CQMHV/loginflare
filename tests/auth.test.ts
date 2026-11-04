@@ -242,12 +242,13 @@ describe('email accounts in the Workers runtime', () => {
         const identity = (await session(client, cookie))!;
         const shortenedExpiry = Date.now() + 5 * 24 * 60 * 60 * 1000;
         await env.DB.prepare('UPDATE "session" SET "expiresAt" = ? WHERE "id" = ?')
-            .bind(shortenedExpiry, identity.session.id).run();
+            .bind(new Date(shortenedExpiry).toISOString(), identity.session.id).run();
 
         const response = await client.request('/api/auth/get-session', { cookie });
         expect(response.status).toBe(200);
         const renewedCookie = cookies(response);
         expect(renewedCookie).toContain('session_token=');
+        expect(renewedCookie).toMatch(/session_token_multi-[^=; ]+=/);
         const storedExpiry = await env.DB.prepare('SELECT "expiresAt" FROM "session" WHERE "id" = ?')
             .bind(identity.session.id).first<string>('expiresAt');
         expect(Date.parse(storedExpiry!)).toBeGreaterThan(shortenedExpiry + 24 * 60 * 60 * 1000);

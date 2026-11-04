@@ -5,12 +5,13 @@ import { ApiError, errorCode, fetchJson, request, type Identity } from './api';
 import { Button, Progress } from './material';
 import i18n from './i18n';
 import type { Branding } from '../shared/branding';
+import { browserContextEvent, browserFlowId, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
 
 export const identityKey = ['identity'] as const;
 export const freshness = { identity: 15_000, sessions: 15_000, ordinary: 60_000, configuration: 300_000 };
-export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections';
+export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections' | 'access' | 'audit';
 type Group = Resource | 'profile';
-type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications'; owner?: string; groups?: Group[] };
+type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications' | 'accounts' | 'access'; owner?: string; accountId?: string; groups?: Group[] };
 const SyncContext = createContext<(message: SyncMessage) => void>(() => {});
 const ScopeContext = createContext({ scope: '', owner: '' });
 
@@ -44,7 +45,7 @@ export function endIdentity(client: QueryClient) {
 export function handlePrivateError(client: QueryClient, scope: string, error: unknown): string {
     if (scope !== identityScope(client.getQueryData<Identity | null>(identityKey))) return errorCode(error);
     if (error instanceof ApiError) {
-        if ((error.status === 401 && ['UNAUTHORIZED', 'SESSION_EXPIRED'].includes(error.code)) || ['USER_BANNED', 'BANNED_USER'].includes(error.code)) endIdentity(client);
+        if ((error.status === 401 && (['UNAUTHORIZED', 'SESSION_EXPIRED'].includes(error.code) || error.code.startsWith('BROWSER_'))) || ['USER_BANNED', 'BANNED_USER'].includes(error.code)) endIdentity(client);
         else if (error.status === 403) void client.invalidateQueries({ queryKey: identityKey });
     }
     return errorCode(error);
@@ -77,7 +78,7 @@ export function createDataClient() {
 
 async function invalidate(client: QueryClient, scope: string, groups: Group[]) {
     await client.invalidateQueries({
-        predicate: (query) => (groups.includes('profile') && query.queryKey[0] === 'identity')
+        predicate: (query) => (groups.includes('profile') && (query.queryKey[0] === 'identity' || query.queryKey[0] === 'browser-accounts'))
             || (query.queryKey[0] === 'private' && query.queryKey[1] === scope && groups.includes(query.queryKey[2] as Resource)),
         refetchType: document.visibilityState === 'visible' ? 'active' : 'none',
     });
@@ -92,9 +93,19 @@ export function DataProvider({ children }: PropsWithChildren) {
         channel.current = bus;
         bus.onmessage = (event: MessageEvent<SyncMessage>) => {
             const message = event.data;
-            if (message?.type === 'signout') endIdentity(client);
+            if (message?.type === 'signout') {
+                void client.invalidateQueries({ queryKey: ['browser-accounts'] });
+                if (!message.accountId || message.accountId === selectedBrowserAccount()) endIdentity(client);
+            }
+            else if (message?.type === 'accounts') {
+                void client.invalidateQueries({ queryKey: ['browser-accounts'] });
+                void client.invalidateQueries({ queryKey: identityKey });
+            }
             else if (message?.type === 'applications') {
                 void invalidate(client, identityScope(client.getQueryData(identityKey)), ['application', 'applications', 'authorized-applications']);
+            }
+            else if (message?.type === 'access') {
+                void invalidate(client, identityScope(client.getQueryData(identityKey)), ['access', 'audit', 'application', 'applications']);
             }
             else if (message?.type === 'social') {
                 void client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'social-providers' || (query.queryKey[0] === 'private' && ['security', 'social-connections'].includes(String(query.queryKey[2]))), refetchType: document.visibilityState === 'visible' ? 'active' : 'none' });
@@ -102,7 +113,7 @@ export function DataProvider({ children }: PropsWithChildren) {
             else if (message?.type === 'branding') {
                 void client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'branding' || (query.queryKey[0] === 'private' && query.queryKey[2] === 'branding'), refetchType: document.visibilityState === 'visible' ? 'active' : 'none' });
             }
-            else if (message?.type === 'identity') {
+            else if (message?.type === 'identity' && message.owner === client.getQueryData<Identity | null>(identityKey)?.user.id) {
                 clearPrivate(client);
                 void client.resetQueries({ queryKey: identityKey, exact: true });
             } else if (message?.type === 'invalidate' && message.owner === client.getQueryData<Identity | null>(identityKey)?.user.id && Array.isArray(message.groups)) {
@@ -116,7 +127,6 @@ export function DataProvider({ children }: PropsWithChildren) {
             const scope = identityScope(identity);
             if (scope !== previous) {
                 clearPrivate(client, scope);
-                if (previous !== undefined) publish({ type: identity ? 'identity' : 'signout', owner: identity?.user.id });
                 previous = scope;
             }
         });
@@ -125,14 +135,26 @@ export function DataProvider({ children }: PropsWithChildren) {
                 client.invalidateQueries({ queryKey: ['private'], refetchType: document.visibilityState === 'visible' ? 'active' : 'none' }));
         };
         window.addEventListener('pageshow', restore);
-        return () => { unsubscribe(); bus.close(); channel.current = null; window.removeEventListener('pageshow', restore); };
+        const contextChanged = () => {
+            endIdentity(client);
+            void client.resetQueries({ queryKey: identityKey, exact: true });
+            void client.invalidateQueries({ queryKey: ['browser-accounts'] });
+        };
+        const accountsChanged = () => { publish({ type: 'accounts' }); void client.invalidateQueries({ queryKey: ['browser-accounts'] }); };
+        window.addEventListener(browserContextEvent, contextChanged);
+        window.addEventListener('loginflare:accounts-changed', accountsChanged);
+        return () => { unsubscribe(); bus.close(); channel.current = null; window.removeEventListener('pageshow', restore); window.removeEventListener(browserContextEvent, contextChanged); window.removeEventListener('loginflare:accounts-changed', accountsChanged); };
     }, [client, publish]);
     return <QueryClientProvider client={client}><SyncContext.Provider value={publish}>{children}</SyncContext.Provider></QueryClientProvider>;
 }
 
 export function useIdentity() {
     const client = useQueryClient();
-    const query = useQuery({ queryKey: identityKey, queryFn: ({ signal }) => request<Identity | null>('/get-session', undefined, signal), staleTime: freshness.identity, gcTime: Infinity });
+    const query = useQuery({ queryKey: identityKey, queryFn: async ({ signal }) => {
+        const identity = await request<Identity | null>('/get-session', undefined, signal);
+        if (identity?.browserAccountId && !selectedBrowserAccount() && !browserFlowId()) selectBrowserAccount(identity.browserAccountId, false);
+        return identity;
+    }, staleTime: freshness.identity, gcTime: Infinity });
     const refresh = useCallback(async () => { await client.refetchQueries({ queryKey: identityKey, exact: true }, { throwOnError: true }); }, [client]);
     return { ...query, refresh };
 }
@@ -175,6 +197,7 @@ export function useDataActions() {
     const client = useQueryClient();
     const { scope, owner } = useContext(ScopeContext);
     const publish = useContext(SyncContext);
+    const accountId = selectedBrowserAccount();
     return {
         async invalidate(...groups: Group[]) {
             if (scope !== identityScope(client.getQueryData(identityKey))) return;
@@ -187,6 +210,11 @@ export function useDataActions() {
             publish({ type: 'applications' });
             await invalidate(client, scope, ['application', 'applications', 'authorized-applications']);
         },
+        async accessSaved() {
+            if (scope !== identityScope(client.getQueryData(identityKey))) return;
+            publish({ type: 'access' });
+            await invalidate(client, scope, ['access', 'audit', 'application', 'applications']);
+        },
         async socialSaved() {
             publish({ type: 'social' });
             await client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'social-providers' || (query.queryKey[0] === 'private' && ['security', 'social-connections'].includes(String(query.queryKey[2]))) });
@@ -198,7 +226,11 @@ export function useDataActions() {
             if (scope === identityScope(client.getQueryData(identityKey))) client.setQueryData<Branding>(['private', scope, 'branding', ''], newer);
             publish({ type: 'branding' });
         },
-        signOut() { endIdentity(client); publish({ type: 'signout' }); },
+        signOut(all = false) {
+            if (all || scope === identityScope(client.getQueryData(identityKey))) endIdentity(client);
+            publish({ type: 'signout', accountId: all ? undefined : accountId });
+            void client.invalidateQueries({ queryKey: ['browser-accounts'] });
+        },
     };
 }
 

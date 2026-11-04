@@ -107,14 +107,15 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.locator('.feedback-toast')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Account menu', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
-    await expect(page).toHaveURL('/en-us/login');
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(page).toHaveURL('/en-us/select-account');
+    await page.getByRole('button', { name: 'Use another account', exact: true }).click();
     await page.getByLabel('Email or username', { exact: true }).fill(username);
     await page.getByLabel('Password', { exact: true }).fill('Browser-test-password-917!');
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page.getByRole('alert')).toBeVisible();
-    await expect(page).toHaveURL('/en-us/login');
+    await expect(page).toHaveURL(/\/en-us\/login\?flow=/);
     await page.getByLabel('Email or username', { exact: true }).fill(replacementUsername.toUpperCase());
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -174,8 +175,9 @@ test('completes registration, recovery, account management, and administrator co
     await expect(passwordDialog).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: '密码已修改，其他会话已退出。' })).toBeVisible();
     await page.getByRole('button', { name: '账号菜单', exact: true }).click();
-    await page.getByRole('menuitem', { name: '退出登录', exact: true }).click();
-    await expect(page).toHaveURL('/zh-cn/login');
+    await page.getByRole('button', { name: '退出登录', exact: true }).click();
+    await expect(page).toHaveURL('/zh-cn/select-account');
+    await page.getByRole('button', { name: '使用其他账号', exact: true }).click();
     await expect(page.getByLabel('邮箱或用户名', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: '忘记密码？', exact: true }).click();
@@ -194,7 +196,8 @@ test('completes registration, recovery, account management, and administrator co
     expect(await (await page.request.get('/api/auth/get-session')).json()).toBeNull();
 
     // An explicit English URL takes precedence over the saved Chinese preference.
-    await page.goto('/en-us/login');
+    await page.goto('/en-us/select-account');
+    await page.getByRole('button', { name: 'Use another account', exact: true }).click();
     await page.getByLabel('Email or username', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill('Recovered-browser-password-639!');
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
@@ -215,9 +218,12 @@ test('completes registration, recovery, account management, and administrator co
     await switchArea(page, 'Administration');
     await expect(page).toHaveURL('/en-us/admin/users');
     const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
-    await expect(administrationNavigation.getByRole('link')).toHaveCount(4);
+    await expect(administrationNavigation.getByRole('link')).toHaveCount(7);
     await expect(administrationNavigation.getByRole('link', { name: 'Users', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'Applications', exact: true })).toBeVisible();
+    await expect(administrationNavigation.getByRole('link', { name: 'API resources', exact: true })).toBeVisible();
+    await expect(administrationNavigation.getByRole('link', { name: 'Business roles', exact: true })).toBeVisible();
+    await expect(administrationNavigation.getByRole('link', { name: 'Audit logs', exact: true })).toBeVisible();
     await expect(accountNavigation).toHaveCount(0);
     await switchArea(page, 'Account center');
     await expect(page).toHaveURL('/en-us/account');
@@ -238,7 +244,7 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByRole('button', { name: /^切换区域:/ })).toHaveAccessibleName('切换区域: 管理后台');
     await page.goto('/zh-cn/admin');
     await expect(page).toHaveURL('/zh-cn/admin/users');
-    await expect(page.getByRole('navigation', { name: '管理导航', exact: true }).getByRole('link')).toHaveCount(4);
+    await expect(page.getByRole('navigation', { name: '管理导航', exact: true }).getByRole('link')).toHaveCount(7);
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('admin-mobile-zh-cn.png'), fullPage: true });

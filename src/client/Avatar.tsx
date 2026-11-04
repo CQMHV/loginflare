@@ -8,6 +8,7 @@ import { ToolbarIcon } from './ToolbarIcon';
 import { ImagePicker } from './ImagePicker';
 import { avatarIdPattern, avatarSize } from '../shared/avatars';
 import { ErrorNotice, useFeedback } from './feedback';
+import { browserContextHeaders } from './browser-context';
 
 export function Avatar({ name, image, className }: { name: string; image?: string | null; className: string }) {
     const { t } = useTranslation();
@@ -36,7 +37,7 @@ export function AvatarEditor({ name, image }: { name: string; image?: string | n
     async function save(blob: Blob) {
         const current = capture();
         let response: Response;
-        try { response = await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': blob.type, Accept: 'application/json' }, body: blob }); }
+        try { response = await fetch('/api/account/avatar', { method: 'POST', credentials: 'same-origin', headers: { ...browserContextHeaders(), 'Content-Type': blob.type, Accept: 'application/json' }, body: blob }); }
         catch { throw new ApiError('NETWORK_ERROR', 0); }
         await readResponse<{ image: string }>(response);
         await actions.invalidate('profile', 'users', 'user');

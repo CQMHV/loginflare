@@ -18,6 +18,7 @@ export interface Application {
     redirectUris: string[];
     postLogoutRedirectUris: string[];
     scopes: string[];
+    apiScopes?: string[];
     disabled: boolean;
     ownerId: string | null;
     ownerDisabled: boolean;
@@ -79,7 +80,7 @@ function ApplicationDetails({ application, locale }: { application: Application;
         <div><small>{t('oauth.clientId')}</small><code className="break-all">{application.clientId}</code></div>
         <div className="full-width"><small>{t('oauth.redirectUris')}</small>{application.redirectUris.map((uri, index) => <code className="break-all" key={`${index}:${uri}`}>{uri}</code>)}</div>
         <div className="full-width"><small>{t('oauth.postLogoutRedirectUris')}</small>{application.postLogoutRedirectUris.map((uri, index) => <code className="break-all" key={`${index}:${uri}`}>{uri}</code>)}</div>
-        <div className="full-width"><small>{t('oauth.allowedScopes')}</small>{application.scopes.map((scope) => <span key={scope}>{t(`oauth.scope_${scope}`)}</span>)}</div>
+        <div className="full-width"><small>{t('oauth.allowedScopes')}</small>{application.scopes.map((scope) => <span key={scope}>{t(`oauth.scope_${scope}`, { defaultValue: scope })}</span>)}</div>
     </div></section>;
 }
 
@@ -280,6 +281,7 @@ export function ApplicationEditor({ locale, create = false, area = 'admin' }: { 
         </form></section>)}
         {application && area === 'admin' && <ApplicationDetails application={application} locale={locale} />}
         {application && area === 'developer' && <ConnectionDetails application={application} issuer={issuer} />}
+        {!!application?.apiScopes?.length && <section className="card"><div className="card-heading"><h2>{t('access.applicationPermissions')}</h2><p>{t('access.applicationPermissionsDescription')}</p></div><div className="card-body access-items">{application.apiScopes.map((scope) => <code className="break-all" key={scope}>{scope}</code>)}</div></section>}
         {application && !create && <section className="card"><div className="card-heading"><h2>{t(area === 'admin' ? 'oauth.manageApplication' : 'oauth.applicationControls')}</h2><p>{t(area === 'admin' ? 'oauth.manageApplicationDescription' : restricted ? 'oauth.adminSuspendedDescription' : 'oauth.controlsDescription')}</p></div><div className="card-body stack-form">
             {!confirmation && <ErrorNotice code={controlError} />}
             <div className="action-row"><Button className={controlDisabled ? 'primary' : 'danger-button'} busy={busy} disabled={restricted} onClick={() => { setControlError(undefined); if (controlDisabled) void control('enable'); else setConfirmation('disable'); }}>{t(controlLabel)}</Button>

@@ -5,7 +5,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
-import { ApiError, captchaRequest, errorCode, request, type Identity, type Session, type User } from './api';
+import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, List, ListItem, MenuButton, NavigationLink, Progress, Select, TextField } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
@@ -26,6 +26,10 @@ import { SocialButtons, SocialCompletion, SocialSettings } from './Social';
 import { SecurityDialog, useSecurity } from './security';
 import { SocialConnectionsPage } from './SocialConnections';
 import { ErrorNotice, useFeedback } from './feedback';
+import { BrowserAccountChooser, BrowserAccountMenu, useBrowserAccounts } from './BrowserAccounts';
+import { cancelBrowserFlow, completeBrowserLogin, ensureBrowserFlow, startBrowserFlow } from './browser-account-actions';
+import { browserFlowId, browserFlowTargetAccount, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
+import { ApiResourcesPage, ApiResourceDetailPage, BusinessRolesPage, UserBusinessRoles, AuditLogsPage } from './AccessManagement';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -110,19 +114,8 @@ function ThemeSwitcher() {
 }
 
 function AccountMenu({ busy, onSignOut }: { busy: boolean; onSignOut: () => void }) {
-    const { identity, locale } = useApp();
-    const { t } = useTranslation();
-    const navigate = useNavigate();
-    return <MenuButton className="account-menu" variant="avatar" label={t('accountMenu')} description={identity?.user.name || identity?.user.email} busy={busy}
-        icon={<Avatar name={identity?.user.name || identity?.user.email || ''} image={identity?.user.image} className="user-avatar" />}
-        options={[
-            { value: 'profile', label: t('profile'), icon: <Icon name="profile" size={24} /> },
-            { value: 'signout', label: t('signout'), icon: <Icon name="logout" size={24} /> },
-        ]}
-        onSelect={(value) => {
-            if (value === 'signout') onSignOut();
-            else if (value === 'profile') navigate(localizedPath(locale, 'account'));
-        }} />;
+    const { identity, locale, refresh } = useApp();
+    return identity ? <BrowserAccountMenu identity={identity} locale={locale} refresh={refresh} signingOut={busy} onSignOut={onSignOut} /> : null;
 }
 
 function Busy() {
@@ -236,6 +229,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string>();
     const [resetComplete, setResetComplete] = useState(false);
+    const [resetAccount, setResetAccount] = useState<string>();
     const feedback = useFeedback();
     const [captchaToken, setCaptchaToken] = useState('');
     const [captchaReset, setCaptchaReset] = useState(0);
@@ -255,17 +249,33 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const oauthQuery = oauthSearch(location.search);
     const authPath = (page: string, extra?: Record<string, string>) => withOAuthSearch(localizedPath(locale, page), location.search, extra);
     const callbackURL = `${window.location.origin}${authPath('verified')}`;
+    const browserAccounts = useBrowserAccounts();
+    const selectingInitial = useRef(false);
 
     useEffect(() => {
         setError(undefined);
+        setBusy(false);
         setResetComplete(false);
+        setResetAccount(undefined);
         setPassword('');
         setConfirmPassword('');
         setRecoveryChallenge(undefined);
         setRecoveryCode('');
     }, [mode]);
 
-    if (identity && !oauthQuery && (mode === 'login' || mode === 'signup')) return <Navigate to={localizedPath(locale, 'account')} replace />;
+    useEffect(() => {
+        if (mode !== 'login' || oauthQuery || browserFlowId() || selectedBrowserAccount() || selectingInitial.current) return;
+        const active = browserAccounts.data?.accounts.filter((account) => account.status === 'active');
+        if (active?.length !== 1) return;
+        selectingInitial.current = true;
+        void fetchJson<{ accountId: string }>('/api/browser/accounts/select', { accountId: active[0].id }).then(async (result) => {
+            selectBrowserAccount(result.accountId); await refresh(); navigate(localizedPath(locale, 'account'), { replace: true });
+        }).catch((cause) => { setError(errorCode(cause)); selectingInitial.current = false; });
+    }, [mode, oauthQuery, browserAccounts.data, refresh, navigate, locale]);
+
+    if (mode === 'login' && !oauthQuery && !browserFlowId() && !selectedBrowserAccount() && (!browserAccounts.data || !error && browserAccounts.data.accounts.filter((account) => account.status === 'active').length === 1)) return <AuthLayout>{browserAccounts.data ? <Busy /> : <ResourceFeedback query={browserAccounts} />}</AuthLayout>;
+    if (!browserFlowId() && !oauthQuery && mode === 'login' && browserAccounts.data?.accounts.length && (!identity || !selectedBrowserAccount()) && browserAccounts.data.accounts.filter((account) => account.status === 'active').length !== 1) return <Navigate to={authPath('select-account')} replace />;
+    if (identity && !browserFlowId() && !oauthQuery && (mode === 'login' || mode === 'signup')) return <Navigate to={localizedPath(locale, 'account')} replace />;
 
     const titleKeys: Record<AuthMode, string> = {
         login: 'loginTitle', signup: 'signupTitle', 'verify-email': 'verificationTitle',
@@ -295,8 +305,10 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     const identifier = loginIdentifier.trim();
                     const path = identifier.includes('@') ? '/sign-in/email' : '/sign-in/username';
                     const credentials = { ...(identifier.includes('@') ? { email: identifier } : { username: identifier }), password, rememberMe };
+                    await ensureBrowserFlow(locale, oauthQuery || undefined);
                     if (oauthQuery) {
                         const result = await providerRequest(path, credentials, captchaToken);
+                        if (!secretsCurrent()) return;
                         savePreference(locale);
                         if (result?.twoFactorRedirect) {
                             setPassword('');
@@ -304,14 +316,16 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                             navigate(authPath('two-factor'), { replace: true });
                             return;
                         }
-                        if (result?.redirect) return;
+                        if (result?.redirect) { await completeBrowserLogin(result, true); return; }
                         throw new ApiError('INVALID_OAUTH_QUERY', 400);
                     }
-                    const result = await captchaRequest<{ twoFactorRedirect?: boolean }>(path, credentials, captchaToken);
+                    const result = await captchaRequest<{ twoFactorRedirect?: boolean; browserAccountId?: string }>(path, credentials, captchaToken);
+                    if (!secretsCurrent()) return;
                     setPassword('');
+                    if (!result.twoFactorRedirect) await completeBrowserLogin(result);
                     await refresh();
                     savePreference(locale);
-                    navigate(localizedPath(locale, result.twoFactorRedirect ? 'two-factor' : 'account'), { replace: true });
+                    navigate(result.twoFactorRedirect ? flowPath(localizedPath(locale, 'two-factor')) : localizedPath(locale, 'account'), { replace: true });
                     break;
                 }
                 case 'signup':
@@ -332,13 +346,21 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                         if (secretsCurrent()) setRecoveryChallenge(result.challengeId);
                     }
                     break;
-                case 'reset-password':
+                case 'reset-password': {
+                    const targetAccount = browserFlowTargetAccount() || undefined;
                     await request('/reset-password', { token, newPassword: password });
-                    await refresh();
+                    setResetAccount(targetAccount);
+                    clearBrowserFlow();
+                    try { await refresh(); }
+                    catch (cause) {
+                        if (!(cause instanceof ApiError && [401, 403].includes(cause.status))) throw cause;
+                        selectBrowserAccount('', false);
+                    }
                     setResetComplete(true);
                     setPassword('');
                     setConfirmPassword('');
                     break;
+                }
             }
         } catch (cause) {
             setError(errorCode(cause));
@@ -355,7 +377,10 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         {oauthQuery && <p className="oauth-context">{t('oauth.authorizationPending')}</p>}
         {mode === 'verified' ? urlError ? <ErrorNotice code="INVALID_TOKEN" /> : <ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink> :
             mode === 'reset-password' && (!token || urlError) ? <ErrorNotice message={t('invalidLink')} /> :
-            mode === 'reset-password' && resetComplete ? <><p className="section-description" role="status">{t('resetDone')}</p><ButtonLink className="primary full" to={authPath('login')}>{t('login')}<Icon name="arrow" size={18} /></ButtonLink></> :
+            mode === 'reset-password' && resetComplete ? <><p className="section-description" role="status">{t('resetDone')}</p><Button className="primary full" busy={busy} onClick={() => {
+                setBusy(true); setError(undefined);
+                void startBrowserFlow(resetAccount ? 'reauth' : selectedBrowserAccount() ? 'add' : 'login', locale, resetAccount, oauthQuery || undefined).then(() => navigate(flowPath(authPath('login')))).catch((cause) => { setError(errorCode(cause)); setBusy(false); });
+            }}>{t('login')}<Icon name="arrow" size={18} /></Button><ErrorNotice code={error} /></> :
             <form onSubmit={(event) => { void submit(event); }} className="stack-form">
                 <ErrorNotice code={urlError ? 'INVALID_TOKEN' : error === 'PASSWORD_MISMATCH' ? undefined : error} message={error === 'PASSWORD_MISMATCH' ? t('passwordMismatch') : undefined} />
                 {mode === 'signup' && <TextField label={t('name')} autoComplete="nickname" name="name" value={name} onValueChange={setName} placeholder={t('namePlaceholder')} maxLength={100} required />}
@@ -377,9 +402,10 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                 }}>{t('emails.recoveryStartOver')}</Button>}
             </form>}
         {['login', 'signup'].includes(mode) && <SocialButtons locale={locale} />}
-        {mode === 'login' && <><p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p><Link className="resend-link" to={authPath('verify-email', loginIdentifier.includes('@') ? { email: loginIdentifier.trim() } : undefined)}>{t('resend')}</Link></>}
+        {mode === 'login' && <p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p>}
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
         {mode === 'signup' && error && <Link className="resend-link" to={authPath('verify-email', { email })}>{t('resend')}</Link>}
+        {browserFlowId() && ['login', 'signup', 'verify-email'].includes(mode) && <Button className="text-button full" disabled={busy} onClick={() => { void cancelBrowserFlow().then(async (previous) => { await refresh(); navigate(localizedPath(locale, previous ? 'account' : 'select-account'), { replace: true }); }).catch((cause) => setError(errorCode(cause))); }}>{t('browserAccounts.cancel')}</Button>}
         {['verify-email', 'forgot-password', 'reset-password'].includes(mode) && <Link className="back-link" to={authPath('login')}><Icon name="back" size={15} />{t('backToLogin')}</Link>}
     </AuthLayout>;
 }
@@ -407,16 +433,17 @@ function TwoFactorPage() {
                 if (!result?.redirect) throw new ApiError('INVALID_OAUTH_QUERY', 400);
                 return;
             }
-            await request(path, { code: code.trim() });
+            const result = await request<{ browserAccountId?: string }>(path, { code: code.trim() });
             if (!current()) return;
             setCode('');
+            if (!social) await completeBrowserLogin(result);
             await refresh();
             savePreference(locale);
-            navigate(localizedPath(locale, social ? 'social/complete' : 'account'), { replace: true });
+            navigate(social ? flowPath(localizedPath(locale, 'social/complete')) : localizedPath(locale, 'account'), { replace: true });
         } catch (cause) { if (current()) setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    if (identity && !query && !social) return <Navigate to={localizedPath(locale, 'account')} replace />;
+    if (identity && !browserFlowId() && !query && !social) return <Navigate to={localizedPath(locale, 'account')} replace />;
     return <AuthLayout>
         <div className="auth-step-icon"><Icon name="shield" size={26} /></div>
         <h2>{t('mfa.challengeTitle')}</h2>
@@ -429,12 +456,18 @@ function TwoFactorPage() {
             <Button className="text-button" disabled={busy} onClick={() => { setBackup(!backup); setCode(''); setError(undefined); }}>{t(backup ? 'mfa.useAuthenticator' : 'mfa.useBackup')}</Button>
         </form>
         <Link className="back-link" to={withOAuthSearch(localizedPath(locale, 'login'), location.search)}>{t('backToLogin')}</Link>
+        {browserFlowId() && <Button className="text-button full" disabled={busy} onClick={() => { void cancelBrowserFlow().then(async (previous) => { await refresh(); navigate(localizedPath(locale, previous ? 'account' : 'select-account'), { replace: true }); }).catch((cause) => setError(errorCode(cause))); }}>{t('browserAccounts.cancel')}</Button>}
     </AuthLayout>;
 }
 
 function SocialCompletionPage() {
     const { locale, refresh } = useApp();
     return <AuthLayout><SocialCompletion locale={locale} refresh={refresh} /></AuthLayout>;
+}
+
+function SelectAccountPage() {
+    const { locale, refresh } = useApp();
+    return <AuthLayout><BrowserAccountChooser locale={locale} refresh={refresh} /></AuthLayout>;
 }
 
 function ConsentPage() {
@@ -444,7 +477,7 @@ function ConsentPage() {
     const [error, setError] = useState<string>();
     const [busy, setBusy] = useState(false);
     const query = oauthSearch(location.search);
-    const consentQuery = useResource<{ client: { clientId: string; name: string }; scopes: string[] }>('consent', `/api/oauth/consent?${new URLSearchParams({ oauth_query: query })}`, query, !!query);
+    const consentQuery = useResource<{ client: { clientId: string; name: string }; scopes: string[]; resource?: { name: string; identifier: string }; permissions?: { scope: string; name: string; description: string }[] }>('consent', `/api/oauth/consent?${new URLSearchParams({ oauth_query: query })}`, query, !!query);
     const consent = consentQuery.data;
     const consentError = error ?? (consentQuery.error ? errorCode(consentQuery.error) : undefined);
     async function decide(accept: boolean) {
@@ -466,8 +499,9 @@ function ConsentPage() {
         {consent && <>
             <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name })}</p>
             <p className="consent-account">{t('oauth.consentAccount', { email: identity.user.email })}</p>
+            {consent.resource && <div className="consent-resource"><strong>{consent.resource.name}</strong><code className="break-all">{consent.resource.identifier}</code></div>}
             <p>{t('oauth.consentPermissions')}</p>
-            <ul className="consent-permissions">{consent.scopes.map((scope) => <li key={scope}>{t(`oauth.scope_${scope}`)}</li>)}</ul>
+            <ul className="consent-permissions">{consent.scopes.map((scope) => { const permission = consent.permissions?.find((item) => item.scope === scope); return <li key={scope}>{permission?.name || t(`oauth.scope_${scope}`, { defaultValue: scope })}{permission?.description && <small>{permission.description}</small>}</li>; })}</ul>
             <p className="section-description">{t('oauth.consentNotice')}</p>
             <ErrorNotice code={error} />
             <div className="action-row"><Button busy={busy} onClick={() => { void decide(true); }}>{t('oauth.allow')}</Button><Button className="secondary" disabled={busy} onClick={() => { void decide(false); }}>{t('oauth.deny')}</Button></div>
@@ -521,18 +555,22 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
     const [busy, setBusy] = useState(false);
     const feedback = useFeedback();
     const dataActions = useDataActions();
+    const captureSignOut = useClearSecrets(() => setBusy(false));
 
     async function signOut() {
+        const current = captureSignOut();
         setBusy(true);
         try {
             await request('/sign-out', {});
             dataActions.signOut();
-            navigate(localizedPath(locale, 'login'), { replace: true });
+            if (!current()) return;
+            clearBrowserFlow(); selectBrowserAccount('');
+            navigate(localizedPath(locale, 'select-account'), { replace: true });
         } catch (cause) {
             const code = dataActions.fail(cause);
             feedback.error(t(`errors.${code}`, { defaultValue: t('errors.UNKNOWN_ERROR') }));
         } finally {
-            setBusy(false);
+            if (current()) setBusy(false);
         }
     }
 
@@ -569,6 +607,9 @@ function AdminLayout() {
         navigation={<>
             <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/access/resources')}><Icon name="globe" />{t('access.resources')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/access/roles')}><Icon name="shield" />{t('access.roles')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/audit-logs')}><Icon name="sessions" />{t('access.audit')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink></>} />;
 }
@@ -785,6 +826,7 @@ function UserDetailPage() {
     return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={busy} error={<ErrorNotice code={error} />} onCancel={() => { setConfirmation(undefined); setError(undefined); }} onConfirm={() => { void action(confirmation, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''}>{user && <Avatar name={user.name} image={user.image} className="profile-avatar" />}</PageHeading><ResourceFeedback query={userQuery} />{user && <>
         <section className="card"><div className="card-body user-detail-grid"><div><small>{t('name')}</small><strong>{user.name}</strong></div><div><small>{t('email')}</small><strong>{user.email}</strong></div><div><small>{t('status')}</small><UserStatus user={user} /></div><div><small>{t('role')}</small><strong>{t(user.role === 'admin' ? 'admin' : 'user')}</strong></div><div><small>{t('joined')}</small><strong>{formatDate(user.createdAt, locale)}</strong></div><div><small>{t('emailVerification')}</small><strong>{t(user.emailVerified ? 'verified' : 'unverified')}</strong></div><div className="full-width"><small>{t('accountId')}</small><code>{user.id}</code></div>{user.banReason && <div className="full-width"><small>{t('reason')}</small><strong>{user.banReason}</strong></div>}</div></section>
         <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!confirmation && <ErrorNotice code={error} />}{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
+        <UserBusinessRoles userId={user.id} />
     </>}</>;
 }
 
@@ -803,6 +845,7 @@ function LocaleRoutes() {
         <Route path="/:language">
             <Route index element={identity === undefined ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search, hash }} replace />} />
             <Route path="login" element={<AuthPage mode="login" />} />
+            <Route path="select-account" element={<SelectAccountPage />} />
             <Route path="two-factor" element={<TwoFactorPage />} />
             <Route path="social/complete" element={<SocialCompletionPage />} />
             <Route path="signup" element={<AuthPage mode="signup" />} />
@@ -833,6 +876,10 @@ function LocaleRoutes() {
                         <Route path="admin/users" element={<UsersPage />} />
                         <Route path="admin/branding" element={<BrandingSettings />} />
                         <Route path="admin/social-connections" element={<SocialConnectionsPage />} />
+                        <Route path="admin/access/resources" element={<ApiResourcesPage locale={locale} />} />
+                        <Route path="admin/access/resources/detail" element={<ApiResourceDetailPage key={new URLSearchParams(search).get('id') ?? ''} locale={locale} />} />
+                        <Route path="admin/access/roles" element={<BusinessRolesPage />} />
+                        <Route path="admin/audit-logs" element={<AuditLogsPage locale={locale} />} />
                         <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
                         <Route path="admin/applications/detail" element={<ApplicationEditor key={`admin:${new URLSearchParams(search).get('clientId') ?? ''}`} locale={locale} />} />
@@ -860,8 +907,14 @@ export default function App() {
         document.title = brand.name;
     }, [locale, brand.name]);
 
+    useEffect(() => {
+        if (!browserFlowId() && !selectedBrowserAccount() && identity?.browserAccountId) selectBrowserAccount(identity.browserAccountId);
+    }, [identity]);
+
     const context = { identity, refresh, locale };
-    return <AppContext.Provider value={context}><BrandingUpdates /><DataScope identity={identity}><PageStateProvider key={identity ? `${identity.user.id}:${identity.user.role ?? 'user'}` : ''}>
+    const privatePage = /^\/(en-us|zh-cn)\/(account|admin|developer)(\/|$)/.test(location.pathname);
+    const pageScope = privatePage ? identity ? `${identity.user.id}:${identity.session.id}:${identity.user.role ?? 'user'}` : '' : 'authentication';
+    return <AppContext.Provider value={context}><BrandingUpdates /><DataScope identity={identity}><PageStateProvider key={pageScope}>
         {loadError && <div className="global-error"><ErrorNotice code={loadError} /><Button type="button" className="text-button" onClick={() => { void identityQuery.refetch(); }}>{i18n.t('tryAgain')}</Button></div>}
         {location.pathname === '/' ? (identity === undefined && !loadError ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search: location.search, hash: location.hash }} replace />) : <LocaleRoutes />}
     </PageStateProvider></DataScope></AppContext.Provider>;

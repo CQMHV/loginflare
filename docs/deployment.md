@@ -4,6 +4,10 @@
 
 ## Prerequisites
 
+Apply `0019_api_access.sql` and `0020_audit_logs.sql` before deploying the API access-control and audit build. Business resources, permissions and roles reuse D1 and the native OAuth resource tables; audit events use the same database and existing bounded scheduled cleanup, with a 90-day retention period. No new main-Worker binding or secret is required. Keep the issuer stable, validate explicit resource/application links and user role assignments, and verify live introspection after role removal. The independent [Workers/Hono API example](../examples/worker-api/README.md) has its own issuer/resource configuration and confidential introspection-client secret; it is not deployed with the main Worker.
+
+Apply `0018_browser_accounts.sql` before deploying the browser multi-account build. It adds browser account registration, atomic active-account slots, short-lived authentication flows and session/password/suspension cleanup hooks. It uses the existing D1 binding and server secret; no new resource or secret is required. This build uses the new browser registration flow and does not include an old single-session adoption path. Validate multiple tabs, MFA, account selection and RP-initiated logout in an isolated environment before rollout. Keep the existing scheduled cleanup enabled for expired browser hints and authentication flows.
+
 Authorized-application management requires `0017_account_applications.sql` before switching to this Worker build. It projects existing consent into the account list and registers pending authorization codes for revocation, preserving issued grants and ordinary offline refresh behavior. No new binding or secret is required.
 
 Developer self-service requires `0016_developer_applications.sql`. Apply it before switching to this Worker build. Existing clients retain their IDs, secrets, grants and disabled state, with no developer owner assigned. The migration adds application ownership, independent owner/admin disabled controls and guards for owner management; no additional binding or secret is required.

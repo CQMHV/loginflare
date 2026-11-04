@@ -7,6 +7,7 @@ import { useClearSecrets, usePageDraft } from './page-state';
 import { colorSchemes, defaultBranding, type Branding } from '../shared/branding';
 import { ImagePicker } from './ImagePicker';
 import { ErrorNotice, useFeedback } from './feedback';
+import { browserContextHeaders } from './browser-context';
 
 type Draft = Pick<Branding, 'name' | 'primaryColor' | 'colorScheme' | 'logoId' | 'logoUrl' | 'revision'>;
 function sameSettings(value: Pick<Draft, 'name' | 'primaryColor' | 'colorScheme' | 'logoId'>, other: Pick<Draft, 'name' | 'primaryColor' | 'colorScheme' | 'logoId'>) {
@@ -33,7 +34,7 @@ export function BrandingSettings() {
     }
     async function upload(source: Blob) {
         const active = capture();
-        const response = await fetch('/api/admin/branding/logo', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': source.type, Accept: 'application/json' }, body: source }).catch(() => { throw new ApiError('NETWORK_ERROR', 0); });
+        const response = await fetch('/api/admin/branding/logo', { method: 'POST', credentials: 'same-origin', headers: { ...browserContextHeaders(), 'Content-Type': source.type, Accept: 'application/json' }, body: source }).catch(() => { throw new ApiError('NETWORK_ERROR', 0); });
         const logo = await readResponse<Pick<Branding, 'logoId' | 'logoUrl'>>(response);
         if (active()) edit(logo);
     }

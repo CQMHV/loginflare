@@ -1,5 +1,5 @@
 import { betterAuth } from 'better-auth';
-import { admin, captcha, jwt, twoFactor, username } from 'better-auth/plugins';
+import { admin, captcha, jwt, multiSession, twoFactor, username } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { z } from 'zod';
 import { validateConfig, type Env } from './config.ts';
@@ -11,8 +11,11 @@ import { databaseRateLimit } from './rate-limit';
 import { socialAuthentication } from './social-auth';
 import type { LoadedConnection } from './social-connections';
 import { applicationPolicy, applicationPrivileges, type ApplicationManagement } from './application-policy';
+import { browserAccounts, browserSessionPlugin } from './browser-accounts';
+import { auditAuthentication } from './audit';
+import { apiAccessClaims } from './api-access-policy';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement) {
+export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = []) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
     const multifactor = twoFactor({ issuer: 'Loginflare', allowPasswordless: true });
@@ -106,16 +109,23 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             username({ displayUsername: false }),
             multifactor,
             socialAuthentication(env, selected),
+            browserSessionPlugin(env),
+            multiSession({ maximumSessions: 5 }),
             jwt({
                 jwks: { keyPairConfig: { alg: 'RS256' } },
                 jwt: { issuer: `${env.AUTH_URL}/api/auth` },
                 disableSettingJwtHeader: true,
             }),
             oauthProvider({
-                extensions: [policy.extension],
+                extensions: [policy.extension, apiAccessClaims(env)],
                 loginPage: '/en-us/login',
                 consentPage: '/en-us/consent',
-                scopes: ['openid', 'profile', 'email', 'offline_access'],
+                selectAccount: {
+                    page: '/en-us/select-account',
+                    shouldRedirect: async ({ headers }) => (await browserAccounts(env, headers)).filter((account) => account.status === 'active').length > 1,
+                },
+                scopes: ['openid', 'profile', 'email', 'offline_access', ...businessScopes],
+                enforcePerClientResources: true,
                 grantTypes: ['authorization_code', 'refresh_token'],
                 allowDynamicClientRegistration: false,
                 allowUnauthenticatedClientRegistration: false,
@@ -132,6 +142,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                 secretKey: env.TURNSTILE_SECRET_KEY,
                 endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/emails/recovery/start', '/send-verification-email'],
             }),
+            auditAuthentication(env),
         ],
     });
 }

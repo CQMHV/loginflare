@@ -17,21 +17,26 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - Recover a forgotten password and change a known password.
 - Enable authenticator-based MFA (TOTP), save or reset one-use recovery codes, and verify email/username and OAuth sign-ins.
 - Update a display name and username, upload/crop/remove a profile photo, and manage active sessions.
+- Sign in to up to five accounts in one browser, switch accounts independently in each tab, and sign out of one account or all browser accounts.
 - Manage primary and secondary email addresses on a dedicated page, verify new addresses with codes, and choose the primary sign-in email.
 - Find users by exact ID, username, or primary email, inspect their accounts, suspend or restore ordinary accounts, and revoke their sessions.
 - Create and manage your own server Web and SPA clients in the developer center, with exact redirects, consent, and client-secret rotation; administrators oversee all applications.
 - Configure an independent brand logo, brand name, theme source color and Material color scheme in the administrator console.
 - OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
+- Manage API resources, business permission scopes, roles and user assignments; issue resource-bound access tokens and protect Workers/Hono APIs. See [Access control](docs/access-control.md).
+- Inspect administrator-only audit logs for authentication, authorization, security and management events, with bounded retention.
 - English and Simplified Chinese pages, error messages, and transactional emails.
 - Better Auth account/session primitives, atomic D1-backed rate limiting, scheduled expiry cleanup, and server-verified Turnstile challenges.
 
-This release does not offer organizations, multi-tenancy, SAML, account deletion, browser-based role assignment, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, custom business API permissions, upstream API token hosting and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed.
+This release does not offer organizations, multi-tenancy, SAML, account deletion, browser-based assignment of Loginflare console administrator privileges, impersonation, or administrator-set passwords. OAuth client credentials, native/device clients, dynamic client registration, upstream API token hosting and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed. Business roles and permission assignments are separate from console administrator privileges.
 
 Usernames are separate from display names. The registration form asks for a unique username of 3–30 ASCII letters, numbers, underscores, or dots; usernames are stored in lowercase and sign-in is case-insensitive. Existing accounts can continue using email and choose a username in their profile. Users can change their username; an existing username cannot be cleared. Email verification is required for both sign-in methods. Only the primary email works as an email sign-in identifier.
 
 The **Email addresses** page manages one primary email and additional secondary emails. Every address is unique across all accounts, regardless of its role. Adding an address requires identity confirmation and verification of a code sent to that address. A verified secondary email can become primary after identity confirmation; the previous primary remains secondary. Confirmation uses the current password, or linked-provider reauthentication and any enabled MFA for passwordless accounts. The primary address must be replaced before it can be removed. Password recovery starts with the username or primary email and sends a code to a specified verified primary or secondary address belonging to that account. Secondary emails never identify an account for sign-in.
 
 ## Interface
+
+The avatar menu lists this browser's accounts with their photos, names and email addresses. **Add account** preserves existing sessions and uses the normal password/provider and MFA checks. Each tab remembers its own selection across reloads; switching returns to the selected account's profile. Expired or signed-out accounts remain available for reauthentication and can be removed from the list. Signed-out hints expire after 30 days; at most ten account entries are remembered, with the oldest signed-out entries removed first. The five-account limit applies to active sign-ins. Signing out affects this browser's session for that account, including its other tabs; other devices remain signed in. Switching Loginflare accounts does not switch an application's existing session. Applications starting a new authorization choose an account when multiple accounts are signed in.
 
 Set up MFA on the account center's **Security** page after confirming your current password or reauthenticating a linked identity. Scan the QR code or enter the setup key, save the recovery codes, and confirm an authenticator code to activate MFA. Each recovery code works once; resetting codes invalidates the previous set. Enabling or disabling MFA revokes other sessions and previous application grants. Password recovery keeps MFA enabled. A recovery code can replace a lost authenticator, but password recovery cannot bypass MFA if both are lost.
 
@@ -134,6 +139,8 @@ Sign in with a verified account, switch to **Developer center → My application
 Register the external application's exact sign-in and sign-out callbacks in Loginflare, then configure that application's OIDC settings with the generated client ID, the issuer and, for server clients, the one-time secret. Server applications use `client_secret_basic`; browser SPAs use `none` and never receive a secret. Both require authorization code + PKCE S256 and first-use consent. Discover the provider at `${AUTH_URL}/api/auth/.well-known/openid-configuration`.
 
 See the [integration guide](docs/oauth.md) for callbacks, token lifetimes, security-event revocation, and the standard `openid-client` / `oidc-client-ts` examples. The examples use local HTTPS subdomains and locally generated certificates; no system trust-store changes or remote resources are required.
+
+For a business API, an administrator registers its audience, permission scopes, allowed applications and business roles. Applications request a resource access token through the same OAuth flow. The [Workers/Hono example](examples/worker-api/README.md) validates signatures and audience, checks live authorization and enforces endpoint permissions. [Audit logs](docs/access-control.md#audit-logs) make security and access-management events available in the administrator console.
 
 Ordinary central logout retains native `offline_access` refresh authorization. Applications own their local sessions; logging out of Loginflare does not sign every application out. Security actions such as password recovery and account suspension have separate credential-invalidation rules described in the integration guide.
 

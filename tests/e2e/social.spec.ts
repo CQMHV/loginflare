@@ -70,7 +70,8 @@ test('manages a connector and completes social registration, step-up, MFA and do
         expect(app.status(), await app.text()).toBe(201); clientId = (await app.json()).application.clientId;
         await context.request.post('/api/auth/sign-out', { headers: { Origin: testOrigin }, data: {} });
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.goto('/zh-cn/login');
+        await page.goto('/zh-cn/select-account');
+        await page.getByRole('button', { name: '使用其他账号', exact: true }).click();
         await page.getByRole('button', { name: `使用 ${connectionName} 继续`, exact: true }).click();
         await expect(page.getByRole('heading', { name: '完成登录' })).toBeVisible();
         await page.getByRole('button', { name: '继续', exact: true }).click();
@@ -138,7 +139,7 @@ test('manages a connector and completes social registration, step-up, MFA and do
         const verifier = 'b'.repeat(43), challenge = createHash('sha256').update(verifier).digest('base64url');
         await page.goto(`/api/auth/oauth2/authorize?${new URLSearchParams({ client_id: clientId, redirect_uri: 'https://social-app.example.com/callback', response_type: 'code', scope: 'openid profile email', state: 'social-browser-state', nonce: 'social-browser-nonce', code_challenge: challenge, code_challenge_method: 'S256', prompt: 'login', ui_locales: 'en-US' })}`);
         await page.getByRole('button', { name: `Continue with ${connectionName}`, exact: true }).click();
-        await expect(page).toHaveURL('/en-us/two-factor?social=1');
+        await expect(page).toHaveURL(/\/en-us\/two-factor\?social=1&flow=/);
         expect(await (await context.request.get('/api/auth/get-session')).json()).toBeNull();
         await page.getByRole('button', { name: 'Use a recovery code', exact: true }).click();
         await page.getByLabel('Recovery code', { exact: true }).fill(recovery);

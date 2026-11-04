@@ -1,0 +1,14 @@
+{
+    "$schema": "../../node_modules/wrangler/config-schema.json",
+    "name": "loginflare-api-example",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-11-04",
+    "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+    "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+    "vars": {
+        "AUTH_ISSUER": "https://identity.example.com/api/auth",
+        "API_RESOURCE": "https://api.example.com",
+        "INTROSPECTION_CLIENT_ID": "replace-with-api-client-id"
+    },
+    "secrets": { "required": ["INTROSPECTION_CLIENT_SECRET"] }
+}

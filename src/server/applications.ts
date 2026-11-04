@@ -6,6 +6,7 @@ import { PaginationError, pageBoundary, pageResult, readPageInput } from './pagi
 import { databaseRateLimit } from './rate-limit';
 import { applicationPrivileges, type ApplicationManagement, type ApplicationOwnership } from './application-policy';
 import { applicationCreateSchema, applicationUpdateSchema, applicationFieldErrors } from '../shared/application-validation';
+import { identityScopes } from './api-access-policy';
 
 type Auth = ReturnType<typeof createAuth>;
 type NativeClient = Awaited<ReturnType<Auth['api']['getOAuthClient']>>;
@@ -21,7 +22,8 @@ function application(client: NativeClient, ownership: ApplicationOwnership) {
         type: client.token_endpoint_auth_method === 'none' ? 'spa' : 'web',
         redirectUris: client.redirect_uris,
         postLogoutRedirectUris: client.post_logout_redirect_uris ?? [],
-        scopes: client.scope?.split(' ').filter(Boolean) ?? [],
+        scopes: client.scope?.split(' ').filter((scope) => identityScopes.includes(scope)) ?? [],
+        apiScopes: client.scope?.split(' ').filter((scope) => scope && !identityScopes.includes(scope)) ?? [],
         disabled: client.disabled ?? false,
         ownerId: ownership.ownerId,
         ownerDisabled: !!ownership.ownerDisabled,
@@ -140,7 +142,10 @@ function createApplications(administrator: boolean) {
             metadata = ownership.metadata ? JSON.parse(ownership.metadata) as Record<string, unknown> : {};
         }
         const management = { ...c.var.management, ...(data.disabled !== undefined ? administrator ? { adminSuspended: data.disabled } : { ownerDisabled: data.disabled } : {}) };
-        const auth = createAuth(c.env, undefined, undefined, undefined, management);
+        const capabilities = await c.env.DB.prepare(`SELECT p."scope" FROM "apiPermission" p JOIN "oauthResource" r ON r."id" = p."resourceId"
+            JOIN "oauthClientResource" link ON link."resourceId" = r."identifier" WHERE link."clientId" = ?`).bind(c.req.param('clientId')).all<{ scope: string }>();
+        const apiScopes = capabilities.results.map((item) => item.scope);
+        const auth = createAuth(c.env, undefined, undefined, undefined, management, apiScopes);
         const client = await auth.api.adminUpdateOAuthClient({
             headers: c.req.raw.headers,
             body: {
@@ -149,7 +154,7 @@ function createApplications(administrator: boolean) {
                     ...(data.name !== undefined ? { client_name: data.name } : {}),
                     ...(data.redirectUris !== undefined ? { redirect_uris: data.redirectUris } : {}),
                     ...(data.postLogoutRedirectUris !== undefined ? { post_logout_redirect_uris: data.postLogoutRedirectUris } : {}),
-                    ...(data.scopes !== undefined ? { scope: data.scopes.join(' ') } : {}),
+                    ...(data.scopes !== undefined ? { scope: [...data.scopes, ...apiScopes].join(' ') } : {}),
                     ...(data.disabled !== undefined ? { disabled: data.disabled || !!(administrator ? ownership.ownerDisabled : ownership.adminSuspended) } : {}),
                     ...(data.redirectUris !== undefined ? { metadata: { ...metadata, loginflareRedirectOrigins: [...new Set(data.redirectUris.map((uri) => new URL(uri).origin))] } } : {}),
                 },
@@ -157,7 +162,8 @@ function createApplications(administrator: boolean) {
         });
         const updated = await stored(c, client.client_id);
         if (!updated) return c.json({ code: 'APPLICATION_NOT_FOUND' }, 404);
-        return c.json({ application: { ...application(client, updated), ...ownerSummary(updated) }, issuer: `${c.env.AUTH_URL}/api/auth` });
+        const current = await auth.api.getOAuthClient({ headers: c.req.raw.headers, query: { client_id: client.client_id } });
+        return c.json({ application: { ...application(current, updated), ...ownerSummary(updated) }, issuer: `${c.env.AUTH_URL}/api/auth` });
     });
 
     applications.post('/:clientId/rotate-secret', async (c) => {

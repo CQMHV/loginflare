@@ -55,7 +55,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     await switchArea(page, 'Administration');
     await expect(page).toHaveURL('/en-us/admin/users');
     const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
-    await expect(administrationNavigation.getByRole('link')).toHaveCount(4);
+    await expect(administrationNavigation.getByRole('link')).toHaveCount(7);
     await expect(page.getByRole('navigation', { name: 'Account navigation', exact: true })).toHaveCount(0);
     await switchArea(page, 'Developer center');
     await page.getByRole('link', { name: 'Create application', exact: true }).click();
@@ -232,8 +232,12 @@ test('manages applications, consent, and signed registration/recovery continuati
         await registration.getByLabel('Confirm password', { exact: true }).fill(recoveredPassword);
         await registration.getByRole('button', { name: 'Reset password', exact: true }).click();
         await expect(registration.getByRole('status')).toContainText('Password updated.');
-        await registration.getByRole('link', { name: 'Sign in', exact: true }).click();
-        expect(new URL(registration.url()).search).toBe(recoveryQuery);
+        await registration.getByRole('button', { name: 'Sign in', exact: true }).click();
+        await expect(registration).toHaveURL((url) => url.pathname === '/en-us/login' && !!url.searchParams.get('flow'));
+        const resumedRecovery = new URL(registration.url()).searchParams;
+        expect(resumedRecovery.get('flow')).toBeTruthy();
+        resumedRecovery.delete('flow');
+        expect(resumedRecovery.toString()).toBe(new URLSearchParams(recoveryQuery).toString());
         expect(new URL(registration.url()).searchParams.has('token')).toBe(false);
         await registration.getByLabel('Email or username', { exact: true }).fill(newcomerEmail);
         await registration.getByLabel('Password', { exact: true }).fill(recoveredPassword);
