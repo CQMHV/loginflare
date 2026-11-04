@@ -29,6 +29,7 @@ import { ErrorNotice, useFeedback } from './feedback';
 import { BrowserAccountChooser, BrowserAccountMenu, useBrowserAccounts } from './BrowserAccounts';
 import { cancelBrowserFlow, completeBrowserLogin, ensureBrowserFlow, startBrowserFlow } from './browser-account-actions';
 import { browserFlowId, browserFlowTargetAccount, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
+import { ApiResourcesPage, ApiResourceDetailPage, BusinessRolesPage, UserBusinessRoles, AuditLogsPage } from './AccessManagement';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -476,7 +477,7 @@ function ConsentPage() {
     const [error, setError] = useState<string>();
     const [busy, setBusy] = useState(false);
     const query = oauthSearch(location.search);
-    const consentQuery = useResource<{ client: { clientId: string; name: string }; scopes: string[] }>('consent', `/api/oauth/consent?${new URLSearchParams({ oauth_query: query })}`, query, !!query);
+    const consentQuery = useResource<{ client: { clientId: string; name: string }; scopes: string[]; resource?: { name: string; identifier: string }; permissions?: { scope: string; name: string; description: string }[] }>('consent', `/api/oauth/consent?${new URLSearchParams({ oauth_query: query })}`, query, !!query);
     const consent = consentQuery.data;
     const consentError = error ?? (consentQuery.error ? errorCode(consentQuery.error) : undefined);
     async function decide(accept: boolean) {
@@ -498,8 +499,9 @@ function ConsentPage() {
         {consent && <>
             <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name })}</p>
             <p className="consent-account">{t('oauth.consentAccount', { email: identity.user.email })}</p>
+            {consent.resource && <div className="consent-resource"><strong>{consent.resource.name}</strong><code className="break-all">{consent.resource.identifier}</code></div>}
             <p>{t('oauth.consentPermissions')}</p>
-            <ul className="consent-permissions">{consent.scopes.map((scope) => <li key={scope}>{t(`oauth.scope_${scope}`)}</li>)}</ul>
+            <ul className="consent-permissions">{consent.scopes.map((scope) => { const permission = consent.permissions?.find((item) => item.scope === scope); return <li key={scope}>{permission?.name || t(`oauth.scope_${scope}`, { defaultValue: scope })}{permission?.description && <small>{permission.description}</small>}</li>; })}</ul>
             <p className="section-description">{t('oauth.consentNotice')}</p>
             <ErrorNotice code={error} />
             <div className="action-row"><Button busy={busy} onClick={() => { void decide(true); }}>{t('oauth.allow')}</Button><Button className="secondary" disabled={busy} onClick={() => { void decide(false); }}>{t('oauth.deny')}</Button></div>
@@ -605,6 +607,9 @@ function AdminLayout() {
         navigation={<>
             <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/access/resources')}><Icon name="globe" />{t('access.resources')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/access/roles')}><Icon name="shield" />{t('access.roles')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/audit-logs')}><Icon name="sessions" />{t('access.audit')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink></>} />;
 }
@@ -821,6 +826,7 @@ function UserDetailPage() {
     return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={busy} error={<ErrorNotice code={error} />} onCancel={() => { setConfirmation(undefined); setError(undefined); }} onConfirm={() => { void action(confirmation, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''}>{user && <Avatar name={user.name} image={user.image} className="profile-avatar" />}</PageHeading><ResourceFeedback query={userQuery} />{user && <>
         <section className="card"><div className="card-body user-detail-grid"><div><small>{t('name')}</small><strong>{user.name}</strong></div><div><small>{t('email')}</small><strong>{user.email}</strong></div><div><small>{t('status')}</small><UserStatus user={user} /></div><div><small>{t('role')}</small><strong>{t(user.role === 'admin' ? 'admin' : 'user')}</strong></div><div><small>{t('joined')}</small><strong>{formatDate(user.createdAt, locale)}</strong></div><div><small>{t('emailVerification')}</small><strong>{t(user.emailVerified ? 'verified' : 'unverified')}</strong></div><div className="full-width"><small>{t('accountId')}</small><code>{user.id}</code></div>{user.banReason && <div className="full-width"><small>{t('reason')}</small><strong>{user.banReason}</strong></div>}</div></section>
         <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!confirmation && <ErrorNotice code={error} />}{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
+        <UserBusinessRoles userId={user.id} />
     </>}</>;
 }
 
@@ -870,6 +876,10 @@ function LocaleRoutes() {
                         <Route path="admin/users" element={<UsersPage />} />
                         <Route path="admin/branding" element={<BrandingSettings />} />
                         <Route path="admin/social-connections" element={<SocialConnectionsPage />} />
+                        <Route path="admin/access/resources" element={<ApiResourcesPage locale={locale} />} />
+                        <Route path="admin/access/resources/detail" element={<ApiResourceDetailPage key={new URLSearchParams(search).get('id') ?? ''} locale={locale} />} />
+                        <Route path="admin/access/roles" element={<BusinessRolesPage />} />
+                        <Route path="admin/audit-logs" element={<AuditLogsPage locale={locale} />} />
                         <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
                         <Route path="admin/applications/detail" element={<ApplicationEditor key={`admin:${new URLSearchParams(search).get('clientId') ?? ''}`} locale={locale} />} />

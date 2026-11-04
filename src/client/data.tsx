@@ -9,9 +9,9 @@ import { browserContextEvent, browserFlowId, selectedBrowserAccount, selectBrows
 
 export const identityKey = ['identity'] as const;
 export const freshness = { identity: 15_000, sessions: 15_000, ordinary: 60_000, configuration: 300_000 };
-export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections';
+export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections' | 'access' | 'audit';
 type Group = Resource | 'profile';
-type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications' | 'accounts'; owner?: string; accountId?: string; groups?: Group[] };
+type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications' | 'accounts' | 'access'; owner?: string; accountId?: string; groups?: Group[] };
 const SyncContext = createContext<(message: SyncMessage) => void>(() => {});
 const ScopeContext = createContext({ scope: '', owner: '' });
 
@@ -103,6 +103,9 @@ export function DataProvider({ children }: PropsWithChildren) {
             }
             else if (message?.type === 'applications') {
                 void invalidate(client, identityScope(client.getQueryData(identityKey)), ['application', 'applications', 'authorized-applications']);
+            }
+            else if (message?.type === 'access') {
+                void invalidate(client, identityScope(client.getQueryData(identityKey)), ['access', 'audit', 'application', 'applications']);
             }
             else if (message?.type === 'social') {
                 void client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'social-providers' || (query.queryKey[0] === 'private' && ['security', 'social-connections'].includes(String(query.queryKey[2]))), refetchType: document.visibilityState === 'visible' ? 'active' : 'none' });
@@ -206,6 +209,11 @@ export function useDataActions() {
             if (scope !== identityScope(client.getQueryData(identityKey))) return;
             publish({ type: 'applications' });
             await invalidate(client, scope, ['application', 'applications', 'authorized-applications']);
+        },
+        async accessSaved() {
+            if (scope !== identityScope(client.getQueryData(identityKey))) return;
+            publish({ type: 'access' });
+            await invalidate(client, scope, ['access', 'audit', 'application', 'applications']);
         },
         async socialSaved() {
             publish({ type: 'social' });

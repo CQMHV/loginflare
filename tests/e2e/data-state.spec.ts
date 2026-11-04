@@ -63,6 +63,7 @@ async function mockAccount(context: BrowserContext) {
         } else if (url.pathname === '/api/account/sessions') result = { items: state.actor ? [state.actor.session] : [], pageInfo: { nextCursor: null, previousCursor: null }, hasOtherSessions: false };
         else if (url.pathname === '/api/account/applications') result = { items: [{ clientId, name: 'Authorized cache application', scopes: ['openid', 'profile', 'email'], authorizedAt: new Date().toISOString(), disabled: false }], pageInfo: { nextCursor: null, previousCursor: null } };
         else if (url.pathname === '/api/admin/users') result = { items: rows.slice(0, 20), pageInfo: { nextCursor: null, previousCursor: null } };
+        else if (/^\/api\/admin\/access\/users\/[^/]+\/roles$/.test(url.pathname)) result = { roles: [] };
         else if (url.pathname === '/api/auth/admin/get-user') {
             if (state.forbiddenUser) { status = 403; result = { code: 'YOU_ARE_NOT_ALLOWED_TO_GET_USER' }; }
             else result = rows.find((row) => row.id === url.searchParams.get('id')) ?? (url.searchParams.get('id') === state.actor?.user.id ? state.actor.user : undefined);
@@ -336,6 +337,7 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
     ]) {
         await page.goto(path);
         await expect(page.locator(ready).first()).toBeVisible();
+        if (name === 'user') await expect(page.getByText('No business roles assigned.', { exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: /^(Refresh data|刷新数据)$/ })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
         const positions = () => page.locator('.page-content > .page-heading, .page-content > .card, .developer-applications-grid, .authorized-application-list').evaluateAll((elements) =>
@@ -344,7 +346,8 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
         let release!: () => void;
         server.state.readGate = new Promise<void>((resolve) => { release = resolve; });
         await returnToStalePage(page);
-        await expect(page.getByRole('status')).toHaveText('Updating…');
+        // Independent cards can announce their own background refresh.
+        await expect(page.getByRole('status').filter({ hasText: 'Updating…' }).first()).toHaveText('Updating…');
         expect(await positions()).toEqual(before);
         release(); server.state.readGate = undefined;
         await expect(page.getByText('Updating…', { exact: true })).toHaveCount(0);
