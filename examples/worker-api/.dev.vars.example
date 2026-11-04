@@ -1,0 +1,4 @@
+AUTH_ISSUER=http://localhost:5173/api/auth
+API_RESOURCE=https://api.example.com
+INTROSPECTION_CLIENT_ID=replace-with-api-client-id
+INTROSPECTION_CLIENT_SECRET=replace-with-the-once-shown-server-secret
