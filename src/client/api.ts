@@ -1,4 +1,5 @@
 import type { Locale } from '../shared/locales';
+import { browserContextHeaders, clearBrowserFlow } from './browser-context';
 
 export interface User {
     id: string;
@@ -28,6 +29,7 @@ export interface Session {
 export interface Identity {
     user: User;
     session: Session;
+    browserAccountId?: string;
 }
 
 export class ApiError extends Error {
@@ -41,7 +43,7 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
 }
 
 export async function fetchJson<T>(path: string, body?: unknown, captchaToken?: string, method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', signal?: AbortSignal): Promise<T> {
-    const headers: Record<string, string> = { Accept: 'application/json' };
+    const headers: Record<string, string> = { Accept: 'application/json', ...browserContextHeaders() };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (captchaToken) headers['x-captcha-response'] = captchaToken;
 
@@ -76,8 +78,10 @@ export async function readResponse<T>(response: Response): Promise<T> {
         const fields = payload && typeof payload === 'object' && 'fieldErrors' in payload ? payload.fieldErrors : undefined;
         const fieldErrors = fields && typeof fields === 'object' && !Array.isArray(fields)
             ? Object.fromEntries(Object.entries(fields).filter(([, value]) => typeof value === 'string')) as Record<string, string> : undefined;
+        if (code === 'BROWSER_FLOW_EXPIRED') clearBrowserFlow();
         throw new ApiError(code, response.status, Math.max(0, retryAfterMs || 0), fieldErrors);
     }
+    if (payload && typeof payload === 'object' && 'browserFlowComplete' in payload && payload.browserFlowComplete === true) clearBrowserFlow();
     return payload as T;
 }
 

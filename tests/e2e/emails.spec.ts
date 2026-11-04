@@ -35,7 +35,8 @@ test('manages email addresses and recovers the same account through a secondary 
     await page.goto(await waitForMail(beforeSignup, 'verify'));
 
     async function signIn(identifier: string, candidate: string, expectedStatus = 200) {
-        await page.goto('/en-us/login');
+        await page.goto('/en-us/select-account');
+        await page.getByRole('button', { name: 'Use another account', exact: true }).click();
         await page.getByLabel('Email or username', { exact: true }).fill(identifier);
         await page.getByLabel('Password', { exact: true }).fill(candidate);
         await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 25_000 });
@@ -93,13 +94,13 @@ test('manages email addresses and recovers the same account through a secondary 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('emails-mobile-zh-dark.png'), fullPage: true });
     await page.getByRole('button', { name: '账号菜单', exact: true }).click();
-    await page.getByRole('menuitem', { name: '退出登录', exact: true }).click();
-    await expect(page).toHaveURL('/zh-cn/login');
+    await page.getByRole('button', { name: '退出登录', exact: true }).click();
+    await expect(page).toHaveURL('/zh-cn/select-account');
     await page.setViewportSize({ width: 1280, height: 720 });
 
     await signIn(primary, password, 401);
     await expect(page.getByRole('alert')).toBeVisible();
-    await expect(page).toHaveURL('/en-us/login');
+    await expect(page).toHaveURL(/\/en-us\/login\?flow=/);
     await page.getByRole('link', { name: 'Forgot password?', exact: true }).click();
     await page.getByLabel('Primary email or username', { exact: true }).fill(username);
     await page.getByLabel('Email to receive the code', { exact: true }).fill(primary);

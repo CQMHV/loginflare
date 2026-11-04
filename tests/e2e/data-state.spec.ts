@@ -7,6 +7,7 @@ import { defaultBranding } from '../../src/shared/branding';
 function identity(id = 'alpha', role = 'admin'): Identity {
     const now = new Date().toISOString();
     return {
+        browserAccountId: `browser-${id}`,
         user: { id, name: `Account ${id}`, username: id, email: `${id}@loginflare.test`, emailVerified: true, role, createdAt: now, locale: 'en-US' },
         session: { id: `session-${id}`, token: `test-only-${id}-session-value`, userId: id, createdAt: now, expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString() },
     };
@@ -20,6 +21,7 @@ async function mockAccount(context: BrowserContext) {
     };
     const counts = new Map<Page, Map<string, number>>();
     const clientId = 'A'.repeat(32);
+    const remembered = new Map<string, Identity>();
     const rows = Array.from({ length: 60 }, (_, index) => ({ ...identity(`row-${index}`, 'user').user, banned: false }));
     await context.route(`${testOrigin}/api/**`, async (route) => {
         const req = route.request();
@@ -33,7 +35,12 @@ async function mockAccount(context: BrowserContext) {
         let status = 200;
         const application = () => ({ clientId, name: state.applicationName, type: 'web', disabled: false, ownerId: state.actor?.user.id ?? null, ownerDisabled: false, adminSuspended: false,
             redirectUris: ['https://app.example.test/callback'], postLogoutRedirectUris: ['https://app.example.test/'], scopes: ['openid', 'profile'] });
-        if (url.pathname === '/api/auth/get-session') result = structuredClone(state.actor);
+        if (state.actor) remembered.set(state.actor.browserAccountId!, state.actor);
+        if (url.pathname === '/api/browser/accounts') result = { accounts: [...remembered.entries()].map(([id, item]) => ({ id, user: item.user, status: state.actor?.user.id === item.user.id ? 'active' : 'signed-out', lastUsedAt: item.session.createdAt })), maximumAccounts: 5 };
+        else if (url.pathname === '/api/browser/accounts/select') result = { accountId: state.actor?.browserAccountId, identity: state.actor };
+        else if (url.pathname === '/api/browser/auth-flows' && req.method() === 'POST') result = { flowId: '00000000-0000-4000-8000-000000000001' };
+        else if (url.pathname.startsWith('/api/browser/auth-flows/') && req.method() === 'DELETE') result = { status: true };
+        else if (url.pathname === '/api/auth/get-session') result = structuredClone(state.actor);
         else if (url.pathname === '/api/auth/social/security') result = { hasPassword: true, identities: [], providers: [] };
         else if (url.pathname === '/api/social/providers') result = { providers: [] };
         else if (url.pathname === '/api/config') result = { turnstileSiteKey: '1x00000000000000000000AA' };
@@ -233,12 +240,12 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
         await expect(header.locator('.language-control md-menu .menu')).toBeHidden();
         await expect(language).toBeFocused();
         await expect(language).toHaveAttribute('aria-expanded', 'false');
-        await account.press('ArrowDown');
-        await expect(page.getByRole('menuitem', { name: '个人资料', exact: true })).toBeFocused();
+        await account.press('Enter');
+        await expect(page.getByRole('button', { name: '账号：alpha@loginflare.test', exact: true })).toBeFocused();
         await expect(page.getByRole('menuitem', { name: '管理后台', exact: true })).toHaveCount(0);
         await page.screenshot({ path: test.info().outputPath(`header-${role}-${width}.png`), fullPage: true });
         await page.keyboard.press('Escape');
-        await expect(header.locator('.account-menu md-menu .menu')).toBeHidden();
+        await expect(header.locator('.browser-account-popover')).toHaveCount(0);
         await expect(account).toBeFocused();
         await language.press('ArrowDown');
         await expect(page.getByRole('menuitem', { name: 'English', exact: true })).toBeFocused();
@@ -254,12 +261,14 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
         expect(failureBounds!.x + failureBounds!.width).toBeLessThanOrEqual(width);
         await failure.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
         await expect(failure).toHaveCount(0);
-        await header.getByRole('button', { name: 'Account menu', exact: true }).press('ArrowUp');
-        await expect(page.getByRole('menuitem', { name: 'Sign out', exact: true })).toBeFocused();
+        await header.getByRole('button', { name: 'Account menu', exact: true }).press('Enter');
+        await expect(page.getByRole('button', { name: 'Account: alpha@loginflare.test', exact: true })).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(page.getByRole('button', { name: 'Profile', exact: true })).toBeFocused();
         await page.keyboard.press('Escape');
-        await expect(header.locator('.account-menu md-menu .menu')).toBeHidden();
+        await expect(header.locator('.browser-account-popover')).toHaveCount(0);
         await header.getByRole('button', { name: 'Account menu', exact: true }).click();
-        await page.getByRole('menuitem', { name: 'Profile', exact: true }).click();
+        await page.getByRole('button', { name: 'Profile', exact: true }).click();
         await expect(page).toHaveURL('/en-us/account');
         const area = page.locator('.area-selector').getByRole('button', { name: /^Switch area:/ });
         if (role === 'admin') {
@@ -450,21 +459,22 @@ test('clears private data across tabs and ignores a late response from the previ
     const peer = await context.newPage();
     await peer.goto('/en-us/account');
     await peer.getByRole('button', { name: 'Account menu', exact: true }).click();
-    await peer.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
-    await expect(peer).toHaveURL('/en-us/login');
-    await expect(page).toHaveURL('/en-us/login');
+    await peer.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(peer).toHaveURL('/en-us/select-account');
+    await expect(page).toHaveURL('/en-us/select-account');
     await expect(page.getByText('alpha-v1@loginflare.test', { exact: true })).toHaveCount(0);
     await peer.close();
     server.state.actor = identity();
-    await page.reload();
+    await page.goto('/en-us/account');
     await expect(page).toHaveURL('/en-us/account');
     let release!: () => void;
     server.state.emailGate = new Promise<void>((resolve) => { release = resolve; });
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await expect.poll(() => server.count(page, '/api/auth/emails')).toBe(2);
     await page.getByRole('button', { name: 'Account menu', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
-    await expect(page).toHaveURL('/en-us/login');
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(page).toHaveURL('/en-us/select-account');
+    await page.getByRole('button', { name: 'Use another account', exact: true }).click();
     server.state.emailGate = undefined;
     await page.getByLabel('Email or username', { exact: true }).fill('beta');
     await page.getByLabel('Password', { exact: true }).fill('test-only-password');

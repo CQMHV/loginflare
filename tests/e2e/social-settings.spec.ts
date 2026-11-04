@@ -14,6 +14,12 @@ async function account(context: BrowserContext, security: SecurityCapabilities) 
         session: { id: 'social-settings-session', token: 'test-only-session', userId: 'social-settings-user', createdAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() },
     };
     const starts: Record<string, unknown>[] = [], unlinks: Record<string, unknown>[] = [];
+    await context.route(`${testOrigin}/api/browser/**`, async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === '/api/browser/accounts') await route.fulfill({ json: { accounts: [], maximumAccounts: 5 } });
+        else if (path === '/api/browser/auth-flows') await route.fulfill({ json: { flowId: '00000000-0000-4000-8000-000000000001' } });
+        else await route.fulfill({ json: { status: true } });
+    });
     await context.route(`${testOrigin}/api/auth/**`, async (route) => {
         const path = new URL(route.request().url()).pathname;
         if (path === '/api/auth/get-session') await route.fulfill({ json: identity });

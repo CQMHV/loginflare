@@ -13,6 +13,7 @@ import { resolveLocale } from './locale';
 import { ImagePicker } from './ImagePicker';
 import { ProviderIcon } from './ProviderIcon';
 import { ToolbarIcon } from './ToolbarIcon';
+import { browserContextHeaders } from './browser-context';
 
 type Draft = Pick<SocialConnection, 'name' | 'type' | 'config' | 'enabled' | 'archived' | 'revision' | 'iconId' | 'iconUrl'> & { id?: string; callbackURL?: string; linkedAccounts?: number; identityLocked?: boolean };
 const providerNames = { google: 'Google', github: 'GitHub', microsoft: 'Microsoft', discord: 'Discord', x: 'X', telegram: 'Telegram', oidc: 'OpenID Connect', oauth2: 'OAuth 2.0' };
@@ -61,7 +62,7 @@ export function SocialConnectionsPage() {
     function closeEditor() { setDraft(undefined); setSecret(''); setError(undefined); setArchive(false); }
     async function uploadIcon(source: Blob) {
         const active = capture();
-        const response = await fetch('/api/admin/social-connections/icon', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': source.type, Accept: 'application/json' }, body: source }).catch(() => { throw new ApiError('NETWORK_ERROR', 0); });
+        const response = await fetch('/api/admin/social-connections/icon', { method: 'POST', credentials: 'same-origin', headers: { ...browserContextHeaders(), 'Content-Type': source.type, Accept: 'application/json' }, body: source }).catch(() => { throw new ApiError('NETWORK_ERROR', 0); });
         const icon = await readResponse<Pick<SocialConnection, 'iconId' | 'iconUrl'>>(response);
         if (active()) edit(icon);
     }

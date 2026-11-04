@@ -100,7 +100,8 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     await expect(page).toHaveURL('/en-us/account');
 
     async function signInToCenter() {
-        await page.goto('/en-us/login');
+        await page.goto('/en-us/select-account');
+        await page.getByRole('button', { name: 'Use another account', exact: true }).click();
         await page.getByLabel('Email or username', { exact: true }).fill(email);
         await page.getByLabel('Password', { exact: true }).fill('OIDC-browser-password-739!');
         await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });

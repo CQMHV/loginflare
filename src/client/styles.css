@@ -123,6 +123,20 @@ md-icon-button { flex-shrink: 0; }
 .auth-crosslink { text-align: center; font-size: 14px; color: var(--md-sys-color-on-surface-variant); margin-top: 28px; }
 .auth-crosslink a { margin-left: 6px; font-weight: 500; }
 .resend-link { display: block; text-align: center; margin-top: 20px; font-size: 12px; }
+.browser-account-menu { position: relative; }
+.browser-account-popover { position: absolute; z-index: 20; top: calc(100% + 12px); right: 0; width: min(360px, calc(100vw - 32px)); max-height: min(640px, calc(100dvh - 110px)); overflow: auto; padding: 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 24px; background: var(--md-sys-color-surface-container); box-shadow: 0 8px 32px #0003; }
+.browser-account-list { display: flex; flex-direction: column; width: 100%; }
+.browser-account-row { display: flex; align-items: center; min-width: 0; }
+.browser-account-choice { display: flex; align-items: center; gap: 16px; width: 100%; min-width: 0; min-height: 76px; padding: 14px 12px; text-align: start; font: inherit; color: var(--md-sys-color-on-surface); background: transparent; border: 0; border-radius: 16px; cursor: pointer; }
+.browser-account-choice:hover, .browser-account-choice[aria-current="true"] { background: var(--md-sys-color-secondary-container); }
+.browser-account-choice:focus-visible { outline: 3px solid var(--md-sys-color-primary); outline-offset: -3px; }
+.browser-account-choice:disabled { cursor: progress; opacity: .6; }
+.browser-account-choice .user-avatar { flex: 0 0 40px; width: 40px; height: 40px; }
+.browser-account-details { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 3px; }
+.browser-account-details strong, .browser-account-details span { overflow-wrap: anywhere; }
+.browser-account-details span, .browser-account-details small { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
+.browser-account-actions { display: flex; flex-direction: column; align-items: stretch; border-top: 1px solid var(--md-sys-color-outline-variant); padding-top: 8px; margin-top: 8px; }
+.browser-add-account { margin-top: 20px; }
 .auth-footer { text-align: center; font-size: 12px; color: var(--md-sys-color-on-surface-variant); padding-bottom: 8px; }
 .auth-footer span, .app-footer span { margin: 0 8px; }
 .auth-step-icon { width: 64px; height: 64px; border-radius: 20px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); display: grid; place-items: center; margin-bottom: 24px; }

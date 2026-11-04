@@ -18,11 +18,11 @@ import arrow_forward from '@material-symbols/svg-500/rounded/arrow_forward.svg?r
 
 const symbols = { translate, contrast, edit, person, add, remove, rotate_right, restart_alt, settings, check, error, close, drag_indicator, apps, arrow_forward };
 
-export function ToolbarIcon({ name }: { name: keyof typeof symbols }) {
+export function ToolbarIcon({ name, slot }: { name: keyof typeof symbols; slot?: string }) {
     // Only fixed Material Symbols assets from the pinned package enter this markup.
     const svg = symbols[name]
         .replace('<svg ', '<svg fill="currentColor" aria-hidden="true" focusable="false" ')
         .replace('width="48"', 'width="100%"')
         .replace('height="48"', 'height="100%"');
-    return createElement('md-icon', { 'aria-hidden': true, dangerouslySetInnerHTML: { __html: svg } });
+    return createElement('md-icon', { slot, 'aria-hidden': true, dangerouslySetInnerHTML: { __html: svg } });
 }

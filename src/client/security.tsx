@@ -10,6 +10,8 @@ import { ErrorNotice } from './feedback';
 import { resolveLocale } from './locale';
 import { useClearSecrets } from './page-state';
 import { ProviderIcon } from './ProviderIcon';
+import { ensureBrowserFlow, startBrowserFlow } from './browser-account-actions';
+import { browserFlowId, browserFlowKind, selectedBrowserAccount } from './browser-context';
 
 export function useSecurity() {
     const query = useResource<SecurityCapabilities>('security', '/api/auth/social/security');
@@ -23,7 +25,10 @@ export function useSecurity() {
 }
 
 export async function socialAuthorizationUrl(connectionId: string, purpose: 'login' | 'link' | 'reauth' | 'test', extra: { password?: string; action?: SecurityPurpose; oauth_query?: string } = {}) {
-    const result = await request<{ url: string }>('/social/start', { connectionId, locale: resolveLocale(window.location.pathname), purpose, ...extra });
+    const locale = resolveLocale(window.location.pathname);
+    if (purpose === 'login') await ensureBrowserFlow(locale, extra.oauth_query);
+    else if (purpose === 'reauth' || !browserFlowId() || browserFlowKind() !== 'security') await startBrowserFlow('security', locale, selectedBrowserAccount());
+    const result = await request<{ url: string }>('/social/start', { connectionId, locale, purpose, ...extra });
     return result.url;
 }
 

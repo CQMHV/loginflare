@@ -6,8 +6,10 @@ import { emailEn, emailZh } from './email-translations';
 import { mfaEn, mfaZh } from './mfa-translations';
 import { socialEn, socialZh, socialErrorsEn, socialErrorsZh } from './social-translations';
 import { resolveLocale } from './locale';
+import { browserAccountsEn, browserAccountsZh, browserAccountErrorsEn, browserAccountErrorsZh } from './browser-account-translations';
 
 const enUS = {
+    browserAccounts: browserAccountsEn,
     social: socialEn,
     mfa: mfaEn,
     oauth: oauthEn,
@@ -265,6 +267,7 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    browserAccounts: browserAccountsZh,
     social: socialZh,
     mfa: mfaZh,
     oauth: oauthZh,
@@ -524,6 +527,8 @@ const zhCN: typeof enUS = {
 const initialLocale = resolveLocale(window.location.pathname);
 Object.assign(enUS.errors, socialErrorsEn);
 Object.assign(zhCN.errors, socialErrorsZh);
+Object.assign(enUS.errors, browserAccountErrorsEn);
+Object.assign(zhCN.errors, browserAccountErrorsZh);
 document.documentElement.lang = initialLocale;
 
 void i18n.use(initReactI18next).init({
