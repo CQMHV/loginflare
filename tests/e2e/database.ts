@@ -35,7 +35,7 @@ export function executeLocal(sql: string): void {
     const file = resolve('work', `e2e-${randomUUID()}.sql`);
     writeFileSync(file, sql, { mode: 0o600 });
     try {
-        execFileSync(process.execPath, [executable, 'd1', 'execute', 'DB', '--local', '--persist-to', testState, '--file', file, '--json'], {
+        execFileSync(process.execPath, [executable, 'd1', 'execute', 'DB', '--config', 'wrangler.local.jsonc', '--local', '--persist-to', testState, '--file', file, '--json'], {
             cwd: process.cwd(),
             timeout: 30_000,
             stdio: 'pipe',

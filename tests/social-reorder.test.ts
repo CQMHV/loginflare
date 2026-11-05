@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { defaultConnectionConfig, type SocialConnection } from '../src/shared/social';
 import { harness, origin } from './helpers';
+import { interceptSql } from './sql-race';
 
 const settings = { name: 'Sortable provider', type: 'google', config: { ...defaultConnectionConfig('google'), clientId: 'reorder-client' }, clientSecret: 'test-only-reorder-secret', enabled: false, archived: false, revision: 0 };
 beforeEach(async () => {
@@ -121,26 +122,10 @@ it('rechecks the administrator session atomically before writing the order', asy
     await create(client, cookie, 'First'); await create(client, cookie, 'Second');
     const before = await list(client, cookie), previousOrder = before.map((row) => row.id);
     let revoked = false;
-    const database = new Proxy(env.DB, { get(target, property) {
-        if (property === 'prepare') return (sql: string) => {
-            const statement = target.prepare(sql);
-            if (!sql.startsWith('WITH currentOrder')) return statement;
-            return new Proxy(statement, { get(prepared, operation) {
-                if (operation === 'bind') return (...values: Parameters<D1PreparedStatement['bind']>) => {
-                    const bound = prepared.bind(...values);
-                    return new Proxy(bound, { get(query, method) {
-                        if (method === 'run') return async () => {
-                            await env.DB.prepare('DELETE FROM "session"').run(); revoked = true;
-                            return query.run();
-                        };
-                        const member = Reflect.get(query, method); return typeof member === 'function' ? member.bind(query) : member;
-                    } });
-                };
-                const member = Reflect.get(prepared, operation); return typeof member === 'function' ? member.bind(prepared) : member;
-            } });
-        };
-        const member = Reflect.get(target, property); return typeof member === 'function' ? member.bind(target) : member;
-    } });
+    const injection = interceptSql(env.DB, /^WITH currentOrder/, async () => {
+        await env.DB.prepare('DELETE FROM "session"').run(); revoked = true;
+    });
+    const database = injection.proxy;
     const context = createExecutionContext();
     const response = await app.fetch(new Request(`${origin}/api/admin/social-connections/reorder`, {
         method: 'POST', headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' },
@@ -148,6 +133,7 @@ it('rechecks the administrator session atomically before writing the order', asy
     }), { ...client.bindings, DB: database }, context);
     await waitOnExecutionContext(context);
     expect(revoked).toBe(true); expect(response.status).toBe(401);
+    expect(injection.invoked()).toBe(true);
     expect(await env.DB.prepare('SELECT "id", "position" FROM "socialConnection" ORDER BY "position", "id"').all().then((result) => result.results))
         .toEqual(before.map(({ id, position }) => ({ id, position })));
 });

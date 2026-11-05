@@ -1,4 +1,6 @@
-const accountKey = 'loginflare.account';
+import { browserAccountStorageKey } from './browser-account-selection';
+
+const accountKey = browserAccountStorageKey;
 const flowKey = 'loginflare.auth-flow';
 const kindKey = 'loginflare.auth-flow-kind';
 const priorKey = 'loginflare.auth-return-account';

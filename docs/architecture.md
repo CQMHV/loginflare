@@ -2,7 +2,7 @@
 
 [English README](../README.md) · [简体中文说明](../README.zh-CN.md)
 
-Loginflare is a general account and identity platform for independent deployments from small teams to large public-facing services. It combines a user account center, an administrator console, and standard OAuth/OIDC integration. The maintainer's personal test instance does not restrict independent deployment uses. Other operators fork the repository and configure their own instances. Business-specific applications can build on the platform in separate branches with their own branding and rules.
+Loginflare is a general account and identity platform for independent deployments from small teams to large public-facing services. It combines a user account center, an administrator console, and standard OAuth/OIDC integration. Operators fork the repository and configure their own instances. Business-specific applications can build on the platform in separate branches with their own branding and rules.
 
 ## Runtime boundaries
 

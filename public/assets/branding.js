@@ -1,6 +1,7 @@
 /* The Worker supplies public branding as an escaped HTML attribute, before first paint. */
 (() => {
     const root = document.documentElement;
+    if (!root.dataset.branding) return;
     const initial = JSON.parse(root.dataset.branding);
     let snapshot;
     const style = document.createElement('style');

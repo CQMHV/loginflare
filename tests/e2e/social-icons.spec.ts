@@ -1,5 +1,5 @@
 import type { BrowserContext } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, selectMaterialOption } from './fixtures';
 import { testOrigin } from './runtime';
 import type { Identity } from '../../src/client/api';
 import { defaultConnectionConfig, type SocialConnection } from '../../src/shared/social';
@@ -189,11 +189,8 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         const editor = page.locator('md-dialog.form-dialog');
         const select = async (name: string) => {
             const combobox = page.getByRole('combobox', { name: chinese ? '提供方类型' : 'Provider type', exact: true });
-            await combobox.click();
-            await Promise.all([
-                editor.locator('md-outlined-select').filter({ has: combobox }).evaluate((element) => new Promise<void>((resolve) => element.addEventListener('closed', () => resolve(), { once: true }))),
-                editor.getByRole('option', { name, exact: true }).click(),
-            ]);
+            await selectMaterialOption(editor.locator('md-outlined-select').filter({ has: combobox }),
+                editor.getByRole('option', { name, exact: true }));
         };
         await expect(editor.locator('.provider-icon-google')).toBeVisible();
         await expect.poll(() => editor.locator('.provider-icon-google').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);

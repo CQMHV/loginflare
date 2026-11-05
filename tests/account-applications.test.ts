@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import app from '../src/server/index';
 import { harness, origin, session } from './helpers';
 import { maintainDatabase } from '../src/server/maintenance';
+import { interceptSql } from './sql-race';
 
 const path = '/api/account/applications';
 const callback = 'https://application.example.test/callback';
@@ -81,26 +82,10 @@ function pauseTokenInsert(database: D1Database) {
     let entered!: () => void, resume!: () => void, paused = false;
     const reached = new Promise<void>((resolve) => { entered = resolve; });
     const released = new Promise<void>((resolve) => { resume = resolve; });
-    function wrap(statement: D1PreparedStatement): D1PreparedStatement {
-        return new Proxy(statement, { get(target, property) {
-            if (property === 'bind') return (...values: unknown[]) => wrap(target.bind(...values));
-            const value = Reflect.get(target, property);
-            if (typeof value === 'function' && ['all', 'run', 'first', 'raw'].includes(String(property))) return async (...args: unknown[]) => {
-                if (!paused) { paused = true; entered(); await released; }
-                return Reflect.apply(value, target, args);
-            };
-            return typeof value === 'function' ? value.bind(target) : value;
-        } });
-    }
-    const binding = new Proxy(database, { get(target, property) {
-        if (property === 'prepare') return (sql: string) => {
-            const statement = target.prepare(sql);
-            return sql.toLowerCase().includes('insert into "oauthrefreshtoken"') ? wrap(statement) : statement;
-        };
-        const value = Reflect.get(target, property);
-        return typeof value === 'function' ? value.bind(target) : value;
-    } });
-    return { binding, reached, resume };
+    const race = interceptSql(database, /insert into "oauthrefreshtoken"/i, async () => {
+        if (!paused) { paused = true; entered(); await released; }
+    });
+    return { binding: race.proxy, reached, resume, invoked: race.invoked };
 }
 
 it('lists effective consent once with unioned scopes, without secrets, created-only clients or foreign consent', async () => {
@@ -178,6 +163,7 @@ it.each(['authorization_code', 'refresh_token'] as const)('prevents an actual in
         expect((await authorize(client, clientId, cookie)).consent).toBe(true);
     } finally { paused.resume(); client.bindings.DB = original; }
     const response = await writing;
+    expect(paused.invoked()).toBe(true);
     expect(response.ok).toBe(false);
     expect(await env.DB.prepare('SELECT count(*) AS n FROM "oauthAccessToken" WHERE "userId" = ? AND "clientId" = ? AND "revoked" IS NULL').bind(identity.user.id, clientId).first('n')).toBe(0);
     expect(await env.DB.prepare('SELECT count(*) AS n FROM "oauthRefreshToken" WHERE "userId" = ? AND "clientId" = ? AND "revoked" IS NULL').bind(identity.user.id, clientId).first('n')).toBe(0);

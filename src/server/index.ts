@@ -21,6 +21,7 @@ import { accessManagement } from './access-management';
 import { auditLogs, auditRequestHeader, observeAudit } from './audit';
 import { machines } from './machines';
 import { managementApi } from './management-api';
+import { dispatch, scheduledControl } from './runtime';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -344,10 +345,19 @@ export default {
     fetch(request: Request, env: Env, ctx: ExecutionContext) {
         const headers = new Headers(request.headers);
         headers.set(auditRequestHeader, crypto.randomUUID());
-        return browserRequest(new Request(request, { headers }), env, async (resolved) => app.fetch(resolved, env, ctx));
+        // Immutable public objects have no D1/schema dependency and cannot
+        // mutate storage. Keep their established GET/HEAD availability while
+        // installation, recovery or schema maintenance is in progress.
+        if (['GET', 'HEAD'].includes(request.method)
+            && /^\/(?:avatars|branding\/logos|social\/icons)\/[^/]+$/.test(new URL(request.url).pathname)) {
+            return app.fetch(new Request(request, { headers }), env, ctx);
+        }
+        return dispatch(new Request(request, { headers }), env, ctx, (incoming, scoped, context) =>
+            browserRequest(incoming, scoped, async (resolved) => app.fetch(resolved, scoped, context)));
     },
     async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-        ctx.waitUntil(maintainDatabase(env).then((result) => {
+        ctx.waitUntil(scheduledControl(env, ctx, async (scoped) => {
+            const result = await maintainDatabase(scoped);
             console.log(JSON.stringify({ event: 'database_maintenance', ...result }));
         }).catch(() => {
             console.error(JSON.stringify({ event: 'database_maintenance_failed' }));

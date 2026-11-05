@@ -2,7 +2,7 @@
 
 [English README](../README.md) · [中文 README](../README.zh-CN.md) · [Architecture](architecture.md) · [Operations](deployment.md)
 
-Loginflare is a complete account and identity platform for independent deployments, from small teams to large public-facing services. The maintainer's personal test instance is a deployment choice, not a product restriction. Operators supply their own Cloudflare resources and validate their own workload.
+Loginflare is a complete account and identity platform for independent deployments, from small teams to large public-facing services. Operators supply their own Cloudflare resources and validate their own workload.
 
 The implementation uses one Worker and one D1 database per environment. D1 is the only supported database backend. Hyperdrive, PostgreSQL, external SQL databases, sharding, and read replicas are not implemented deployment options.
 
@@ -83,15 +83,15 @@ Before SQL migrations, the operator wrapper prepares stored callback metadata an
 pnpm db:check
 ```
 
-Remote checks require explicit environment selection:
+Remote checks select the deployed instance and use its authenticated maintenance interface:
 
 ```powershell
-node scripts/database.mjs check --env staging
+node scripts/database.mjs check --url https://accounts.example.com --cookie-file private-cookie.txt
 ```
 
-The migration wrapper includes the final check. Automated deployment must stop when preparation, migration, or the schema gate fails. Runtime schema autodiscovery is disabled; it is not a replacement for this gate.
+The shared migration core includes the final check. Automated builds only deploy code; schema changes run through the persistent maintenance protocol. Preparation, migration or structural-check failures keep the instance in maintenance. Runtime schema autodiscovery is disabled.
 
-Upgrades need an operator-controlled write window: pause application registration, callback editing, and related writes until preparation, migrations, final checks, and the new Worker switch complete. Compare-and-set and consistency checks detect conflicts; they do not establish this window or reconfigure an existing remote build trigger automatically. See the [deployment procedure](deployment.md).
+Upgrades close admission and fence database operations under the same protocol for the web interface and CLI. R2 operations with an unconfirmed outcome prevent exclusive migration. Existing uninstrumented instances require the stopped transition procedure and verified drain evidence first; changing repository scripts does not update existing cloud build triggers. See the [deployment procedure](deployment.md).
 
 Create a consistent local snapshot with `pnpm db:backup`, optionally followed by an output directory. By default a fresh timestamped backup is written under `work/backups/`. The manifest includes local D1 snapshots, existing `.dev.vars`, and managed local credentials. Treat it as private authentication material. Recover the matching database, origin, and authentication secret together; encrypted signing keys depend on that secret.
 

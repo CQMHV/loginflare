@@ -7,6 +7,7 @@ import { inspectImage } from '../src/shared/avatars';
 import { maximumImageBytes } from '../src/shared/image-limits';
 import { avatarJpeg, avatarPng, avatarWebp, avatarWebpWithMetadata, sourcePng } from './fixtures/avatars';
 import { harness, origin, session } from './helpers';
+import { interceptSql } from './sql-race';
 
 const bytes = (base64 = avatarWebp) => Uint8Array.from(atob(base64), (value) => value.charCodeAt(0));
 beforeEach(async () => {
@@ -193,15 +194,9 @@ it('keeps failed storage writes collectable and never deletes a committed image 
         const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value;
     } });
     expect((await avatarRequest(cookie, bytes(), { ...client.bindings, AVATARS: bucket })).status).toBe(503);
-    const database = new Proxy(env.DB, { get(target, property) {
-        if (property === 'prepare') return (sql: string) => {
-            const statement = target.prepare(sql);
-            if (!sql.startsWith('UPDATE "user" SET "image"')) return statement;
-            return { bind(...values: unknown[]) { return { async run() { await statement.bind(...values).run(); throw new Error('Test response lost after commit'); } }; } };
-        };
-        const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value;
-    } });
-    expect((await avatarRequest(cookie, bytes(), { ...client.bindings, DB: database })).status).toBe(503);
+    const injection = interceptSql(env.DB, /^UPDATE "user" SET "image"/, async () => { throw new Error('Test response lost after commit'); }, true);
+    expect((await avatarRequest(cookie, bytes(), { ...client.bindings, DB: injection.proxy })).status).toBe(503);
+    expect(injection.invoked()).toBe(true);
     const current = (await session(client, cookie))!.user.image!;
     await maintainDatabase(client.bindings, Date.now() + 2 * 3_600_000);
     const objects = (await env.AVATARS.list()).objects;
@@ -250,16 +245,11 @@ it('does not start R2 deletion when the candidate query exhausts the maintenance
     const now = Date.now(), id = crypto.randomUUID();
     await env.DB.prepare('INSERT INTO "userAvatar" (id, url, "createdAt", "deleteAfter") VALUES (?, ?, ?, ?)').bind(id, `${origin}/avatars/${id}`, now - 600_000, now - 600_000).run();
     let elapsed = 0;
-    const database = new Proxy(env.DB, { get(target, property) {
-        if (property === 'prepare') return (sql: string) => {
-            const statement = target.prepare(sql);
-            if (!sql.includes('"deleteAfter" AS "expiresAt"')) return statement;
-            return { bind(...values: unknown[]) { return { async all() { const rows = await statement.bind(...values).all(); elapsed = 20_001; return rows; } }; } };
-        };
-        const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value;
-    } });
+    const injection = interceptSql(env.DB, /"deleteAfter" AS "expiresAt"/, async () => { elapsed = 20_001; }, true);
+    const database = injection.proxy;
     const bucket = new Proxy(env.AVATARS, { get() { throw new Error('No R2 operation may start after the budget expires'); } });
     const result = await maintainDatabase({ DB: database, AVATARS: bucket }, now, () => elapsed);
     expect(result.budgetExhausted).toBe(true);
+    expect(injection.invoked()).toBe(true);
     expect(await env.DB.prepare('SELECT id FROM "userAvatar" WHERE id = ?').bind(id).first('id')).toBe(id);
 });

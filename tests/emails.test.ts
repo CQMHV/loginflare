@@ -3,6 +3,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { applyD1Migrations, reset } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addVerifiedEmail, cookies, harness, mailCode, password, recoveryToken, session } from './helpers';
+import { interceptSql } from './sql-race';
 
 type Harness = ReturnType<typeof harness>;
 interface Email {
@@ -270,39 +271,15 @@ describe('primary and secondary email management in the Workers runtime', () => 
         const replacementHash = await hashPassword('Concurrent-credential-replacement-643!');
         const database = client.bindings.DB;
         let credentialChanged = false;
-        client.bindings.DB = new Proxy(database, {
-            get(target, property) {
-                if (property === 'prepare') return (sql: string) => {
-                    const statement = target.prepare(sql);
-                    if (!/^\s*UPDATE\s+"user"\s+SET\s+"email"\s*=/.test(sql)) return statement;
-                    return new Proxy(statement, {
-                        get(prepared, key) {
-                            if (key === 'bind') return (...values: unknown[]) => {
-                                const bound = prepared.bind(...values);
-                                return new Proxy(bound, {
-                                    get(executable, operation) {
-                                        if (operation === 'run') return async () => {
-                                            await database.prepare('UPDATE "account" SET "password" = ? WHERE "userId" = ? AND "providerId" = ?')
-                                                .bind(replacementHash, identity.user.id, 'credential').run();
-                                            credentialChanged = true;
-                                            return executable.run();
-                                        };
-                                        const value = Reflect.get(executable, operation);
-                                        return typeof value === 'function' ? value.bind(executable) : value;
-                                    },
-                                });
-                            };
-                            const value = Reflect.get(prepared, key);
-                            return typeof value === 'function' ? value.bind(prepared) : value;
-                        },
-                    });
-                };
-                const value = Reflect.get(target, property);
-                return typeof value === 'function' ? value.bind(target) : value;
-            },
+        const race = interceptSql(database, /^\s*UPDATE\s+"user"\s+SET\s+"email"\s*=/i, async () => {
+            await database.prepare('UPDATE "account" SET "password" = ? WHERE "userId" = ? AND "providerId" = ?')
+                .bind(replacementHash, identity.user.id, 'credential').run();
+            credentialChanged = true;
         });
+        client.bindings.DB = race.proxy;
         const response = await client.request('/api/auth/emails/set-primary', { cookie, body: { emailId, password } });
         expect(credentialChanged).toBe(true);
+        expect(race.invoked()).toBe(true);
         expect(response.ok).toBe(false);
         expect(await response.json()).toMatchObject({ code: 'INVALID_PASSWORD' });
         expect((await session(client, cookie))?.user.email).toBe('person@example.test');

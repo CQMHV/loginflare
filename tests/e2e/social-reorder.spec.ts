@@ -1,5 +1,5 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, selectMaterialOption } from './fixtures';
 import { testOrigin } from './runtime';
 import type { Identity } from '../../src/client/api';
 import { defaultConnectionConfig, type ConnectionType, type SocialConnection } from '../../src/shared/social';
@@ -165,11 +165,8 @@ test('offers branded presets while keeping sorting out of the connection editor'
         ['Telegram', '.provider-icon-telegram', 'openid profile'],
     ] as const) {
         const combobox = page.getByRole('combobox', { name: 'Provider type', exact: true });
-        await combobox.click();
-        await Promise.all([
-            editor.locator('md-outlined-select').filter({ has: combobox }).evaluate((element) => new Promise<void>((resolve) => element.addEventListener('closed', () => resolve(), { once: true }))),
-            editor.getByRole('option', { name, exact: true }).click(),
-        ]);
+        await selectMaterialOption(editor.locator('md-outlined-select').filter({ has: combobox }),
+            editor.getByRole('option', { name, exact: true }));
         await expect(editor.locator(css)).toBeVisible();
         await expect(editor.getByLabel('Scopes (space separated)', { exact: true })).toHaveValue(scopes);
         await expect(editor.getByLabel('Client ID', { exact: true })).toBeVisible();

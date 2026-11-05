@@ -1,185 +1,132 @@
 # Deployment and operations
 
-[简体中文](deployment.zh-CN.md) · [English README](../README.md)
+[简体中文](deployment.zh-CN.md) · [README](../README.md)
 
-## Prerequisites
+## First installation
 
-Apply `0021_machines.sql` and `0022_machine_audit.sql` before deploying the machine-identity and versioned Management API build. They add machine roles, permission projections, generation checks, the protected management resource and distinct machine audit actors. The main Worker uses its existing D1, signing secret and scheduled maintenance; user accounts and login applications are not converted. Configure each trusted automation's own machine credentials separately. The [scheduled management Worker](../examples/management-worker/README.md) is an independent example with a read-only default task; it is not deployed with Loginflare.
+The default flow is **Deploy to Cloudflare → configure in the browser → verify email and create the administrator**. Cloudflare provisions D1 and private R2 storage for a single Worker. The browser wizard owns the public address, sending configuration and Turnstile. Real Cloudflare acceptance remains a release requirement; local tests do not establish that the complete hosted flow has passed.
 
-Apply `0019_api_access.sql` and `0020_audit_logs.sql` before deploying the API access-control and audit build. Business resources, permissions and roles reuse D1 and the native OAuth resource tables; audit events use the same database and existing bounded scheduled cleanup, with a 90-day retention period. No new main-Worker binding or secret is required. Keep the issuer stable, validate explicit resource/application links and user role assignments, and verify live introspection after role removal. The independent [Workers/Hono API example](../examples/worker-api/README.md) has its own issuer/resource configuration and confidential introspection-client secret; it is not deployed with the main Worker.
+1. Prepare a Cloudflare account, a domain already using Cloudflare DNS on that account, and Workers Paid. Sending transactional messages to arbitrary users also requires Cloudflare Email Service onboarding; Email Routing alone does not provide this ability. See [Email Service](https://developers.cloudflare.com/email-service/).
+2. Create a dedicated **User API Token** in your user profile, restricted to the account and zones below. Do not use an Account API Token: Turnstile is currently unsupported by that token type in the [official compatibility matrix](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/).
+3. Use the deployment button, choose your account and resource names, and provide only `CF_SETUP_TOKEN` as the first-install secret. This differs from the deployment credentials used by Workers Builds itself.
 
-Apply `0018_browser_accounts.sql` before deploying the browser multi-account build. It adds browser account registration, atomic active-account slots, short-lived authentication flows and session/password/suspension cleanup hooks. It uses the existing D1 binding and server secret; no new resource or secret is required. This build uses the new browser registration flow and does not include an old single-session adoption path. Validate multiple tabs, MFA, account selection and RP-initiated logout in an isolated environment before rollout. Keep the existing scheduled cleanup enabled for expired browser hints and authentication flows.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
-Authorized-application management requires `0017_account_applications.sql` before switching to this Worker build. It projects existing consent into the account list and registers pending authorization codes for revocation, preserving issued grants and ordinary offline refresh behavior. No new binding or secret is required.
+4. Use `pnpm build:deploy` as the build command and `pnpm run deploy` as the deploy command. Use Node.js 24 and the pnpm version in `packageManager`. Deployment uploads code; it does not migrate business data or replay an initial secrets file.
+5. Open `/setup` on the deployed address. Enter the dedicated token again to prove ownership, prepare the database, choose the public HTTPS address and sending domain, and continue through domain, email and production Turnstile configuration. A `workers.dev` address is supported; attaching a custom domain needs the additional zone route permission below. When the chosen address uses a different Origin, continue on that address and re-enter the installation token; credentials never travel in the navigation link.
+6. Create the candidate administrator and verify the email. The link may be opened on another device. Return to the authorized installation browser, privately save the recovery file, and complete installation. The email link itself cannot grant administrator privileges.
+7. Confirm temporary credential cleanup, then revoke the dedicated installation token in Cloudflare. Subsequent code deployments do not require it.
 
-Developer self-service requires `0016_developer_applications.sql`. Apply it before switching to this Worker build. Existing clients retain their IDs, secrets, grants and disabled state, with no developer owner assigned. The migration adds application ownership, independent owner/admin disabled controls and guards for owner management; no additional binding or secret is required.
+A dedicated sending subdomain such as `notify.example.com` is recommended. Conflicting DNS records stop the step and remain untouched. Billing, domain onboarding and account eligibility actions are completed in the dashboard; return to the wizard to check again.
 
-Apply all pending migrations before switching to the new Worker build. The Microsoft/Discord and X/Telegram presets require `0014_social_provider_presets.sql` and `0015_social_x_telegram.sql`, respectively. Configurable third-party icons require `0013_social_icons.sql`, which adds icon references and cleanup metadata. Icons share the existing `AVATARS` R2 binding; no new bucket or secret is required. See [Third-party sign-in](social.md#connection-icons).
+### Token permissions
 
-Before deploying the MFA-enabled build, apply `0011_mfa.sql` through the existing migration wrapper. It preserves existing accounts with MFA disabled and adds the two-factor credentials table. No additional bindings or secrets are needed. Keep `BETTER_AUTH_SECRET` stable: TOTP secrets and recovery codes are encrypted with it. Users manage MFA on the Security page; password recovery does not disable it.
-
-Deploy only after local tests and a production build succeed. Review the target account, environment, Worker, database ID, public URL, and sending domain before making any remote change.
-
-- A Cloudflare account with Workers Paid for arbitrary-recipient transactional email.
-- A domain using Cloudflare DNS, onboarded to Cloudflare Email Sending.
-- The required sending-domain SPF/DKIM and bounce DNS records.
-- A Turnstile widget configured for the deployed hostnames, with production keys.
-- Separate D1 databases, private R2 avatar buckets, Worker secrets, and public URLs for staging and production.
-- An installed, authenticated Cloudflare CLI (`cf`) with access to the intended account.
-
-Email Sending is currently Beta. Check the current [Email Service documentation](https://developers.cloudflare.com/email-service/) before production rollout. Email Routing alone is not arbitrary-recipient transactional sending.
-
-This repository does not create remote resources or deploy itself during dependency installation, local development, tests, or builds.
-
-## Configure the environment
-
-The maintainer's test instance is `https://loginflare-staging.cqmhv.workers.dev`, with its own D1 database and Turnstile widget; production is unconfigured. Independent operators configure their own environments. For Cloudflare Workers Builds, set `CLOUDFLARE_ENV=staging`, `NODE_VERSION=24`, and `PNPM_VERSION=11.25.0`, use `pnpm build` as the build command, and `node scripts/database.mjs migrate --env staging && pnpm exec wrangler deploy` as the deploy command. The migration wrapper performs data preparation and the schema gate before deployment can proceed. The build token needs Worker deployment and D1 migration/query access to that environment. Authentication and Turnstile secrets are runtime Worker Secrets, not build variables or repository files. Verify the remote build configuration separately when upgrading an existing instance.
-
-The committed `wrangler.jsonc` contains a local configuration and explicit `staging` / `production` sections. Replace the remote D1 placeholder IDs and empty public configuration before building for either environment. Keep development secrets in the ignored `.dev.vars` file; `pnpm setup:local` generates it safely without overwriting an existing file. Store remote authentication and Turnstile secrets as Worker secrets, never as committed configuration. Authentication secrets must be unique per environment and remain stable across routine redeployments.
-
-Keep the `global_fetch_strictly_public` compatibility flag enabled alongside `nodejs_compat`. OIDC logout verifies its ID Token hint by fetching the issuer's `/api/auth/jwks`; this flag routes that same-zone request through the public Worker entry point. It requires explicit configuration even with a recent compatibility date. See [Cloudflare's fetch routing documentation](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public).
-
-| Setting | Location | Purpose |
+| API operation | Permission | Resource scope |
 | --- | --- | --- |
-| `APP_ENV` | Environment's `vars` | `development`, `staging`, or `production` |
-| `AUTH_URL` | Environment's `vars` | Exact application origin, HTTPS remotely, no trailing slash |
-| `EMAIL_FROM` | Environment's `vars` | Sender using the verified domain |
-| `TURNSTILE_SITE_KEY` | Environment's `vars` | Public key for the deployed hostname |
-| `BETTER_AUTH_SECRET` | Worker secret | Random authentication secret, at least 32 characters |
-| `TURNSTILE_SECRET_KEY` | Worker secret | Secret matching the production Turnstile site key |
-| `DB` | Environment's D1 binding | Its independent database ID and migration directory |
-| `AVATARS` | Environment's R2 binding | Private bucket for that environment's profile photos and brand logos |
-| `EMAIL` | Environment's `send_email` binding | Cloudflare Email Service sender |
+| Read account information | Account Settings Read | Target account |
+| Read Worker/version/deployment/secret names; update or delete secrets; write recovery challenge | Workers Scripts Read/Write or the corresponding Workers Editor role | Target account; narrow to this Worker when available |
+| Confirm zone ownership | Zone Read | Selected zones |
+| Read and create required DNS records | DNS Read/Write | Selected zones |
+| Attach a custom domain | Worker edit access plus Workers Routes Write | This Worker and every affected zone |
+| Read, create and configure Turnstile | Turnstile Sites Read/Write | Target account |
+| Read and provision sending subdomains | Email Sending read/edit | Target account and sending zone; exact minimum permissions require isolated acceptance |
 
-The trusted origin is taken from `AUTH_URL` and must match the public origin. Missing mandatory configuration is an error, not a reason to disable verification or CAPTCHA. Test Turnstile keys are rejected outside development.
+Worker edit access does not replace Zone > Workers Routes > Write for custom domains. See [Workers permissions](https://developers.cloudflare.com/workers/authorization/workers/).
 
-Use Cloudflare's local bindings by default when developing. A remote email binding sends real messages and is not needed for the local test suite.
+Deployment credentials provision D1/R2; installation and migrations access them through bindings and do not need extra D1/R2 management permissions on the installation token. Do not grant token-management or unrelated Worker creation/deletion permissions. The minimum sending-endpoint permission mapping is not fully established by public documentation and must not be presented as verified.
 
-Create the intended private avatar bucket before remote deployment, and set its `bucket_name` in that environment's `r2_buckets`. The staging declaration names `loginflare-staging-avatars`; the production name is a placeholder. These declarations do not provision a bucket. Keep public bucket access disabled: the Worker serves the controlled `/avatars/:id` image route. Local R2 bindings have `remote: false` and use `.cloudflare/state`; browser/scale suites use their own isolated directories. The deployment account must be able to bind the intended bucket. No remote bucket is created by local development/tests.
+## Configuration ownership and redeployment
 
-The same private bucket stores brand logos under `branding/`; `/branding/logos/:id` serves the isolated image responses. Apply all committed D1 migrations, including `0009_branding.sql` and `0010_branding_color_scheme.sql`, before switching to this Worker version. Brand names, logos, source colors and scheme variants are managed in the administrator console rather than environment variables. Existing branding receives the Tonal Spot variant during migration, preserving its generated colors.
+`wrangler.jsonc` is the public release template. `wrangler.local.jsonc` is development-only. Keep pre-existing maintainer configuration in an ignored private config and explicitly select it after checking its resources; never point an existing installation at the template's fresh resources.
 
-## Cloudflare CLI
+The repository owns entrypoints, compatibility flags, assets, D1/R2/email bindings, Cron declarations, environment category and build metadata. The wizard owns these Worker Secrets:
 
-Resource operations prefer `cf`. The pinned `cf` development/build toolchain requires a beta Vite plugin, so this project deliberately uses the stable Cloudflare Vite plugin and Wrangler for dev/build/type generation/deployment. Local promotion uses Wrangler because this `cf` version does not implement local D1 queries; remote migration/query operations use `cf`.
+- `AUTH_URL`: fixed public Origin and `${AUTH_URL}/api/auth` issuer.
+- `EMAIL_FROM`: sender on the onboarded sending domain.
+- `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`: paired production widget values.
+- `BETTER_AUTH_SECRET`: the installation's stable authentication and encryption key.
+- `LOGINFLARE_CONFIG_REVISION`: the requested runtime configuration revision.
 
-Discover resource commands and inspect their detailed help before invoking them:
+Release `vars` must not contain those same names, even as empty placeholders. Deployment validation rejects conflicts; `keep_vars` is only an additional safeguard. The root `.dev.vars.example` declares only the first-install token. Local development has `.dev.vars.local.example`. The deleted installation token must not be a required secret for later deployments.
 
-```powershell
-cf cli search "apply SQL database migrations from local files"
-cf cli search "deploy a worker project"
-cf cli search "set a worker secret"
-```
+Binding updates do not guarantee an isolate restart. The page distinguishes application build, Worker runtime version and configuration revision, and confirms that the requested runtime configuration is actually observed. A commit hash is not configuration confirmation. See [binding update behavior](https://developers.cloudflare.com/workers/runtime-apis/bindings/#making-changes-to-bindings).
 
-Keep discovery queries anonymous; do not put account identifiers, domains, addresses, resource names, or tokens in them.
+The selected authentication key is persisted as encrypted recovery material before updating Worker Secrets. After an uncertain response, inspect actual state instead of generating another key. Recovery files contain authentication material and belong outside Git. Temporary recovery material and setup credentials are cleaned through persistent, retryable steps after configuration is confirmed and installation completes.
 
-Use the shipped wrapper for migrations so data preparation and schema checks cannot be skipped. After reviewing the exact target:
+Workers Builds deploys your repository; it does not automatically synchronize upstream source changes. Database upgrades are advanced in maintenance after code deployment. Redeployment must retain resource bindings, issuer and authentication keys and must not replay the initial secrets file.
 
-```powershell
-node scripts/database.mjs migrate --env staging
-node scripts/database.mjs check --env staging
-```
-
-`pnpm db:migrate` and `pnpm db:check` target local state in `.cloudflare/state`. Use the explicit `node scripts/database.mjs ... --env staging|production` form for remote operations. The wrapper resolves and prints the selected database ID; `cf` migration operations receive that ID. Do not use a remote target to initialize local data. `check` is read-only; `migrate` prepares data, applies the committed SQL, and checks the result.
-
-Build and deployment are separate operations. With the Cloudflare Vite plugin, the target environment is selected **at build time**, not by a deploy-time `--env` flag. For staging, build using PowerShell:
+Check a release build locally:
 
 ```powershell
-$env:CLOUDFLARE_ENV = 'staging'
-pnpm build
+pnpm install --frozen-lockfile
+pnpm build:deploy
+pnpm run deploy --dry-run
 ```
 
-Inspect the generated Worker configuration and bound database ID, then check without uploading:
+Upload with `pnpm run deploy` only after checking the target. Dependency installation, ordinary builds and local tests do not create remote resources.
+
+## First transition for an existing installation
+
+The old deployment guide used migrations-before-deployment. The current implementation blocks legacy/adoption installations with `VERIFIED_LEGACY_DRAIN_REQUIRED` and has no force-unlock option. Migration cannot proceed before the platform drain-evidence mechanism is verified. The following downtime and transition procedure must first be accepted; it is not a claim that existing installations are already allowed through. Do not retain the old Builds command.
+
+1. Pause production, non-production and preview build triggers. Check their actual commands and handle queued or running old jobs. Change cloud commands to code-only build/deployment and remove business-database write access from old build credentials.
+2. Deploy a transition release without changing business schema. It bootstraps independent control tables, serves maintenance/recovery, closes business admission and disables Cron. Explicitly enable transition mode for this release; new installations should not enable it.
+3. Check that no old-version entrypoint accepts new work. Obtain terminal-state evidence for old HTTP requests, deferred work, scheduled tasks and already-issued D1/R2 operations. A transition release cannot retrospectively register old work. Waiting 3–5 seconds, switching traffic or observing no new logs is insufficient.
+4. Keep the recovery point, matching R2 objects and original authentication key, verify that the key decrypts existing material, and enter exclusive migration only through the verified transition procedure.
+5. Restore business service and Cron after every migration and check passes, then re-enable the corrected build triggers.
+
+The old-version drain criterion must be validated on real Cloudflare. When it cannot be proved, remain stopped and refuse DDL. There is no ignore-drain shortcut. Changes in administrator count never reopen an existing installation for setup.
+
+## Browser upgrades and recovery
+
+Open `/maintenance`. While service is ready or a new build has closed admission but has not crossed the drain barrier, an administrator session can authorize a short-lived session bound to the upgrade task. If business authentication is unavailable, use a fresh temporary User API Token. Recovery writes a one-time dedicated challenge to the trusted current Worker and waits for the target runtime to observe it. A valid token, read-only Worker access or write access to another Worker is insufficient. Challenges do not rotate existing authentication keys.
+
+A new build closes business admission automatically. Even when status already shows draining, the browser and CLI must persist backup confirmation for the current upgrade task before advancing drain and migration. An earlier task's confirmation does not carry over, and backup confirmation does not replace evidence that legacy operations have terminated.
+
+Installation and maintenance dispatch before browser-account, branding and ordinary authentication initialization. Control tables have their own bootstrap and protocol version. Older schemas, failed partial upgrades and unknown business migrations do not make recovery depend on the newest business tables.
+
+Browser and CLI share the persistent maintenance protocol: atomically close new admission, register foreground/background work, drain D1 and R2, then acquire an exclusive execution generation. The default lease is 90 seconds, with renewal attempted every 15 seconds during execution using database time. Takeover increments the generation. Every write transaction checks its generation in the same transaction so stale executors cannot commit. R2 and Cloudflare mutations record durable intent before dispatch; an unknown outcome blocks conflicting work. Lease expiry does not prove these external operations ended.
+
+Installation sessions use random tokens with database digests. Removing the setup token does not remove cleanup recovery. Administrator promotion, permanent completion and `cleanup_pending` commit in one transaction. Afterwards authorized callers may retry cleanup, but cannot reopen configuration or create another first administrator. `waitUntil()` may assist but is not a cleanup completion guarantee. See [background execution limits](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil).
+
+### Migration execution and CLI
+
+Historical SQL remains unchanged. Build-time parsing preserves complete triggers and distinguishes top-level transaction wrappers. A migration file's complete statements, generation checks, migration registration and progress commit run in one D1 `batch()` transaction, preserving foreign-key deferral order. Do not split triggers on semicolons or split a file's transaction to make it fit request batching.
+
+Files, preprocessing batches and checks may span requests. `MIGRATION_FILE_ROLLED_BACK` confirms rollback of the entire current file while previous successful files remain committed. `MIGRATION_COMMIT_UNCONFIRMED` or `UPGRADE_STEP_FAILED` means the commit result must be checked against persistent progress before any retry. Other validation failures keep maintenance active. The page shows the failed/current file and previous commits; an unfinished upgrade is not presented as a rollback of all files. An indivisible historical backfill exceeding platform limits stops in maintenance and needs a reviewed migration strategy; switching to CLI does not bypass D1 limits. See [batch transactions](https://developers.cloudflare.com/d1/worker-api/d1-database/) and [limits](https://developers.cloudflare.com/d1/platform/limits/).
+
+Remote CLI drives the same maintenance API. Credentials are read from private files:
 
 ```powershell
-pnpm exec wrangler deploy --dry-run
+node scripts/database.mjs check --url https://accounts.example.com --cookie-file private-cookie.txt
+node scripts/database.mjs migrate --url https://accounts.example.com --cookie-file private-cookie.txt --backup-confirmed
 ```
 
-When deployment is explicitly intended, deploy the same staged build:
+Use `--token-file private-token.txt` instead for write-challenge recovery. The cookie file contains the raw Cookie header. Neither file belongs in Git. Only use `--confirm-key` after explicitly checking the original key against a trusted source when no old ciphertext exists for validation; it cannot bypass invalid ciphertext. The old remote `--env staging|production` direct-D1 upgrade path is no longer used.
+
+## Local development, backup and release acceptance
 
 ```powershell
-pnpm exec wrangler deploy --secrets-file .dev.vars.staging
-Remove-Item Env:CLOUDFLARE_ENV
+pnpm install --frozen-lockfile
+pnpm setup:local
+pnpm db:migrate
+pnpm db:check
+pnpm dev
 ```
 
-`.dev.vars.staging` must contain the real staging authentication and Turnstile secrets, not the local example's test keys. It is ignored by Git. For production, perform a new build with `CLOUDFLARE_ENV=production` and use the production secrets file. Do not reuse a local or staging build for production. See [Cloudflare environments](https://developers.cloudflare.com/workers/vite-plugin/reference/cloudflare-environments/).
+Open `http://localhost:5173`. Local configuration, simulated mail and test Turnstile are separate from the release template and do not send real mail. Local `pnpm build` uses development configuration; `pnpm build:deploy` and Workers Builds choose the release template. Use `LOGINFLARE_CONFIG` to explicitly select a private config and check the target during build.
 
-Pre-create and verify the intended D1 databases, then put their IDs in the environment configuration; do not accept unexpected provisioning during deployment. Do not include real secrets in committed scripts or shell arguments that may be retained in history. Protect and remove temporary secrets files when no longer needed.
+`pnpm db:backup` saves local D1/R2 state and required configuration. Stop writes before a combined snapshot. Before remote upgrades separately verify D1 recovery points, matching R2 objects and authentication keys. Worker rollback does not revert data or object changes, and restoring an old database does not recreate deleted objects. A complete remote-backup system is outside the installer.
 
-## Database and administrator initialization
+Release requires `pnpm check`, relevant browser flows, and explicitly authorized real Cloudflare isolated acceptance:
 
-Back up the reviewed target, apply the committed migrations through the wrapper, and require its schema gate to pass before starting the new Worker version. Do not replace an established database with a fresh one during routine updates. Review migration SQL and preserve the database's recovery point before remote changes.
+- Fresh provisioning, observed configuration, cross-device email verification and first administrator completion; ordinary registration and unauthorized promotion remain blocked.
+- First transition correctly handles old commands, requests and R2 cleanup; missing terminal evidence blocks upgrades.
+- Browser/CLI races, expired leases and resumed stale executors cannot migrate concurrently or commit across generations.
+- Recovery pages remain accessible after failed migrations; read-only tokens, tokens for other Workers and replayed challenges fail.
+- Interruptions after completion commit or a successful secret deletion with a lost response recover without reopening setup.
+- A sufficiently long but incorrect key cannot decrypt old material and blocks upgrades.
+- Fault injection around copy/drop/rename/trigger/registration stages of `0014` and `0015` rolls back the whole current file while retaining previous commits.
+- After setup-token deletion and revocation, another automated deployment retains bindings, runtime configuration and valid credentials.
 
-Before upgrading, pause application registration, callback editing, and other writes to data being prepared. Keep that window in place through preparation, migrations, schema/URI-registry checks, and switching to the new Worker. Origin backfill compares both the stored callbacks and metadata before writing and aborts on a concurrent change; the gate verifies the derived metadata and registry in both directions. These checks detect inconsistent state but do not pause writers or complete the version switch themselves. An existing remote build trigger must be reviewed and updated separately; the repository does not automatically establish this write window.
-
-OAuth/OIDC adds versioned provider tables and `oauthGrantPolicy` security state in migrations `0002_oauth.sql` and `0003_oauth_policy.sql`. Apply both before enabling the new build. Preserve existing account data, signing keys, grant policy, and the stable `BETTER_AUTH_SECRET`; deleting policy rows is not a supported way to revoke or restore credentials. Keep `${AUTH_URL}/api/auth` stable as the issuer after applications begin using it.
-
-Username sign-in adds a nullable, case-insensitively unique `user.username` in `0004_username.sql`. Apply it before deploying the username-enabled build. Existing accounts keep their email sign-in and choose a username through their account profile; the migration does not invent or reserve usernames for them.
-
-Email management adds `userEmail` and `emailChallenge` in `0005_emails.sql`. Apply it before deploying the email-enabled build. The migration registers every existing primary email and preserves its verification state. Primary and secondary addresses share a case-insensitive unique registry; database triggers protect native registration, primary switches and proof invalidation. Accounts manage at most ten addresses. Unverified secondary reservations can be reclaimed after one day when adding that address. Recovery now uses a code sent to a selected verified registered email, followed by the native password reset; the old public reset-link request endpoint is removed. This needs no additional bindings or secrets.
-
-`0006_management.sql` adds indexed cursor-list access and the OAuth URI projection; `0007_maintenance.sql` adds expiry indexes and grant-policy collection bounds. Before applying SQL, the wrapper derives redirect Origins using the URL parser and normalizes native date columns to ISO UTC text in bounded batches. Invalid stored callbacks must be resolved before migration. The final check compares committed tables, columns, indexes and triggers, checks foreign keys and callback metadata/registry consistency, and rejects invalid native date storage. It does not silently repair a failed schema check or permit mixed request-time date formats. Keep this preparation and check in automated deployment commands.
-
-The five-minute Cron Trigger performs bounded expiry cleanup on the existing Worker and D1. It needs no new resources or secrets. Credential validity is checked on use, so an overdue collection run does not make an expired token valid. Monitor `database_maintenance` and `database_maintenance_failed` events; sustained backlog or exhausted budgets call for workload and database review, not deletion of live grant-policy rows. See [Scaling](scaling.md) for the operational boundaries.
-
-Create production applications in the administrator console with exact HTTPS callback and post-logout URLs. Store server-client secrets in each application's protected server configuration, and never ship them to browser applications. Registered SPA Origins gain protocol-only CORS access, not access to account or administration APIs. See [application integration](oauth.md) for refresh and security-revocation behavior.
-
-Create the intended administrator through ordinary registration and complete email verification. The administrator promotion command must target that exact existing verified account. An unverified or missing account is an error. Repeating a successful promotion is harmless.
-
-For local development:
-
-```powershell
-pnpm admin:promote -- --email admin@example.com --local
-```
-
-For remote use, choose the environment explicitly and review the printed database target:
-
-```powershell
-pnpm admin:promote -- --email admin@example.com --env staging
-```
-
-Use `--env production` only when production is the intended target. The command refuses missing environment selection, placeholder/invalid database IDs, and a remote target that reuses the local database ID. The email is parameterized for remote queries; local Wrangler SQL uses a quoted literal passed as a structured process argument without a shell. Never bootstrap by assigning privileges to the first user who happens to register. Sign out and sign in again after promotion.
-
-## Backup and restore
-
-For a local snapshot:
-
-```powershell
-pnpm db:backup
-```
-
-An optional output directory can be passed as the next argument. The default is a new timestamped directory under `work/backups/`. Stop the development server before a combined avatar/database snapshot. Node's SQLite backup API snapshots D1 and R2 metadata; the manifest also records R2 blobs under `r2/` and the saved local configuration and managed test credentials, including `.dev.vars` when present. Keep the backup private and outside Git; it contains authentication material and user files. This command never contacts remote storage.
-
-To restore, stop the development server, keep the existing state aside, and restore the manifest's `d1/` and `r2/` files to `.cloudflare/state/v3/d1` and `.cloudflare/state/v3/r2` together with each configuration and credential file at its original relative path. Preserve the matching authentication secret and origin: signing keys are encrypted and existing credentials belong to that instance. Check the restored schema with `pnpm db:check` before opening it. Perform restore drills in an isolated directory so verification does not overwrite the active development database.
-
-For staging or production, record and validate a recovery point using D1's supported recovery facilities before migration. Back up the matching R2 objects separately and retain them across the intended database recovery window: restoring an earlier image reference cannot recreate an object already removed by maintenance. Coordinate writes and collection when taking or restoring a combined recovery point. Confirm the selected database, bucket and restore point before an actual remote restore. A local SQLite snapshot is not a remote D1/R2 backup, and a Worker rollback does not reverse schema, data or file changes.
-
-## Staging acceptance
-
-Apply `0012_social_connections.sql` with the existing migration workflow before deploying third-party sign-in. No new binding is required. Keep `BETTER_AUTH_SECRET` stable to decrypt client secrets and pending flows. Configure and test connections in the administrator console using [the setup guide](social.md); register each generated callback exactly. Real-platform acceptance requires operator-owned client credentials and accounts. Disabling a connector invalidates pending flows and future sign-ins but retains established sessions; ensure users have another enabled method or verified-email recovery before disabling their only provider. Connection failures do not affect local password login.
-
-Use addresses and accounts controlled by the operator. A real email delivery check is a deliberate remote action, not part of the local automated suite.
-
-Verify the following before promoting a build to production:
-
-1. Both lowercase localized URL prefixes load. Root entry honors saved/account preferences, detects supported browser languages, and falls back to English; explicit language URLs stay unchanged and query/fragment values survive redirects.
-2. Registration, email verification, login, password recovery, and localized mail links work.
-3. A normal account cannot access management endpoints or change protected user fields.
-4. Suspending an ordinary account invalidates its old sessions; restoration requires a new login.
-5. Turnstile uses real production keys and rejects invalid challenges; rate limits persist across requests.
-6. API failures return safe JSON rather than SPA HTML or internal diagnostics.
-7. Logs omit passwords, session tokens, and complete email verification/reset links.
-8. Web and SPA applications discover the configured issuer, complete consent, and exchange codes with PKCE S256; invalid callbacks and unregistered Origins fail.
-9. Password reset, explicit session revocation, and suspension invalidate the appropriate OAuth grants; restoration does not resurrect them. Ordinary central logout preserves native offline refresh semantics.
-10. Signing keys survive a routine redeployment; OAuth codes, client secrets, and tokens are absent from logs.
-11. The migration/schema gate passes, cursor pages and exact lookups work, and the scheduled handler reports bounded maintenance without removing live credentials.
-12. Photo upload/crop/replacement/removal work, UserInfo exposes `picture` only with `profile`, images render in external applications, and obsolete files are collected without deleting the current avatar.
-
-## Updates and troubleshooting
-
-- Deploy the exact tested lockfile and migration set; do not run unreviewed schema generation against production.
-- Investigate CLI authentication, permissions, selected account, and connectivity before concluding that a deployment tool is unavailable.
-- After an uncertain remote write, inspect the resulting resource/version before retrying.
-- If email delivery fails, inspect Email Service configuration and its delivery records. Do not bypass email verification.
-- If Turnstile is unavailable or misconfigured, fix the configuration; do not substitute a successful CAPTCHA result.
-- A Worker rollback does not automatically undo D1 schema/data changes. Confirm database compatibility before switching versions.
+Release-blocking checks still need recorded official evidence or isolated results: reliable old-version/R2 drain evidence; minimum sending-endpoint permissions; actual observation and recovery of Secrets/challenge changes; deploy-button provisioning and redeployment retention; and remote D1 historical migration rollback/limits. Passing local tests is not a claim that the hosted end-to-end flow has passed.

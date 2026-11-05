@@ -6,7 +6,7 @@
 
 Loginflare 是完整可用的通用账号与身份管理平台，面向从小团队到大型公开服务的独立部署。它包含面向用户的账号中心、开发者中心、管理控制台，以及供独立 Web 和 SPA 应用接入的标准 OAuth/OIDC 登录能力，支持邮箱或用户名登录、邮箱验证、密码恢复和会话管理。系统通过一个 Cloudflare Worker 运行，使用 D1、R2、Email Service、Turnstile 和 Workers Static Assets。
 
-维护者当前运行供本人功能验收的测试实例，这不限制独立部署的实际用途。该实例的管理后台仅限管理员访问。其他使用者通过 fork 代码、自行配置资源并独立部署来使用 Loginflare。Web/SPA 示例用于验证完整的应用接入流程；面向具体业务的应用可在独立分支中开发，加入各自的品牌和业务规则。
+可通过下方部署按钮和网页向导独立安装 Loginflare。管理后台仅限管理员访问。Web/SPA 示例用于验证完整的应用接入流程。面向具体业务的应用可在独立分支中开发，加入各自的品牌和业务规则。
 
 产品默认语言为 **`en-US`**，可手动选择 **`zh-CN`**。页面网址使用小写语言段：`/en-us/`、`/zh-cn/`。
 
@@ -68,7 +68,7 @@ pnpm install --frozen-lockfile
 pnpm setup:local
 ```
 
-`setup:local` 会生成被忽略的 `.dev.vars`，包含随机认证密钥和官方 Turnstile 开发测试密钥；已有文件不会覆盖。`.dev.vars.example` 用于说明变量，其中的占位认证密钥会被拒绝。然后初始化本地数据库并启动应用：
+`setup:local` 会生成被忽略的 `.dev.vars`，包含随机认证密钥和官方 Turnstile 开发测试密钥；已有文件不会覆盖。`.dev.vars.local.example` 用于说明本地变量，其中的占位认证密钥会被拒绝；根 `.dev.vars.example` 仅声明首次远程安装凭据。然后初始化本地数据库并启动应用：
 
 ```powershell
 pnpm db:migrate
@@ -80,7 +80,7 @@ pnpm dev
 
 `pnpm dev` 会在每个 API GET 请求的正常处理时间之外，额外增加 3,000 毫秒延迟，便于在本地观察加载状态。在被忽略的 `.env.local` 文件或 shell 环境中设置 `LOGINFLARE_API_DELAY_MS` 后重启开发服务，即可调整延迟（0–30,000 毫秒，`0` 关闭）。`/api/health`、页面和静态资源，以及非 GET 请求不受影响。该中间件仅存在于 Vite 开发服务器；生产与 staging 构建、隔离的浏览器和容量自动化测试均不加人工延迟。
 
-开发与运维命令共享 `.cloudflare/state`，本地 CLI 配置和运行时注册文件放在 `.cloudflare/tool-config`；两者都已忽略。资源操作优先使用 `cf`。当前锁定的 `cf` 开发/构建路径要求 Beta 版 Vite 插件，因此开发、构建、Worker 类型生成和部署使用稳定 Vite/Wrangler。该 `cf` 版本也尚未实现本地 D1 查询，故本地管理员提权使用 Wrangler，远程 D1 操作继续使用 `cf`。
+开发与本地运维命令通过 `wrangler.local.jsonc` 共用 `.cloudflare/state`。本地迁移、检查及管理员提权通过隔离的 Miniflare 绑定使用同一迁移和维护核心。远程升级调用 Worker 已认证的维护 API，不在部署代码前直接执行 D1 SQL。资源管理优先使用 `cf`；开发、构建、类型生成和部署使用锁定的稳定 Vite/Wrangler 集成。
 
 ### 首个管理员
 
@@ -159,7 +159,11 @@ pnpm exec playwright install chromium
 
 ## 部署
 
-请查看[部署说明](docs/deployment.zh-CN.md)，配置测试与生产环境的数据隔离、密钥、域名和发信能力，再应用迁移、初始化管理员。
+默认流程是 **部署按钮 → 网页配置 → 验证邮箱并创建管理员**。Cloudflare 自动创建 D1 和私有 R2 桶；安装向导管理固定认证地址、邮件、Turnstile 和首个管理员。
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
+
+首次安装仅提供专用 `CF_SETUP_TOKEN`（User API Token），完成清理后撤销；后续构建只部署代码，数据库升级在网页维护入口推进。已有实例须先按[部署说明](docs/deployment.zh-CN.md)完成停服过渡，不能沿用“先迁移、后部署”的旧构建命令。完整流程仍需真实 Cloudflare 隔离验收，发布阻断项和验收范围见同一文档。
 
 Cloudflare Email Sending 当前为 Beta，向任意用户发送事务邮件需要 Workers Paid。生产需要已验证发信域名和正式 Turnstile 配置。安全配置缺失时应用明确报错，不会跳过邮箱验证或防机器人校验。
 

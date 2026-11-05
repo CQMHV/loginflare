@@ -3,7 +3,7 @@ import { isLocale, localeToPath, type Locale } from '../shared/locales.ts';
 import { readBranding } from './branding-settings';
 import { brandColors } from '../shared/brand-colors';
 
-type MailUser = { email: string; name: string; locale?: unknown };
+type MailUser = { email: string; name: string; locale?: unknown; id?: string };
 const copy = {
     'en-US': {
         verify: ['Verify your email', 'Confirm your email address to finish setting up your {{brand}} account.', 'Verify email'],
@@ -31,6 +31,15 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
     if (originalCallback) {
         const original = new URL(originalCallback, env.AUTH_URL);
         if (original.origin !== env.AUTH_URL) throw new Error('Invalid mail callback origin');
+        if (original.pathname === `/${path}/setup/verified`) {
+            // Only the currently bound candidate can receive an installation
+            // callback. A caller-provided callback is not installation authority.
+            const candidate = user.id ? await env.DB.prepare(`SELECT 1 FROM "lfControl" WHERE "id" = 1
+                AND "installation" = 'installing' AND "candidateUserId" = ? AND "candidateEmail" = ?`)
+                .bind(user.id, user.email.toLowerCase()).first() : null;
+            if (!candidate) throw new Error('Invalid installation mail callback');
+            callback.pathname = original.pathname;
+        }
         // Preserve the provider-signed flow query while the account preference
         // determines the email and result-page language.
         callback.search = original.search;

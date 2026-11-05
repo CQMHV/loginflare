@@ -3,6 +3,7 @@ import { applyD1Migrations, reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createAuth } from '../src/server/auth';
 import { cookies, harness, origin, password, recoveryToken, session } from './helpers';
+import { interceptSql } from './sql-race';
 
 beforeEach(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -164,32 +165,10 @@ function pauseNextStatement(database: D1Database, sqlFragment = 'insert into "oa
     let paused = false;
     const reached = new Promise<void>((resolve) => { entered = resolve; });
     const released = new Promise<void>((resolve) => { resume = resolve; });
-    function statementProxy(statement: D1PreparedStatement): D1PreparedStatement {
-        return new Proxy(statement, { get(target, property) {
-            if (property === 'bind') return (...values: unknown[]) => statementProxy(target.bind(...values));
-            const value = Reflect.get(target, property);
-            if (['all', 'run', 'raw', 'first'].includes(String(property)) && typeof value === 'function') {
-                return async (...args: unknown[]) => {
-                    if (!paused) {
-                        paused = true;
-                        entered();
-                        await released;
-                    }
-                    return Reflect.apply(value, target, args);
-                };
-            }
-            return typeof value === 'function' ? value.bind(target) : value;
-        } });
-    }
-    const binding = new Proxy(database, { get(target, property) {
-        if (property === 'prepare') return (sql: string) => {
-            const statement = target.prepare(sql);
-            return sql.toLowerCase().includes(sqlFragment) ? statementProxy(statement) : statement;
-        };
-        const value = Reflect.get(target, property);
-        return typeof value === 'function' ? value.bind(target) : value;
-    } });
-    return { binding, reached, resume };
+    const injection = interceptSql(database, new RegExp(sqlFragment, 'i'), async () => {
+        if (!paused) { paused = true; entered(); await released; }
+    });
+    return { binding: injection.proxy, reached, resume, invoked: injection.invoked };
 }
 
 it.each(['ban-user', 'revoke-session'] as const)('prevents an in-flight native refresh successor escaping %s', async (operation) => {
@@ -213,6 +192,7 @@ it.each(['ban-user', 'revoke-session'] as const)('prevents an in-flight native r
         paused.resume();
     }
     expect((await rotating).ok).toBe(false);
+    expect(paused.invoked()).toBe(true);
     expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "oauthRefreshToken" WHERE "revoked" IS NULL').first('count')).toBe(0);
     expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "oauthAccessToken" WHERE "revoked" IS NULL').first('count')).toBe(0);
 });
@@ -230,6 +210,7 @@ it('requires the original session when an in-flight authorization code first reg
         paused.resume();
     }
     expect((await issuing).ok).toBe(false);
+    expect(paused.invoked()).toBe(true);
     expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "oauthGrantPolicy" WHERE "revokedAt" IS NULL').first('count')).toBe(0);
 });
 
@@ -256,6 +237,7 @@ it.each(['revoke-session', 'ban-user'] as const)('blocks a first grant during th
         paused.resume();
     }
     expect((await revoking).status).toBe(200);
+    expect(paused.invoked()).toBe(true);
     expect(issued!.ok, 'A session being explicitly revoked must not register a new offline grant').toBe(false);
     expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM "oauthGrantPolicy" WHERE "revokedAt" IS NULL').first('count')).toBe(0);
 });
