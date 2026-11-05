@@ -6,7 +6,7 @@ An open-source account and identity management system built for Cloudflare.
 
 Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, a developer center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, R2, Email Service, Turnstile, and Workers Static Assets.
 
-The maintainer currently runs a personal test instance for functional checks; this does not limit how independent deployments may be used. Its management console requires administrator access. Other users can independently install Loginflare with the deployment button and browser wizard below. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
+Deploy an independent instance of Loginflare using the deployment button and browser wizard below. The management console requires administrator access. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
 
 The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use lowercase language segments: `/en-us/` and `/zh-cn/`.
 

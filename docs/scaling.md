@@ -2,7 +2,7 @@
 
 [English README](../README.md) · [中文 README](../README.zh-CN.md) · [Architecture](architecture.md) · [Operations](deployment.md)
 
-Loginflare is a complete account and identity platform for independent deployments, from small teams to large public-facing services. The maintainer's personal test instance is a deployment choice, not a product restriction. Operators supply their own Cloudflare resources and validate their own workload.
+Loginflare is a complete account and identity platform for independent deployments, from small teams to large public-facing services. Operators supply their own Cloudflare resources and validate their own workload.
 
 The implementation uses one Worker and one D1 database per environment. D1 is the only supported database backend. Hyperdrive, PostgreSQL, external SQL databases, sharding, and read replicas are not implemented deployment options.
 
