@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -50,9 +50,10 @@ export function buildMigrationBundle(root = projectRoot) {
     const database = new DatabaseSync(':memory:');
     try {
         const migrations = readdirSync(resolve(root, 'migrations')).filter((name) => /^\d+_.+\.sql$/.test(name)).sort().map((name) => {
-            const source = readFileSync(resolve(root, 'migrations', name), 'utf8');
+            const source = readFileSync(resolve(root, 'migrations', name), 'utf8').replace(/\r\n/g, '\n');
             const statements = migrationStatements(source, name);
-            database.exec(source);
+            try { database.exec(source); }
+            catch (error) { throw new Error(`${name}: ${error.message}`, { cause: error }); }
             return { name, hash: hash(source), statements };
         });
         const objects = database.prepare("SELECT name, type, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type, name").all();
@@ -64,13 +65,7 @@ export function buildMigrationBundle(root = projectRoot) {
     } finally { database.close(); }
 }
 
-export function generateMigrationBundle(root = projectRoot) {
-    const bundle = buildMigrationBundle(root);
-    writeFileSync(resolve(root, 'src/server/migration-bundle.json'), JSON.stringify(bundle) + '\n');
-    return bundle;
-}
-
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-    const bundle = generateMigrationBundle();
-    console.log(`Bundled ${bundle.migrations.length} immutable migrations (${bundle.hash.slice(0, 12)}).`);
+    const bundle = buildMigrationBundle();
+    console.log(`Validated ${bundle.migrations.length} migrations (${bundle.hash.slice(0, 12)}).`);
 }

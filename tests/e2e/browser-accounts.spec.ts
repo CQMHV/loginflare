@@ -107,6 +107,26 @@ for (const locale of ['en-us', 'zh-cn']) {
     });
 }
 
+test('preserves the active flow when identity invalidation redirects a protected page', async ({ page, context }) => {
+    const state = await mockBrowser(context);
+    await openAccount(page, state.accounts[0].id);
+    await expect(page.getByRole('heading', { name: 'Your profile', exact: true })).toBeVisible();
+    // A context reset can commit before the account menu's deferred navigation.
+    // Exercise that ordering while the protected route is still mounted.
+    const flowId = await page.evaluate(async () => {
+        const response = await fetch('/api/browser/auth-flows', { method: 'POST', body: JSON.stringify({ kind: 'add', locale: 'en-US' }) });
+        const { flowId } = await response.json() as { flowId: string };
+        sessionStorage.setItem('loginflare.auth-return-account', sessionStorage.getItem('loginflare.account')!);
+        sessionStorage.setItem('loginflare.auth-flow', flowId);
+        sessionStorage.setItem('loginflare.auth-flow-kind', 'add');
+        window.dispatchEvent(new Event('loginflare:browser-context'));
+        return flowId;
+    });
+    await expect(page).toHaveURL(`/en-us/login?flow=${flowId}`);
+    await page.getByRole('button', { name: 'Cancel sign-in', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Your profile', exact: true })).toBeVisible();
+});
+
 test('a new tab without a selection displays the account chooser on narrow screens', async ({ page, context }) => {
     await mockBrowser(context);
     await page.setViewportSize({ width: 360, height: 760 });

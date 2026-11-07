@@ -77,21 +77,13 @@ The Cron handler does not delete `userEmail` addresses. An unverified secondary 
 
 Native Better Auth `DATE` columns use ISO UTC text. Custom email-challenge timestamps and rate-limit counters use explicit integer milliseconds. Request queries do not alternate between date encodings.
 
-Before SQL migrations, the operator wrapper prepares stored callback metadata and normalizes native dates in bounded batches. Origin updates compare the old metadata and callback strings and abort on a concurrent change. After migration the gate checks committed table/column definitions, indexes, triggers, foreign keys, native date storage, and callback-metadata/URI-registry consistency. Run a read-only local check with:
+Run a read-only local check for pending migrations and foreign-key violations:
 
 ```powershell
 pnpm db:check
 ```
 
-Remote checks select the deployed instance and use its authenticated maintenance interface:
-
-```powershell
-node scripts/database.mjs check --url https://accounts.example.com --cookie-file private-cookie.txt
-```
-
-The shared migration core includes the final check. Automated builds only deploy code; schema changes run through the persistent maintenance protocol. Preparation, migration or structural-check failures keep the instance in maintenance. Runtime schema autodiscovery is disabled.
-
-Upgrades close admission and fence database operations under the same protocol for the web interface and CLI. R2 operations with an unconfirmed outcome prevent exclusive migration. Existing uninstrumented instances require the stopped transition procedure and verified drain evidence first; changing repository scripts does not update existing cloud build triggers. See the [deployment procedure](deployment.md).
+Remote releases check the database’s migration history before publishing. Only tested online migrations run automatically on existing instances; incompatible changes need their own operations procedure. See [deployment](deployment.md).
 
 Create a consistent local snapshot with `pnpm db:backup`, optionally followed by an output directory. By default a fresh timestamped backup is written under `work/backups/`. The manifest includes local D1 snapshots, existing `.dev.vars`, and managed local credentials. Treat it as private authentication material. Recover the matching database, origin, and authentication secret together; encrypted signing keys depend on that secret.
 

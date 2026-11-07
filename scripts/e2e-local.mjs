@@ -56,6 +56,7 @@ const options = convertV4MiniflareOptions({
         TEST_READY: () => Response.json({ status: ready ? 'ok' : 'starting' }, { status: ready ? 200 : 503 }),
         async ASSETS(request) {
             const pathname = new URL(request.url).pathname;
+            if (pathname === '/index.html') return new Response(null, { status: 307, headers: { Location: '/' } });
             const file = pathname.startsWith('/assets/') || pathname === '/favicon.svg' ? resolve(assets, '.' + pathname) : resolve(assets, 'index.html');
             if (!file.startsWith(assets + sep)) return new Response('Not found', { status: 404 });
             try { return new Response(await readFile(file), { headers: { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream' } }); }

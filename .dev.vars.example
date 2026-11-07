@@ -1,4 +1,4 @@
-# First installation only: a scoped Cloudflare User API Token.
-# Scope it to your account and selected zones. See docs/deployment.md.
-# Setup deletes it after installation; subsequent deployments must not require it.
+# Cloudflare deployment inputs. Keep actual values in Worker Secrets.
+SETUP_ORIGIN=
+SETUP_ADMIN_EMAIL=
 CF_SETUP_TOKEN=

@@ -123,7 +123,7 @@ export async function resolveBrowserRequest(request: Request, env: Env): Promise
         if (!selected) headers.set(accountHeader, row.id);
         const rememberCookie = `${cookieNames.native}dont_remember`;
         if (row.rememberMe === 0) {
-            const signedCookie = await serializeSigned(rememberCookie, 'true', env.BETTER_AUTH_SECRET);
+            const signedCookie = await serializeSigned(rememberCookie, 'true', env.BETTER_AUTH_SECRET, attributes(env));
             cookies[rememberCookie] = parse(signedCookie.split(';', 1)[0]!)[rememberCookie]!;
         } else delete cookies[rememberCookie];
     }
@@ -252,7 +252,7 @@ async function revokeBrowserAccounts(env: Env, headers: Headers, accountId?: str
         if (!row.token) continue;
         // Native deletion hooks revoke online access and preserve the existing
         // offline-consent policy. Only this account's cookies reach signOut.
-        const cookie = await serializeSigned(cookieNames.session, row.token, env.BETTER_AUTH_SECRET);
+        const cookie = await serializeSigned(cookieNames.session, row.token, env.BETTER_AUTH_SECRET, attributes(env));
         const scopedHeaders = new Headers({ origin: env.AUTH_URL, cookie: `${names(env).browser}=${encodeURIComponent(parse(headers.get('cookie') ?? '')[names(env).browser] ?? '')}; ${cookie.split(';', 1)[0]}` });
         const requestId = headers.get('X-Loginflare-Request-ID');
         if (requestId) scopedHeaders.set('X-Loginflare-Request-ID', requestId);
