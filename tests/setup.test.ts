@@ -169,7 +169,10 @@ it('sends only to the deployment mailbox, then atomically creates a sign-in capa
         expect(new URL(input instanceof Request ? input.url : String(input)).origin).toBe('https://challenges.cloudflare.com');
         return Response.json({ success: true });
     });
-    const signedIn = await f.request('/api/auth/sign-in/email', { email: adminEmail, password });
+    const firstFlow = await f.request('/api/browser/auth-flows', { kind: 'login', locale: 'en-US' }, canonical, f.deployment, { Cookie: 'site_preference=dark; language=en-US' });
+    expect(firstFlow.status, await firstFlow.clone().text()).toBe(200);
+    expect(firstFlow.headers.getSetCookie().some((cookie) => cookie.startsWith('__Secure-loginflare.browser=') && cookie.includes('Secure'))).toBe(true);
+    const signedIn = await f.request('/api/auth/sign-in/email', { email: adminEmail, password }, canonical, f.deployment, { Cookie: 'site_preference=dark' });
     expect(signedIn.status, await signedIn.clone().text()).toBe(200);
     const signedInHeaders = { Cookie: cookies(signedIn) };
     const signedOut = await f.request('/api/auth/sign-out', {}, canonical, f.deployment, signedInHeaders);

@@ -159,6 +159,7 @@ test('finishes recovery from an add flow while retaining another account and sta
 
 test('uses real credentials to add, isolate, reauthenticate, and sign out browser accounts', async ({ page, context }) => {
     test.setTimeout(90_000);
+    await context.addCookies([{ name: 'site_preference', value: 'dark', url: testOrigin }]);
     const password = 'Browser-multi-account-735!', now = new Date().toISOString(), hash = await hashPassword(password);
     const fixtures = ['Alpha', 'Beta'].map((name) => ({ name, id: randomUUID(), email: `ui-${randomUUID()}@loginflare.test` }));
     for (const item of fixtures) {

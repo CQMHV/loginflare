@@ -112,6 +112,24 @@ beforeEach(async () => {
 });
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 
+it.each(['site_preference=dark', 'site_preference=dark; language=zh-CN'])(
+    'starts the first login flow with unrelated browser cookies: %s', async (cookie) => {
+        const client = harness();
+        const response = await client.request('/api/browser/auth-flows', {
+            cookie, body: { kind: 'login', locale: 'en-US' },
+        });
+        expect(response.status, await response.clone().text()).toBe(200);
+        const { flowId } = await response.json<{ flowId: string }>();
+        const browserCookie = response.headers.getSetCookie().find((value) => value.startsWith('loginflare.browser='))!;
+        expect(browserCookie).toBeTruthy();
+        const next = await client.request(`/api/browser/auth-flows/${flowId}`, {
+            cookie: `${cookie}; ${browserCookie.split(';', 1)[0]}`,
+        });
+        expect(next.status, await next.clone().text()).toBe(200);
+        expect(await next.json()).toMatchObject({ flowId, status: 'pending' });
+    },
+);
+
 it('resolves each selected account independently and rejects a selector from another browser', async () => {
     const client = harness();
     await verified(client, 'administrator@example.test', 'admin');
