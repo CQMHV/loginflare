@@ -8,7 +8,7 @@ test('setup shows Cloudflare progress, then only requests the email link on the 
         if (path.endsWith('/status')) {
             const ready = ++statusRequests >= 2;
             await route.fulfill({ json: { step: ready ? 'ready' : 'sending', canonical: ready, canStart: !ready,
-                publicUrl: ready ? testOrigin : undefined, completed: false } });
+                publicUrl: ready ? testOrigin : undefined, completed: false, branding: { name: 'Example Accounts', logoUrl: '/favicon.svg' } } });
         } else if (path.endsWith('/start')) {
             expect(route.request().postDataJSON()).toEqual({});
             await route.fulfill({ status: 202, json: {} });
@@ -18,6 +18,8 @@ test('setup shows Cloudflare progress, then only requests the email link on the 
         } else throw new Error(`Unexpected path: ${path}`);
     });
     await page.goto('/en-us/setup');
+    await expect(page.locator('.setup-brand')).toHaveText('Example Accounts');
+    await expect(page).toHaveTitle('Example Accounts');
     await expect(page.getByText('Configuring email delivery')).toBeVisible();
     await page.getByRole('button', { name: 'Send setup link' }).click();
     await expect(page.getByText('Check that mailbox for the link.')).toBeVisible();
@@ -29,7 +31,7 @@ test('an email link opens username and password setup without persisting the pro
     await page.route('**/api/setup/**', async (route) => {
         const path = new URL(route.request().url()).pathname;
         if (path.endsWith('/status')) await route.fulfill({ json: {
-            step: 'ready', canonical: true, publicUrl: testOrigin, completed: false, canStart: false,
+            step: 'ready', canonical: true, publicUrl: testOrigin, completed: false, branding: { name: 'Example Accounts', logoUrl: '/favicon.svg' }, canStart: false,
         } });
         else if (path.endsWith('/claim')) {
             expect(route.request().postDataJSON()).toEqual({ token, username: 'first_admin', password: 'Example test password only', locale: 'en-US' });

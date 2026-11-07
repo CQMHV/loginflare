@@ -53,16 +53,17 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
 }
 
 export async function sendInstallationMail(env: Env, email: string, token: string, locale: Locale): Promise<void> {
+    const brand = await readBranding(env.DB);
     const link = new URL(`/${localeToPath[locale]}/setup`, env.AUTH_URL);
     link.hash = token;
     const chinese = locale === 'zh-CN';
-    const subject = chinese ? '创建 Loginflare 管理员' : 'Create your Loginflare administrator';
+    const subject = chinese ? `创建 ${brand.name} 管理员` : `Create your ${brand.name} administrator`;
     const message = chinese ? '打开此链接设置用户名和密码。链接仅可使用一次，20 分钟后失效。'
         : 'Open this link to choose your username and password. It can be used once and expires in 20 minutes.';
     await env.EMAIL.send({
-        to: email, from: { email: env.EMAIL_FROM, name: 'Loginflare' }, subject,
+        to: email, from: { email: env.EMAIL_FROM, name: brand.name }, subject,
         text: `${message}\n\n${link}\n\n${copy[locale].ignore}`,
-        html: `<!doctype html><html lang="${locale}"><body><h1>${subject}</h1><p>${message}</p><p><a href="${escapeHtml(link.toString())}">${subject}</a></p><p>${copy[locale].ignore}</p></body></html>`,
+        html: `<!doctype html><html lang="${locale}"><body><h1>${escapeHtml(subject)}</h1><p>${message}</p><p><a href="${escapeHtml(link.toString())}">${escapeHtml(subject)}</a></p><p>${copy[locale].ignore}</p></body></html>`,
     });
 }
 

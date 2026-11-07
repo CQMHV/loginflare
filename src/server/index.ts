@@ -215,7 +215,7 @@ app.route('/', socialConnections);
 app.all('/.well-known/oauth-authorization-server/api/auth', async (c) => {
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cache-Control', 'no-store');
-    const response = await createAuth(c.env).handler(c.req.raw);
+    const response = await createAuth(c.env, undefined, undefined, undefined, undefined, [], (await readBranding(c.env.DB)).name).handler(c.req.raw);
     return c.newResponse(response.body, response);
 });
 app.use('/api/auth/*', async (c, next) => {
@@ -275,7 +275,7 @@ app.all('/api/auth/*', async (c) => {
     }
     const selected = selectedId ? await connection(c.env, selectedId, !!callbackId || body.purpose === 'test') : null;
     if (selectedId && !selected) return c.json({ code: 'SOCIAL_CONNECTION_NOT_FOUND' }, 404);
-    const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task), selected ?? undefined);
+    const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task), selected ?? undefined, undefined, [], (await readBranding(c.env.DB)).name);
     if (privatePaths.has(path) || path.startsWith('/admin/') || path === '/get-session') {
         const identity = await auth.api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (!identity && path !== '/get-session') return c.json({ code: 'UNAUTHORIZED' }, 401);

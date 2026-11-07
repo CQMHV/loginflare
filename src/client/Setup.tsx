@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { defaultBranding } from '../shared/branding';
 import './styles.css';
 import './setup.css';
 
 type Status = { step: 'target' | 'domain' | 'sending' | 'turnstile' | 'ready'; canonical: boolean;
-    publicUrl?: string; completed: boolean; error?: string; detail?: string; canStart: boolean };
+    publicUrl?: string; completed: boolean; error?: string; detail?: string; canStart: boolean; branding: { name: string; logoUrl: string } };
 const copy = {
     en: {
-        title: 'Set up Loginflare', progress: 'Cloudflare is preparing your login service.',
+        title: 'Set up your login service', progress: 'Cloudflare is preparing your login service.',
         target: 'Checking the Cloudflare deployment', domain: 'Connecting the login domain',
         sending: 'Configuring email delivery', turnstile: 'Preparing security settings', ready: 'Ready',
         missing: 'Add the installation inputs under Worker secrets in Cloudflare.',
@@ -24,7 +25,7 @@ const copy = {
         login: 'Go to sign in', again: 'Request a setup link',
     },
     zh: {
-        title: '安装 Loginflare', progress: 'Cloudflare 正在准备你的登录服务。',
+        title: '安装登录服务', progress: 'Cloudflare 正在准备你的登录服务。',
         target: '检查 Cloudflare 部署', domain: '连接登录域名',
         sending: '配置邮件发送', turnstile: '准备安全设置', ready: '已就绪',
         missing: '请在 Cloudflare 的 Worker 机密中填写安装信息。',
@@ -59,6 +60,9 @@ export default function Setup() {
     const chinese = location.pathname.startsWith('/zh-cn/') || (!location.pathname.startsWith('/en-us/') && navigator.language.startsWith('zh'));
     const text = copy[chinese ? 'zh' : 'en'], locale = chinese ? 'zh-CN' : 'en-US';
     const [status, setStatus] = useState<Status>();
+    useEffect(() => {
+        if (status) document.title = status.branding.name;
+    }, [status?.branding.name]);
     const [token, setToken] = useState(initialToken);
     const [error, setError] = useState('');
     const [sent, setSent] = useState(false);
@@ -105,7 +109,7 @@ export default function Setup() {
         : issue === 'INVALID_OR_EXPIRED_LINK' ? text.invalid : issue === 'INVALID_INPUT' ? text.input
         : issue === 'EMAIL_DELIVERY_FAILED' ? text.delivery : issue === 'INSTALLATION_UNAVAILABLE' ? text.unavailable : issue;
     return <main className="setup-shell">
-        <header className="setup-brand"><img src="/favicon.svg" alt="" /> Loginflare</header>
+        <header className="setup-brand"><img src={status?.branding.logoUrl ?? '/favicon.svg'} alt="" /> {status?.branding.name ?? defaultBranding.name}</header>
         <section className="setup-card">
             <h1>{status?.canonical && status.step === 'ready' && !complete && !status.completed ? text.inviteTitle : text.title}</h1>
             {issue && <p className="setup-notice" role={issue === 'EMAIL_DNS_PENDING' ? 'status' : 'alert'}>{readable}{detail && <> <code>{detail}</code></>}</p>}

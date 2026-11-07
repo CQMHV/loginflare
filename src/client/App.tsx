@@ -477,6 +477,7 @@ function SelectAccountPage() {
 }
 
 function ConsentPage() {
+    const brand = useBranding();
     const { locale, identity } = useApp();
     const { t } = useTranslation();
     const location = useLocation();
@@ -503,7 +504,7 @@ function ConsentPage() {
         {!consent && <ErrorNotice code={consentError} />}
         {!consent && !consentError && <Busy />}
         {consent && <>
-            <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name })}</p>
+            <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name, brand: brand.name })}</p>
             <p className="consent-account">{t('oauth.consentAccount', { email: identity.user.email })}</p>
             {consent.resource && <div className="consent-resource"><strong>{consent.resource.name}</strong><code className="break-all">{consent.resource.identifier}</code></div>}
             <p>{t('oauth.consentPermissions')}</p>
