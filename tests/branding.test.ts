@@ -36,6 +36,10 @@ it.each(['en-US', 'zh-CN'] as const)('uses current branding in every %s email, i
             expect(message.subject).toContain(name);
             expect(message.subject + message.text + message.html).not.toContain('Loginflare');
             expect(message.html).not.toContain('<Accounts>');
+            expect(message.html).toContain('class="mail-card"');
+            expect(message.html).toContain('role="presentation"');
+            expect(message.html).toContain('@media(prefers-color-scheme:dark)');
+            expect(message.html).not.toContain('var(--');
         }
     }
 });
@@ -133,6 +137,7 @@ it('preserves SVG vectors and serves isolated immutable image responses without 
     expect(response.status).toBe(200); expect(await response.text()).toBe(svg);
     expect(response.headers.get('content-type')).toBe('image/svg+xml');
     expect(response.headers.get('content-disposition')).toBe('attachment');
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
     expect(response.headers.get('content-security-policy')).toContain('sandbox');
     const etag = response.headers.get('etag')!;

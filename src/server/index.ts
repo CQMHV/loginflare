@@ -156,6 +156,7 @@ const headers = {
 const productionHeaders = secureHeaders({ ...headers, contentSecurityPolicy });
 const avatarHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], sandbox: [] } });
 const brandingHeaders = secureHeaders({ ...headers, contentSecurityPolicy: { defaultSrc: ["'none'"], styleSrc: ["'unsafe-inline'"], sandbox: [] } });
+const publicLogoHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], styleSrc: ["'unsafe-inline'"], sandbox: [] } });
 // Native logout uses a browser form and its own document CSP. Send only the
 // origin as Referer so a same-origin form keeps a usable Origin header.
 const logoutHeaders = secureHeaders({ ...headers, referrerPolicy: 'strict-origin' });
@@ -168,7 +169,8 @@ const developmentHeaders = secureHeaders({
     },
 });
 app.use('*', (c, next) => {
-    if (/^\/(branding\/logos|social\/icons)\/[^/]+$/.test(c.req.path)) return brandingHeaders(c, next);
+    if (/^\/branding\/logos\/[^/]+$/.test(c.req.path)) return publicLogoHeaders(c, next);
+    if (/^\/social\/icons\/[^/]+$/.test(c.req.path)) return brandingHeaders(c, next);
     if (/^\/avatars\/[^/]+$/.test(c.req.path)) return avatarHeaders(c, next);
     if (c.req.path === '/api/auth/oauth2/end-session' || c.req.path === '/api/auth/oauth2/end-session/confirm') return logoutHeaders(c, next);
     return (c.env.APP_ENV === 'development' ? developmentHeaders : productionHeaders)(c, next);
