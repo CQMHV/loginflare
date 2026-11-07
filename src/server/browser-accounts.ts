@@ -24,6 +24,13 @@ function names(env: Env) {
     return { browser: `${prefix}loginflare.browser`, session: `${prefix}better-auth.session_token`, native: `${prefix}better-auth.` };
 }
 const attributes = (env: Env) => ({ path: '/', httpOnly: true, secure: env.APP_ENV !== 'development', sameSite: 'Lax' as const });
+function replaceRequestCookie(headers: Headers, cookie: string) {
+    const pair = cookie.split(';', 1)[0]!;
+    const name = pair.slice(0, pair.indexOf('='));
+    const other = (headers.get('cookie') ?? '').split(';').map((value) => value.trim())
+        .filter((value) => value && value.split('=', 1)[0] !== name);
+    headers.set('cookie', [...other, pair].join('; '));
+}
 async function digest(value: string) {
     return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -301,7 +308,7 @@ browserRoutes.post('/auth-flows', async (c) => {
     if (!hash) {
         const cookie = await serializeSigned(names(c.env).browser, crypto.randomUUID() + crypto.randomUUID(), c.env.BETTER_AUTH_SECRET, { ...attributes(c.env), maxAge: rememberedLifetime / 1000 });
         c.header('Set-Cookie', cookie, { append: true });
-        headers = new Headers(headers); headers.set('cookie', [headers.get('cookie'), cookie.split(';', 1)[0]].filter(Boolean).join('; '));
+        headers = new Headers(headers); replaceRequestCookie(headers, cookie);
         hash = await browserHash(c.env, headers);
     }
     const { kind, accountId, locale, oauth_query: oauthQuery = '' } = body.data;
@@ -394,7 +401,7 @@ export async function browserRequest(request: Request, env: Env, next: (request:
             let hash = await browserHash(env, headers);
             if (!hash) {
                 const cookie = await serializeSigned(cookieNames.browser, crypto.randomUUID() + crypto.randomUUID(), env.BETTER_AUTH_SECRET, { ...attributes(env), maxAge: rememberedLifetime / 1000 });
-                extraCookies.push(cookie); headers.set('cookie', [headers.get('cookie'), cookie.split(';', 1)[0]].filter(Boolean).join('; ')); hash = await browserHash(env, headers);
+                extraCookies.push(cookie); replaceRequestCookie(headers, cookie); hash = await browserHash(env, headers);
             }
             const id = crypto.randomUUID();
             const body = authenticationInput;

@@ -112,8 +112,11 @@ beforeEach(async () => {
 });
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 
-it.each(['site_preference=dark', 'site_preference=dark; language=zh-CN'])(
-    'starts the first login flow with unrelated browser cookies: %s', async (cookie) => {
+it.each([
+    'site_preference=dark', 'site_preference=dark; language=zh-CN',
+    'loginflare.browser=stale.invalid', 'site_preference=dark; loginflare.browser=stale.invalid',
+])(
+    'starts the first login flow with existing browser cookies: %s', async (cookie) => {
         const client = harness();
         const response = await client.request('/api/browser/auth-flows', {
             cookie, body: { kind: 'login', locale: 'en-US' },
@@ -122,8 +125,9 @@ it.each(['site_preference=dark', 'site_preference=dark; language=zh-CN'])(
         const { flowId } = await response.json<{ flowId: string }>();
         const browserCookie = response.headers.getSetCookie().find((value) => value.startsWith('loginflare.browser='))!;
         expect(browserCookie).toBeTruthy();
+        // Set-Cookie replaces the browser's old value, including an invalid signature.
         const next = await client.request(`/api/browser/auth-flows/${flowId}`, {
-            cookie: `${cookie}; ${browserCookie.split(';', 1)[0]}`,
+            cookie: browserCookie.split(';', 1)[0]!,
         });
         expect(next.status, await next.clone().text()).toBe(200);
         expect(await next.json()).toMatchObject({ flowId, status: 'pending' });
