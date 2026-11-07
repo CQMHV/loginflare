@@ -6,7 +6,7 @@ An open-source account and identity management system built for Cloudflare.
 
 Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, a developer center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, R2, Email Service, Turnstile, and Workers Static Assets.
 
-Deploy an independent instance of Loginflare using the deployment button and browser wizard below. The management console requires administrator access. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
+Deploy an independent instance of Loginflare through Cloudflare. The management console requires administrator access. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
 
 The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use lowercase language segments: `/en-us/` and `/zh-cn/`.
 
@@ -80,7 +80,7 @@ Open `http://localhost:5173` (the configured authentication origin). The root en
 
 `pnpm dev` adds 3,000 ms to each API GET request, in addition to its normal processing time, to make loading states visible while testing locally. Set `LOGINFLARE_API_DELAY_MS` in the ignored `.env.local` file or the shell environment to adjust it (0–30,000 ms; `0` disables it), then restart the development server. `/api/health`, page/assets, and non-GET requests are unaffected. This middleware exists only in the Vite development server; production/staging builds and the isolated automated browser/scale suites have no artificial delay.
 
-Development and local operator commands share `.cloudflare/state`, using `wrangler.local.jsonc`. Local migrations, checks and administrator promotion use the same migration and maintenance core through an isolated Miniflare binding. Remote upgrades use the Worker's authenticated maintenance API; they do not run direct D1 SQL before deployment. Resource management prefers `cf`; development, builds, type generation and deployment use the pinned stable Vite/Wrangler integration.
+Development and local database commands share `.cloudflare/state`, using `wrangler.local.jsonc`. Cloudflare Workers Builds manages remote releases separately.
 
 ### First administrator
 
@@ -159,11 +159,11 @@ The root entry chooses the saved browser preference, then the signed-in account'
 
 ## Deployment
 
-The default flow is **Deploy to Cloudflare → configure in the browser → verify email and create the administrator**. Cloudflare provisions D1 and private R2 storage; the wizard manages the fixed authentication address, email, Turnstile and the first administrator.
+Use **Deploy to Cloudflare** or import your existing organization repository in Cloudflare. Enter the login hostname, first administrator’s email, and a short-lived Cloudflare token. Open the login domain after setup and create the administrator through the emailed link.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
-First installation requires only a dedicated `CF_SETUP_TOKEN` (User API Token), which is removed and revoked after cleanup. Later builds deploy code only; database upgrades advance through browser maintenance. Existing installations must first follow the planned-downtime transition in the [deployment guide](docs/deployment.md), replacing the old migrations-before-deployment command. Complete hosted acceptance remains pending on real isolated Cloudflare resources; the guide records release blockers and required evidence.
+Cloudflare assigns the resource IDs. Subsequent pushes to `main` publish automatically and apply reviewed online migrations when needed. See the [deployment guide](docs/deployment.md).
 
 Cloudflare Email Sending is currently Beta and arbitrary-recipient transactional delivery requires Workers Paid. A verified sending domain and real Turnstile configuration are required for production. Missing security configuration is an error; Loginflare does not silently skip email verification or bot protection.
 

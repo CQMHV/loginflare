@@ -10,12 +10,12 @@
     },
     "scripts": {
         "dev": "vite",
-        "build": "node scripts/migration-bundle.mjs && node scripts/licenses.mjs && vite build",
+        "build": "node scripts/licenses.mjs && vite build",
         "licenses:generate": "node scripts/licenses.mjs",
-        "typecheck": "node scripts/migration-bundle.mjs && wrangler types --config wrangler.local.jsonc && node examples/worker-api/generate-types.mjs && node examples/management-worker/generate-types.mjs && tsc --noEmit",
-        "test": "node scripts/migration-bundle.mjs && vitest run",
+        "typecheck": "wrangler types --config wrangler.local.jsonc && node examples/worker-api/generate-types.mjs && node examples/management-worker/generate-types.mjs && tsc --noEmit",
+        "test": "vitest run",
         "test:e2e": "playwright test",
-        "test:ops": "node --test scripts/database.test.mjs scripts/database-schema.test.mjs scripts/deployment.test.mjs scripts/migration-bundle.test.mjs",
+        "test:ops": "node --test scripts/database.test.mjs scripts/database-schema.test.mjs scripts/deployment.test.mjs scripts/migration-bundle.test.mjs scripts/releases.test.mjs",
         "example:web": "node --env-file-if-exists=examples/server-web/.env examples/server-web/server.mjs",
         "example:spa": "vite --config examples/spa/vite.config.ts",
         "example:tls": "node examples/setup-tls.mjs",
@@ -29,7 +29,7 @@
         "types": "wrangler types --config wrangler.local.jsonc",
         "setup:local": "node scripts/setup-local.mjs",
         "check": "pnpm typecheck && pnpm test && pnpm test:ops && pnpm build",
-        "build:deploy": "node scripts/migration-bundle.mjs && node scripts/licenses.mjs && vite build --mode deployment",
+        "build:deploy": "node scripts/licenses.mjs && vite build --mode deployment",
         "deploy": "node scripts/deployment.mjs"
     },
     "dependencies": {
@@ -75,17 +75,18 @@
     },
     "cloudflare": {
         "bindings": {
-            "CF_SETUP_TOKEN": {
-                "description": "First installation only: a scoped **Cloudflare User API Token**, not an Account API Token. Limit it to your account and chosen zones. [Required permissions and setup](https://github.com/CQMHV/loginflare/blob/main/docs/deployment.md). The wizard deletes this secret; later deployments do not need it."
-            },
+            "SETUP_ORIGIN": { "description": "Public login hostname in an active Cloudflare zone you control, for example auth.example.com." },
+            "SETUP_ADMIN_EMAIL": { "description": "Mailbox that will receive the one-time link to create the first administrator." },
+            "CF_SETUP_TOKEN": { "description": "Short-lived Cloudflare User API Token for initial setup. [Permissions](https://github.com/CQMHV/loginflare/blob/main/docs/deployment.md). Removed from Worker secrets automatically." },
             "DB": {
                 "description": "Account database. Cloudflare creates and binds it automatically. Keep the same database on future deployments."
             },
             "AVATARS": {
                 "description": "Private object storage for avatars, branding and provider icons. Keep public bucket access disabled."
             },
+            "PRIVATE": { "description": "Private storage for the instance configuration and authentication keys. Keep this bucket when replacing the Worker." },
             "EMAIL": {
-                "description": "Cloudflare Email Service binding. Sending to arbitrary users requires Workers Paid and an onboarded sending domain; the wizard checks configuration."
+                "description": "Cloudflare Email Service. Workers Paid is required to deliver the setup email."
             }
         }
     }

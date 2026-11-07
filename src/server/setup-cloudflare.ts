@@ -81,12 +81,9 @@ export class SetupCloudflare {
         if (token?.status !== 'active') throw new SetupProviderError('USER_API_TOKEN_REQUIRED', 403);
     }
 
-    accounts() { return this.request<{ id: string; name: string }[]>('/accounts?per_page=50'); }
-    workersSubdomain(accountId: string) {
-        return this.request<{ subdomain: string }>(`/accounts/${encodeURIComponent(accountId)}/workers/subdomain`);
+    zones(accountId: string, name: string) {
+        return this.request<SetupZone[]>(`/zones?${new URLSearchParams({ 'account.id': accountId, name, status: 'active' })}`);
     }
-    zones() { return this.request<SetupZone[]>('/zones?status=active&per_page=50'); }
-    zone(id: string) { return this.request<SetupZone>(`/zones/${encodeURIComponent(id)}`); }
     workerVersion(target: SetupTarget, versionId: string) {
         return this.request<{ id: string; resources?: { bindings?: { name: string; type: string; id?: string }[] } }>(
             `${this.workerPath(target)}/versions/${encodeURIComponent(versionId)}`);
@@ -107,8 +104,8 @@ export class SetupCloudflare {
         return this.request<SetupWidget>(`/accounts/${encodeURIComponent(accountId)}/challenges/widgets`, 'POST',
             { name, domains: [hostname], mode: 'managed', clearance_level: 'no_clearance' });
     }
-    workerDomains(accountId: string) {
-        return this.request<{ hostname: string; service: string; id: string }[]>(`/accounts/${encodeURIComponent(accountId)}/workers/domains`);
+    workerDomains(accountId: string, hostname: string) {
+        return this.request<{ hostname: string; service: string; id: string }[]>(`/accounts/${encodeURIComponent(accountId)}/workers/domains?hostname=${encodeURIComponent(hostname)}`);
     }
     attachDomain(target: SetupTarget, zoneId: string, hostname: string) {
         return this.request<{ hostname: string; service: string }>(`/accounts/${encodeURIComponent(target.accountId)}/workers/domains`, 'PUT',

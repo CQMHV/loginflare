@@ -31,15 +31,6 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
     if (originalCallback) {
         const original = new URL(originalCallback, env.AUTH_URL);
         if (original.origin !== env.AUTH_URL) throw new Error('Invalid mail callback origin');
-        if (original.pathname === `/${path}/setup/verified`) {
-            // Only the currently bound candidate can receive an installation
-            // callback. A caller-provided callback is not installation authority.
-            const candidate = user.id ? await env.DB.prepare(`SELECT 1 FROM "lfControl" WHERE "id" = 1
-                AND "installation" = 'installing' AND "candidateUserId" = ? AND "candidateEmail" = ?`)
-                .bind(user.id, user.email.toLowerCase()).first() : null;
-            if (!candidate) throw new Error('Invalid installation mail callback');
-            callback.pathname = original.pathname;
-        }
         // Preserve the provider-signed flow query while the account preference
         // determines the email and result-page language.
         callback.search = original.search;
@@ -59,6 +50,20 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
     } catch {
         throw new Error('EMAIL_DELIVERY_FAILED');
     }
+}
+
+export async function sendInstallationMail(env: Env, email: string, token: string, locale: Locale): Promise<void> {
+    const link = new URL(`/${localeToPath[locale]}/setup`, env.AUTH_URL);
+    link.hash = token;
+    const chinese = locale === 'zh-CN';
+    const subject = chinese ? '创建 Loginflare 管理员' : 'Create your Loginflare administrator';
+    const message = chinese ? '打开此链接设置用户名和密码。链接仅可使用一次，20 分钟后失效。'
+        : 'Open this link to choose your username and password. It can be used once and expires in 20 minutes.';
+    await env.EMAIL.send({
+        to: email, from: { email: env.EMAIL_FROM, name: 'Loginflare' }, subject,
+        text: `${message}\n\n${link}\n\n${copy[locale].ignore}`,
+        html: `<!doctype html><html lang="${locale}"><body><h1>${subject}</h1><p>${message}</p><p><a href="${escapeHtml(link.toString())}">${subject}</a></p><p>${copy[locale].ignore}</p></body></html>`,
+    });
 }
 
 export async function sendEmailCode(env: Env, user: MailUser, code: string, purpose: 'verify' | 'recovery' | 'social'): Promise<void> {

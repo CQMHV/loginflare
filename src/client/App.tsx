@@ -303,9 +303,14 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         try {
             switch (mode) {
                 case 'login': {
-                    const identifier = loginIdentifier.trim();
+                    const form = new FormData(event.currentTarget);
+                    const identifier = String(form.get('identifier') ?? '').trim();
                     const path = identifier.includes('@') ? '/sign-in/email' : '/sign-in/username';
-                    const credentials = { ...(identifier.includes('@') ? { email: identifier } : { username: identifier }), password, rememberMe };
+                    const credentials = {
+                        ...(identifier.includes('@') ? { email: identifier } : { username: identifier }),
+                        password: String(form.get('password') ?? ''),
+                        rememberMe,
+                    };
                     await ensureBrowserFlow(locale, oauthQuery || undefined);
                     if (oauthQuery) {
                         const result = await providerRequest(path, credentials, captchaToken);
@@ -514,7 +519,7 @@ function ConsentPage() {
 function Protected({ adminOnly = false, developerOnly = false }: { adminOnly?: boolean; developerOnly?: boolean }) {
     const { identity, locale } = useApp();
     if (identity === undefined) return <Busy />;
-    if (!identity) return <Navigate to={localizedPath(locale, 'login')} replace />;
+    if (!identity) return <Navigate to={flowPath(localizedPath(locale, 'login'))} replace />;
     if (adminOnly && identity.user.role !== 'admin') return <StatePage forbidden />;
     if (developerOnly && (identity.user.banned || !identity.user.emailVerified)) return <StatePage forbidden />;
     return <Outlet />;

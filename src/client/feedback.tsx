@@ -26,7 +26,9 @@ export function FeedbackProvider({ children }: PropsWithChildren) {
     const success = useCallback((message: string) => notify(message, 'success'), [notify]);
     const error = useCallback((message: string) => notify(message, 'error'), [notify]);
     const actions = useMemo(() => ({ success, error }), [success, error]);
-    useEffect(() => { setFeedback(undefined); }, [pathname]);
+    // Locale navigation keeps the same operation scope. A fast response may
+    // arrive before that navigation commits, so it must retain its feedback.
+    useEffect(() => { setFeedback(undefined); }, [page]);
     useEffect(() => { setFeedback(undefined); }, [owner]);
     useEffect(() => {
         const clear = () => setFeedback(undefined);
