@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useBranding } from './branding';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
 import { ApiError, fetchJson } from './api';
@@ -185,9 +186,10 @@ export function BusinessRolesPage() {
 }
 
 export function UserBusinessRoles({ userId }: { userId: string }) {
+    const brand = useBranding();
     const { t } = useTranslation(), query = useResource<{ roles: Role[] }>('access', `${base}/users/${encodeURIComponent(userId)}/roles`, `user-roles:${userId}`);
     const [editing, setEditing] = useState(false), [roleIds, setRoleIds] = useState<string[]>([]), mutation = useAccessWrite();
-    return <section className="card"><div className="card-heading access-heading"><div><h2>{t('access.userRoles')}</h2><p>{t('access.userRolesDescription')}</p></div>{query.data && <Button className="secondary" onClick={() => { setRoleIds(query.data?.roles.map((item) => item.id) ?? []); mutation.clear(); setEditing(true); }}>{t('access.manageUserRoles')}</Button>}</div>
+    return <section className="card"><div className="card-heading access-heading"><div><h2>{t('access.userRoles')}</h2><p>{t('access.userRolesDescription', { brand: brand.name })}</p></div>{query.data && <Button className="secondary" onClick={() => { setRoleIds(query.data?.roles.map((item) => item.id) ?? []); mutation.clear(); setEditing(true); }}>{t('access.manageUserRoles')}</Button>}</div>
         <div className="card-body"><ResourceFeedback query={query} />{query.data && (query.data.roles.length ? <div className="access-role-badges">{query.data.roles.map((role) => <span className="badge" key={role.id}>{role.name}</span>)}</div> : <p className="muted">{t('access.noUserRoles')}</p>)}</div>
         {editing && <FormDialog title={t('access.manageUserRoles')} cancelLabel={t('cancel')} confirmLabel={t('save')} busy={mutation.busy} onCancel={() => setEditing(false)} onSubmit={() => { void mutation.run(`${base}/users/${encodeURIComponent(userId)}/roles`, { roleIds }, 'PUT', () => setEditing(false)); }}><ErrorNotice code={mutation.error} message={mutation.field('roleIds')} /><SelectionList kind="roles" selected={roleIds} onChange={setRoleIds} disabled={mutation.busy} /></FormDialog>}
     </section>;

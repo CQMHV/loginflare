@@ -27,8 +27,8 @@ async function signin(page: Page, role = 'admin') {
 }
 
 test('publishes independent logo, name and Material color schemes across pages, tabs and reloads', async ({ page, context }) => {
-    test.setTimeout(60_000); await signin(page);
-    const peer = await context.newPage(); await peer.goto('/en-us/account');
+    test.setTimeout(90_000); await signin(page);
+    const peer = await context.newPage(); await peer.goto('/en-us/developer/applications');
     await page.bringToFront(); await page.goto('/en-us/admin/branding');
     await expect(page.getByLabel('Brand name', { exact: true })).toHaveValue('Loginflare');
     await page.screenshot({ path: test.info().outputPath('brand-settings-desktop.png'), fullPage: true });
@@ -56,6 +56,21 @@ test('publishes independent logo, name and Material color schemes across pages, 
     await expect.poll(() => page.locator('.brand-logo:visible').evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     await expect(page.locator('.brand-logo:visible')).toHaveCSS('object-fit', 'contain');
     await peer.bringToFront(); await expect(peer.locator('.brand-name:visible')).toHaveText(name);
+    await expect(peer.getByText(`Add ${name} sign-in to your applications.`, { exact: true })).toBeVisible();
+    await expect(peer.getByText(`Let people sign in to your website or application with their ${name} account.`, { exact: true })).toBeVisible();
+    await peer.goto('/en-us/developer/applications/new');
+    await expect(peer.getByText(`One exact URI per line for returning after signing out of ${name}.`, { exact: true })).toBeVisible();
+    await peer.goto('/zh-cn/developer/applications');
+    await expect(peer.getByText(`为你的应用接入 ${name} 登录。`, { exact: true })).toBeVisible();
+    await expect(peer.getByText(`让用户使用 ${name} 账号登录你的网站或应用。`, { exact: true })).toBeVisible();
+    await peer.route('**/api/oauth/consent?*', (route) => route.fulfill({ json: {
+        client: { clientId: 'brand-client', name: 'Example application' }, scopes: ['openid'],
+    } }));
+    const authorization = 'client_id=brand-client&scope=openid&sig=branding-ui-test&ba_param=client_id&ba_param=scope';
+    await peer.goto(`/en-us/consent?${authorization}`);
+    await expect(peer.getByText(`Example application wants to use your ${name} account.`, { exact: true })).toBeVisible();
+    await peer.goto(`/zh-cn/consent?${authorization}`);
+    await expect(peer.getByText(`Example application 希望使用你的 ${name} 账号。`, { exact: true })).toBeVisible();
     await expect.poll(() => peer.evaluate(() => window.loginflareBranding.getSnapshot().colorScheme)).toBe('vibrant');
     await page.bringToFront(); await page.reload();
     await expect(page.getByLabel('Brand name', { exact: true })).toHaveValue(name);

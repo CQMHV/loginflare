@@ -15,11 +15,12 @@ import { browserAccounts, browserSessionPlugin } from './browser-accounts';
 import { auditAuthentication } from './audit';
 import { apiAccessClaims } from './api-access-policy';
 import { managementScopes } from '../shared/machines';
+import { defaultBranding } from '../shared/branding';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = []) {
+export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
-    const multifactor = twoFactor({ issuer: 'Loginflare', allowPasswordless: true });
+    const multifactor = twoFactor({ issuer: brandName, allowPasswordless: true });
     const passwordMfa = multifactor.hooks.after[0]!.matcher;
     multifactor.hooks.after[0]!.matcher = (context) => passwordMfa(context)
         || context.path === '/callback/:id' || context.path === '/social/verify-email';
@@ -32,7 +33,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
         }
     }
     return betterAuth({
-        appName: 'Loginflare',
+        appName: brandName,
         baseURL: env.AUTH_URL,
         basePath: '/api/auth',
         disabledPaths: ['/token'],

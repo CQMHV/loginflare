@@ -12,6 +12,7 @@ import { applicationCreateSchema, applicationUpdateSchema, applicationFieldError
 import { PaginationError, pageBoundary, pageResult, readPageInput } from './pagination';
 import { machineError } from './machines';
 import { managementOpenApi } from './management-openapi';
+import { readBranding } from './branding-settings';
 import type { Env } from './config';
 
 type ManagementEnv = AccessEnv;
@@ -53,7 +54,8 @@ managementApi.onError((error, c) => {
     const known = machineError(error); if (known) return c.json({ code: known.code, fieldErrors: known.fieldErrors }, known.status);
     throw error;
 });
-managementApi.get('/openapi.json', (c) => c.json(managementOpenApi));
+managementApi.get('/openapi.json', async (c) => c.json({ ...managementOpenApi,
+    info: { ...managementOpenApi.info, title: `${(await readBranding(c.env.DB)).name} Management API` } }));
 managementApi.use('*', async (c, next) => {
     const path = c.req.path.slice(prefix.length), required = scopeFor(path, c.req.method);
     if (!required) return c.json({ code: 'NOT_FOUND' }, 404);

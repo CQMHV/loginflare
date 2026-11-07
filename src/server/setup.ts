@@ -2,6 +2,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
 import { validateConfig, type Env } from './config';
 import { sendInstallationMail } from './mail';
+import { publicBranding, readBranding } from './branding-settings';
 import { SetupCloudflare, SetupProviderError, type SetupDnsRecord, type SetupTarget } from './setup-cloudflare';
 
 export const setupPage = /^\/(?:(?:en-us|zh-cn)\/)?setup\/?$/;
@@ -317,7 +318,8 @@ export async function handleSetup(request: Request, env: Env, row: Installation 
     try {
         if (path === '/api/setup/status' && request.method === 'GET') {
             const canonical = url.origin === row?.origin;
-            return json({ step: row?.step ?? 'target', canonical,
+            const { name, logoUrl } = publicBranding(await readBranding(env.DB));
+            return json({ step: row?.step ?? 'target', canonical, branding: { name, logoUrl },
                 publicUrl: row?.step === 'ready' ? row.origin : undefined, completed: Boolean(row?.completedAt),
                 error: row?.error ?? undefined, detail: row?.errorDetail ?? undefined,
                 canStart: Boolean(env.CF_SETUP_TOKEN && (!row || row.step !== 'ready')) });

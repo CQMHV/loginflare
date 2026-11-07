@@ -120,6 +120,13 @@ it('reports a conflicting DNS record without overwriting it', async () => {
     expect(f.widgetCount()).toBe(0);
 });
 
+it('exposes the current brand on the installation progress page', async () => {
+    const f = fixture();
+    await env.DB.prepare('UPDATE siteBranding SET name = ? WHERE id = 1').bind('Example Accounts').run();
+    const response = await f.request('/api/setup/status', undefined, progress);
+    expect(await response.json()).toMatchObject({ branding: { name: 'Example Accounts', logoUrl: '/assets/logo.svg' } });
+});
+
 it('accepts the expected MX siblings but stops on an unexpected mail exchanger', async () => {
     const f = fixture();
     const name = 'bounce.notify.example.test';
