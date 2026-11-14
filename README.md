@@ -4,9 +4,11 @@ An open-source account and identity management system built for Cloudflare.
 
 [简体中文](README.zh-CN.md) · [Deployment](docs/deployment.md) · [Application integration](docs/oauth.md) · [Architecture](docs/architecture.md) · [Scaling](docs/scaling.md)
 
+Start with [deployment](docs/deployment.md), then connect a [Hono/Workers Web app](examples/server-web/README.md) or [React SPA](docs/oauth.md#standard-client-examples). Production needs an active Cloudflare zone, Workers Paid, R2, transactional Email Service and Turnstile. These services' usage and the connected applications' resources determine operating cost. Review [operations and recovery](docs/operations.md), [capacity boundaries](docs/scaling.md) and [security reporting](SECURITY.md) before rollout. Organizations, SAML and native/device clients are outside this release; see the feature boundary below.
+
 Loginflare is a fully functional account and identity management platform for independent deployments, from small teams to large public-facing services. It combines a user account center, a developer center, an administrator console, and standard OAuth/OIDC sign-in for independent Web and SPA applications, with email or username sign-in, email verification, password recovery, and session management. The system runs as one Cloudflare Worker with D1, R2, Email Service, Turnstile, and Workers Static Assets.
 
-Deploy an independent instance of Loginflare using the deployment button and browser wizard below. The management console requires administrator access. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
+Deploy an independent instance of Loginflare through Cloudflare. The management console requires administrator access. The Web/SPA examples exercise the complete integration flows. Business-specific applications can build on this project in separate branches with their own branding and rules.
 
 The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use lowercase language segments: `/en-us/` and `/zh-cn/`.
 
@@ -15,7 +17,8 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - Register, verify email, resend verification, sign in with an email address or username, and sign out.
 - Configure Google, GitHub, Microsoft, Discord, X, Telegram, OIDC and OAuth 2.0 connections; support passwordless registration, explicit linking and third-party reauthentication. See [Third-party sign-in](docs/social.md).
 - Recover a forgotten password and change a known password.
-- Enable authenticator-based MFA (TOTP), save or reset one-use recovery codes, and verify email/username and OAuth sign-ins.
+- Enable authenticator-based MFA (TOTP), save or reset one-use recovery codes, and verify email/username, provider, passkey and OAuth sign-ins.
+- Add, name and manage passkeys after reauthentication, and use them to sign in; see [Passkeys](docs/passkeys.md).
 - Update a display name and username, upload/crop/remove a profile photo, and manage active sessions.
 - Sign in to up to five accounts in one browser, switch accounts independently in each tab, and sign out of one account or all browser accounts.
 - Manage primary and secondary email addresses on a dedicated page, verify new addresses with codes, and choose the primary sign-in email.
@@ -25,11 +28,14 @@ The default language is **`en-US`**. Users can select **`zh-CN`**. Page URLs use
 - OpenID Connect sign-in using authorization code + PKCE S256, discovery, UserInfo, RS256 ID Tokens, refresh tokens, and application-initiated central logout.
 - Manage API resources, business permission scopes, roles and user assignments; issue resource-bound access tokens and protect Workers/Hono APIs. See [Access control](docs/access-control.md).
 - Inspect administrator-only audit logs for authentication, authorization, security and management events, with bounded retention.
+- Configure signed asynchronous account Webhooks, inspect deliveries and redeliver retained events; see [Business event notifications](docs/webhooks.md).
 - Create separate machine applications and machine roles, obtain short-lived client-credentials tokens, and automate the versioned Management API. See [Machine identities and management](docs/management-api.md).
 - English and Simplified Chinese pages, error messages, and transactional emails.
 - Better Auth account/session primitives, atomic D1-backed rate limiting, scheduled expiry cleanup, and server-verified Turnstile challenges.
 
-This release does not offer organizations, multi-tenancy, SAML, account deletion, browser-based assignment of Loginflare console administrator privileges, impersonation, or administrator-set passwords. Native/device clients, dynamic client registration, upstream API token hosting and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed. User business roles, machine roles and console administrator privileges are separate.
+Ordinary users can request permanent deletion under **Security → Delete account**, after reauthentication and confirmation of every owned application's deletion. The account and its applications become unavailable immediately; durable background cleanup removes their data and all users' grants for those applications. See [Account deletion](docs/account-deletion.md) for authentication, retention and API behavior.
+
+This release does not offer organizations, multi-tenancy, SAML, browser-based assignment of Loginflare console administrator privileges, impersonation, or administrator-set passwords. Native/device clients, dynamic client registration, upstream API token hosting and coordinated logout across all applications are also outside its scope. Those endpoints are not exposed. User business roles, machine roles and console administrator privileges are separate. Administrator self-deletion, administrator/machine account deletion and application ownership transfer are not exposed.
 
 Usernames are separate from display names. The registration form asks for a unique username of 3–30 ASCII letters, numbers, underscores, or dots; usernames are stored in lowercase and sign-in is case-insensitive. Existing accounts can continue using email and choose a username in their profile. Users can change their username; an existing username cannot be cleared. Email verification is required for both sign-in methods. Only the primary email works as an email sign-in identifier.
 
@@ -80,7 +86,7 @@ Open `http://localhost:5173` (the configured authentication origin). The root en
 
 `pnpm dev` adds 3,000 ms to each API GET request, in addition to its normal processing time, to make loading states visible while testing locally. Set `LOGINFLARE_API_DELAY_MS` in the ignored `.env.local` file or the shell environment to adjust it (0–30,000 ms; `0` disables it), then restart the development server. `/api/health`, page/assets, and non-GET requests are unaffected. This middleware exists only in the Vite development server; production/staging builds and the isolated automated browser/scale suites have no artificial delay.
 
-Development and local operator commands share `.cloudflare/state`, using `wrangler.local.jsonc`. Local migrations, checks and administrator promotion use the same migration and maintenance core through an isolated Miniflare binding. Remote upgrades use the Worker's authenticated maintenance API; they do not run direct D1 SQL before deployment. Resource management prefers `cf`; development, builds, type generation and deployment use the pinned stable Vite/Wrangler integration.
+Development and local database commands share `.cloudflare/state`, using `wrangler.local.jsonc`. Cloudflare Workers Builds manages remote releases separately.
 
 ### First administrator
 
@@ -102,7 +108,7 @@ Database migrations prepare native dates as ISO UTC text, populate indexed callb
 
 ## Validation
 
-`pnpm check` runs type checking, Worker integration tests, operator-command tests, and the production build. Run `pnpm test:e2e` as well to exercise the browser flows. The [CI workflow](.github/workflows/ci.yml) runs both on pull requests and pushes to `main`, plus isolated scale checks with 10 and 10,000 generated users and three-second workload windows. Tests use local D1, simulated email, and Turnstile test keys; browser reports are retained for seven days. The million-user benchmark remains a separate manual run.
+`pnpm check` runs type checking, Worker integration tests, operator-command tests, the production build, the React SPA build and local dry-run bundles of the Web, webhook-receiver and audit-export Workers. Run `pnpm test:e2e` as well to exercise the browser flows. The [CI workflow](.github/workflows/ci.yml) runs both on pull requests and pushes to `main`, plus isolated scale checks with 10 and 10,000 generated users and three-second workload windows. Tests use local D1, simulated email, and Turnstile test keys; browser reports are retained for seven days. The million-user benchmark remains a separate manual run.
 
 ```powershell
 pnpm typecheck
@@ -145,6 +151,8 @@ For a business API, an administrator registers its audience, permission scopes, 
 
 Trusted backend automation uses a separately configured machine application. The [Management API](docs/management-api.md) exposes scoped user, login-application, business-access and audit operations under `/api/management/v1`, with a public OpenAPI contract. The [scheduled Worker example](examples/management-worker/README.md) polls audit logs with a read-only token and exports provisioning helpers without an unauthenticated operation trigger.
 
+The [webhook receiver](examples/webhook-receiver/README.md) verifies account notifications into a durable inbox. The separate [audit exporter](examples/audit-export/README.md) copies allowlisted audit records with persistent continuation and deduplication; source retention and bounded polling still limit completeness.
+
 Ordinary central logout retains native `offline_access` refresh authorization. Applications own their local sessions; logging out of Loginflare does not sign every application out. Security actions such as password recovery and account suspension have separate credential-invalidation rules described in the integration guide.
 
 ## Browser data and navigation
@@ -159,11 +167,11 @@ The root entry chooses the saved browser preference, then the signed-in account'
 
 ## Deployment
 
-The default flow is **Deploy to Cloudflare → configure in the browser → verify email and create the administrator**. Cloudflare provisions D1 and private R2 storage; the wizard manages the fixed authentication address, email, Turnstile and the first administrator.
+Use **Deploy to Cloudflare** or import your existing organization repository in Cloudflare. Enter the login hostname, first administrator’s email, and a short-lived Cloudflare token. Open the login domain after setup and create the administrator through the emailed link.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
-First installation requires only a dedicated `CF_SETUP_TOKEN` (User API Token), which is removed and revoked after cleanup. Later builds deploy code only; database upgrades advance through browser maintenance. Existing installations must first follow the planned-downtime transition in the [deployment guide](docs/deployment.md), replacing the old migrations-before-deployment command. Complete hosted acceptance remains pending on real isolated Cloudflare resources; the guide records release blockers and required evidence.
+Cloudflare assigns the resource IDs. Subsequent pushes to `main` publish automatically and apply reviewed online migrations when needed. See the [deployment guide](docs/deployment.md).
 
 Cloudflare Email Sending is currently Beta and arbitrary-recipient transactional delivery requires Workers Paid. A verified sending domain and real Turnstile configuration are required for production. Missing security configuration is an error; Loginflare does not silently skip email verification or bot protection.
 
