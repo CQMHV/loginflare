@@ -1,5 +1,5 @@
 import { passkey } from '@better-auth/passkey';
-import { APIError, createAuthEndpoint, sessionMiddleware } from 'better-auth/api';
+import { APIError, createAuthEndpoint, createAuthMiddleware, getSessionFromCtx, sessionMiddleware } from 'better-auth/api';
 import { z } from 'zod';
 import type { Env } from './config';
 import { requireSecurity, securityGuard, type SecurityAuthorization } from './security-proof';
@@ -11,9 +11,29 @@ const name = z.string().trim().min(1).max(100);
 const active = `u."emailVerified" = 1 AND coalesce(u."banned", 0) = 0 AND u."deletionRequestedAt" IS NULL`;
 const fail = (code = 'PASSKEY_NOT_AVAILABLE'): never => { throw new APIError('BAD_REQUEST', { code, message: code }); };
 interface Registration { userId: string; sessionId: string; authorization: SecurityAuthorization }
+interface Authentication { userId: string; passkeyId: string | null; browserFlowId: string | null }
+const mfaPaths = new Set(['/two-factor/verify-totp', '/two-factor/verify-backup-code']);
 
 /** Keep upstream WebAuthn verification; compose account policy around its endpoints. */
 export function accountPasskeys(env: Env, rpName: string) {
+    const authentications = new WeakMap<object, Authentication | null>();
+    async function mfaAuthentication(ctx: GenericEndpointContext) {
+        if (authentications.has(ctx.context)) return authentications.get(ctx.context)!;
+        if (await getSessionFromCtx(ctx)) { authentications.set(ctx.context, null); return null; }
+        const challenge = await ctx.getSignedCookie(ctx.context.createAuthCookie('two_factor').name, ctx.context.secret);
+        if (!challenge) return null;
+        const record = await ctx.context.internalAdapter.findVerificationValue(`login-mfa:${challenge}`);
+        // Old challenges did not retain their authentication source. They must
+        // restart sign-in rather than silently becoming password MFA.
+        if (!record) throw new APIError('UNAUTHORIZED', { code: 'INVALID_TWO_FACTOR_COOKIE', message: 'Invalid two factor cookie' });
+        const binding: Authentication = JSON.parse(record.value);
+        if (binding.passkeyId) {
+            const flow = ctx.headers && await readBrowserFlow(env, ctx.headers);
+            if (!flow || flow.id !== binding.browserFlowId || flow.status !== 'pending' || flow.userId !== binding.userId) fail();
+        }
+        authentications.set(ctx.context, binding);
+        return binding;
+    }
     const plugin = passkey({
         rpID: new URL(env.AUTH_URL).hostname, rpName, origin: env.AUTH_URL,
         authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
@@ -40,12 +60,38 @@ export function accountPasskeys(env: Env, rpName: string) {
         } },
     });
     const native = plugin.endpoints;
-    return { ...plugin, init() { return { options: { databaseHooks: { session: { create: {
+    return { ...plugin, hooks: { before: [{
+        matcher: (ctx: { path?: string }) => mfaPaths.has(ctx.path ?? ''),
+        handler: createAuthMiddleware(async (ctx) => { await mfaAuthentication(ctx); }),
+    }] }, init() { return { options: { databaseHooks: { session: { create: {
         async before(session: { userId: string }, ctx: GenericEndpointContext | null) {
-            if (ctx?.path !== '/passkey/verify-authentication') return;
+            if (!ctx) return;
+            if (mfaPaths.has(ctx.path ?? '')) {
+                const binding = await mfaAuthentication(ctx);
+                if (!binding) return;
+                if (binding.userId !== session.userId) fail();
+                if (!binding.passkeyId) return;
+                // Keep the original ID even after deletion: the existing SQL
+                // session guard rejects a credential lost at the final write.
+                return { data: { ...session, passkeyId: binding.passkeyId } };
+            }
+            if (ctx.path !== '/passkey/verify-authentication') return;
+            const flow = ctx.headers && await readBrowserFlow(env, ctx.headers);
+            if (!flow || flow.status !== 'pending') return fail('BROWSER_FLOW_EXPIRED');
             const id = await env.DB.prepare('SELECT "id" FROM "passkey" WHERE "credentialID" = ? AND "userId" = ?').bind(ctx.body?.response?.id, session.userId).first<string>('id');
             if (!id) return fail();
+            authentications.set(ctx.context, { userId: session.userId, passkeyId: id, browserFlowId: flow.id });
             return { data: { ...session, passkeyId: id } };
+        },
+    } }, verification: { create: {
+        async before(record: { identifier: string; value: string; expiresAt: Date }, ctx: GenericEndpointContext | null) {
+            if (!ctx || !/^2fa-(?!attempts-)/.test(record.identifier)) return;
+            const binding = ctx.path === '/passkey/verify-authentication' ? authentications.get(ctx.context)
+                : { userId: record.value, passkeyId: null, browserFlowId: null };
+            if (!binding || binding.userId !== record.value) fail();
+            // Mark every source BEFORE the native challenge, including password
+            // and social login. Absence must never imply a non-passkey source.
+            await ctx.context.internalAdapter.createVerificationValue({ identifier: `login-mfa:${record.identifier}`, value: JSON.stringify(binding), expiresAt: record.expiresAt });
         },
     } } } } }; }, endpoints: {
         ...native,

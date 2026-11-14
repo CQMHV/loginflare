@@ -49,6 +49,78 @@ async function login(f: Awaited<ReturnType<typeof fixture>>, changes: { origin?:
     const [result, duplicate] = changes.concurrent ? await Promise.all([send(), send()]) : [await send()];
     return { result: result!, duplicate, send, cookie, headers };
 }
+async function enableMfa(f: Awaited<ReturnType<typeof fixture>>) {
+    const enable = await f.client.request('/api/auth/two-factor/enable', { cookie: f.cookie, body: { password } });
+    expect(enable.status, await enable.clone().text()).toBe(200);
+    const setup = await enable.json<{ totpURI: string; backupCodes: string[] }>();
+    const enabled = await f.client.request('/api/auth/two-factor/verify-totp', { cookie: f.cookie + '; ' + cookies(enable), body: { code: await authenticatorCode(setup.totpURI) } });
+    expect(enabled.status).toBe(200); f.cookie += '; ' + cookies(enabled);
+    return setup;
+}
+it.each(['totp', 'backup-code'] as const)('keeps the exact passkey binding through %s completion', async (method) => {
+    const f = await fixture(), key = await register(f), setup = await enableMfa(f);
+    const attempt = await login(f); expect(await attempt.result.json()).toMatchObject({ twoFactorRedirect: true });
+    const done = await f.client.request('/api/auth/two-factor/verify-' + method, { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers,
+        body: { code: method === 'totp' ? await authenticatorCode(setup.totpURI) : setup.backupCodes[0] } });
+    expect(done.status, await done.clone().text()).toBe(200);
+    expect(await env.DB.prepare('SELECT passkeyId FROM session WHERE token = ?').bind((await done.json<{ token: string }>()).token).first('passkeyId')).toBe(key.id);
+});
+it.each(['totp', 'backup-code'] as const)('rejects %s completion after the authenticating passkey is removed', async (method) => {
+    const f = await fixture(), key = await register(f), setup = await enableMfa(f);
+    const attempt = await login(f); expect(await attempt.result.json()).toMatchObject({ twoFactorRedirect: true });
+    const before = await env.DB.prepare('SELECT count(*) n FROM session').first('n');
+    expect((await f.client.request('/api/auth/passkey/delete-passkey', { cookie: f.cookie, body: { id: key.id, password } })).status).toBe(200);
+    const done = await f.client.request('/api/auth/two-factor/verify-' + method, { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers,
+        body: { code: method === 'totp' ? await authenticatorCode(setup.totpURI) : setup.backupCodes[0] } });
+    expect(done.ok, await done.clone().text()).toBe(false);
+    expect(await env.DB.prepare('SELECT count(*) n FROM session').first('n')).toBe(before);
+});
+it.each(['totp', 'backup-code'] as const)('checks the passkey at the final %s session insertion', async (method) => {
+    const f = await fixture(), key = await register(f), setup = await enableMfa(f), attempt = await login(f);
+    expect(await attempt.result.json()).toMatchObject({ twoFactorRedirect: true });
+    const before = await env.DB.prepare('SELECT count(*) n FROM session').first('n');
+    const race = interceptSql(env.DB, /insert into ["`]session["`]/i, () => env.DB.prepare('DELETE FROM passkey WHERE id = ?').bind(key.id).run());
+    f.client.bindings.DB = race.proxy;
+    const done = await f.client.request('/api/auth/two-factor/verify-' + method, { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers,
+        body: { code: method === 'totp' ? await authenticatorCode(setup.totpURI) : setup.backupCodes[0] } });
+    expect(race.invoked()).toBe(true); expect(done.ok).toBe(false);
+    expect(await env.DB.prepare('SELECT count(*) n FROM session').first('n')).toBe(before);
+});
+it('keeps a pending MFA usable when another passkey is removed', async () => {
+    const f = await fixture(), other = await register(f); f.key = await authenticator();
+    const key = await register(f), setup = await enableMfa(f), attempt = await login(f);
+    expect(await attempt.result.json()).toMatchObject({ twoFactorRedirect: true });
+    expect((await f.client.request('/api/auth/passkey/delete-passkey', { cookie: f.cookie, body: { id: other.id, password } })).status).toBe(200);
+    const done = await f.client.request('/api/auth/two-factor/verify-totp', { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers, body: { code: await authenticatorCode(setup.totpURI) } });
+    expect(done.status, await done.clone().text()).toBe(200);
+    expect(await env.DB.prepare('SELECT passkeyId FROM session WHERE token = ?').bind((await done.json<{ token: string }>()).token).first('passkeyId')).toBe(key.id);
+});
+it('rejects a copied MFA challenge in a different browser flow without consuming the original', async () => {
+    const f = await fixture(); await register(f); const setup = await enableMfa(f), first = await login(f), second = await login(f);
+    expect(await first.result.json()).toMatchObject({ twoFactorRedirect: true }); expect(await second.result.json()).toMatchObject({ twoFactorRedirect: true });
+    const copied = cookies(first.result).replaceAll('_flow-' + first.headers['X-Loginflare-Flow'], '_flow-' + second.headers['X-Loginflare-Flow']);
+    const body = { code: await authenticatorCode(setup.totpURI) };
+    expect((await f.client.request('/api/auth/two-factor/verify-totp', { cookie: second.cookie + '; ' + copied, headers: second.headers, body })).ok).toBe(false);
+    expect((await f.client.request('/api/auth/two-factor/verify-totp', { cookie: first.cookie + '; ' + cookies(first.result), headers: first.headers, body })).status).toBe(200);
+});
+it('does not create a native MFA challenge when persisting its passkey source fails', async () => {
+    const f = await fixture(); await register(f); await enableMfa(f);
+    await env.DB.prepare(`CREATE TRIGGER "test_binding_failure" BEFORE INSERT ON "verification" WHEN NEW."identifier" LIKE 'login-mfa:%'
+        BEGIN SELECT RAISE(ABORT, 'BINDING_WRITE_FAILED'); END`).run();
+    expect((await login(f)).result.ok).toBe(false);
+    expect(await env.DB.prepare(`SELECT count(*) n FROM verification WHERE identifier GLOB '2fa-*'`).first('n')).toBe(0);
+});
+it.each(['totp', 'backup-code'] as const)('rejects legacy unbound %s challenges after credential removal', async (method) => {
+    const f = await fixture(), key = await register(f), setup = await enableMfa(f), attempt = await login(f);
+    expect(await attempt.result.json()).toMatchObject({ twoFactorRedirect: true });
+    // Before the fix, native MFA stored only a user ID with no source record.
+    await env.DB.prepare(`DELETE FROM verification WHERE identifier LIKE 'login-mfa:%'`).run();
+    await env.DB.prepare('DELETE FROM passkey WHERE id = ?').bind(key.id).run();
+    const before = await env.DB.prepare('SELECT count(*) n FROM session').first('n');
+    const done = await f.client.request('/api/auth/two-factor/verify-' + method, { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers,
+        body: { code: method === 'totp' ? await authenticatorCode(setup.totpURI) : setup.backupCodes[0] } });
+    expect(done.ok).toBe(false); expect(await env.DB.prepare('SELECT count(*) n FROM session').first('n')).toBe(before);
+});
 it('uses fixed RP/origin and requires verified authentication and reauthentication for enrollment', async () => {
     const f = await fixture();
     expect((await f.client.request('/api/auth/passkey/generate-register-options', { body: { password } })).status).toBe(401);
@@ -165,13 +237,19 @@ it('checks the pinned upstream endpoint, schema and ceremony contract before dep
     expect(plugin.schema!.passkey.fields.credentialID.required).toBe(true);
     expect(plugin.schema!.passkey.fields.userId.references).toEqual({ model: 'user', field: 'id' });
 });
-it('cleans credentials and enrollment challenges through resumable account deletion', async () => {
+it.each([false, true])('cleans credentials and pending enrollment/MFA sources through resumable account deletion (MFA: %s)', async (mfa) => {
     const f = await fixture(); await register(f); await options(f);
+    const setup = mfa ? await enableMfa(f) : null;
+    if (setup) {
+        expect(await (await login(f)).result.json()).toMatchObject({ twoFactorRedirect: true });
+        expect(await env.DB.prepare(`SELECT count(*) n FROM verification WHERE identifier LIKE 'login-mfa:%'`).first('n')).toBe(1);
+    }
     const preview = await (await f.client.request('/api/account/deletion-preview', { cookie: f.cookie })).json<{ preview: string }>();
-    expect((await f.client.request('/api/account/delete', { cookie: f.cookie, body: { preview: preview.preview, password } })).status).toBe(202);
+    expect((await f.client.request('/api/account/delete', { cookie: f.cookie, body: { preview: preview.preview, password, ...(setup ? { code: await authenticatorCode(setup.totpURI) } : {}) } })).status).toBe(202);
     let batches = 0;
     await collectAccountDeletions(env, { available: () => batches < 60, used: (n) => { batches += n; } }, Date.now() + 3000);
     expect(await env.DB.prepare('SELECT count(*) n FROM passkey').first('n')).toBe(0);
     expect(await env.DB.prepare(`SELECT count(*) n FROM verification WHERE json_valid(value) AND json_extract(value, '$.userData.id') = ?`).bind(f.identity.user.id).first('n')).toBe(0);
+    expect(await env.DB.prepare(`SELECT count(*) n FROM verification WHERE identifier LIKE 'login-mfa:%'`).first('n')).toBe(0);
     expect((await env.DB.prepare('PRAGMA foreign_key_check').all()).results).toEqual([]);
 });

@@ -10,6 +10,8 @@ Use **Sign in with a passkey** on the login page, including after selecting a re
 
 Apply `0026_passkeys.sql` before this version. It adds the native credential table, an internal session reference, indexes and guards, without changing issuer, user IDs or keys. It is additive for older Workers. Remote migration approval and deployment are separate operations.
 
+Pending MFA login challenges issued before source binding was introduced must restart sign-in after upgrading. New challenges explicitly retain their passkey or password/provider source in the existing verification store; no additional migration is needed.
+
 `@better-auth/passkey@1.7.13` matches the locked Better Auth version. The browser helper is `@simplewebauthn/browser@13.3.0`. Both are MIT licensed; notices use the existing license generator. The helper handles serialization without requiring newer browser JSON APIs. Native verification runs in the existing Workers runtime, without a new binding or external verification service.
 
 RP ID is exactly the hostname of `AUTH_URL`. The WebAuthn Origin allowlist contains exactly `AUTH_URL`, without wildcard or parent-domain overrides. Use the permanent HTTPS login hostname in production; changing it can invalidate existing credentials. Localhost development is supported. Unsupported browsers retain password/provider login. Authenticators must support discoverable credentials and user verification.
@@ -22,7 +24,7 @@ Management uses the existing current-password or linked-provider reauthenticatio
 
 Accounts can register at most 20 passkeys; names contain 1–100 trimmed characters. The list returns names, registration dates and device/backup metadata, without public keys or credential IDs. Labels do not rename authenticator entries. Deletion removes the server credential; optionally remove the saved OS/password-manager copy separately. WebAuthn Signal API synchronization is deferred: upstream generates distinct authenticator user handles without persisting them for a trustworthy complete credential list.
 
-Deletion atomically requires another passkey, a password or an enabled provider. Ownership and reauthentication are checked at the write. Concurrent deletions cannot remove the last usable method. Removed credentials cannot authenticate again; existing sessions keep their existing revocation semantics.
+Deletion atomically requires another passkey, a password or an enabled provider. Ownership and reauthentication are checked at the write. Concurrent deletions cannot remove the last usable method. Removed credentials cannot authenticate again, including pending TOTP/recovery-code logins started with that credential. Each MFA challenge retains its exact passkey and browser-flow binding through the final session insert; removing another credential does not invalidate it. Existing sessions keep their existing revocation semantics.
 
 | Method | Path under `/api/auth` | Input |
 | --- | --- | --- |
