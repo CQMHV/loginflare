@@ -1,9 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { readExampleTls } from '../setup-tls.mjs';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ command }) => ({
     root: fileURLToPath(new URL('.', import.meta.url)),
+    plugins: [react()],
     // Both apps share package.json; keep their optimized dependencies separate.
     cacheDir: fileURLToPath(new URL('../../node_modules/.vite/spa-example', import.meta.url)),
     server: {

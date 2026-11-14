@@ -158,11 +158,13 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     const spa = await register('spa', 'spa.localhost', 5182);
     expect(web.clientSecret).toBeTruthy();
     expect(spa.clientSecret).toBeUndefined();
-    const webProcess = startProcess(['examples/server-web/server.mjs'], {
+    const webEnvironment = {
         LOGINFLARE_ISSUER: `${testOrigin}/api/auth`,
         LOGINFLARE_CLIENT_ID: web.application.clientId,
         LOGINFLARE_CLIENT_SECRET: web.clientSecret!,
-    });
+        LOGINFLARE_WEB_STATE: resolve('work/e2e', process.env.LOGINFLARE_E2E_RUN_ID!, 'web-state'),
+    };
+    let webProcess = startProcess(['examples/server-web/server.mjs'], webEnvironment);
     const require = createRequire(import.meta.url);
     const vitePackage = require.resolve('vite/package.json');
     const viteMetadata = JSON.parse(readFileSync(vitePackage, 'utf8')) as { bin: { vite: string } };
@@ -183,6 +185,15 @@ test('standard Web and SPA clients sign in, refresh, restore, and sign out over 
     await page.getByRole('button', { name: 'Sign in again', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Authorize application', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Signed in', exact: true })).toBeVisible();
+    await expect(page.locator('pre')).toContainText(email);
+    await new Promise<void>((resolveExit) => {
+        webProcess.child.once('exit', () => resolveExit());
+        webProcess.child.kill();
+    });
+    webProcess = startProcess(['examples/server-web/server.mjs'], webEnvironment);
+    await waitForExample(5181, 'web.localhost', webProcess);
+    await page.reload();
     await expect(page.getByRole('heading', { name: 'Signed in', exact: true })).toBeVisible();
     await expect(page.locator('pre')).toContainText(email);
     await page.getByRole('button', { name: 'Refresh tokens', exact: true }).click();
