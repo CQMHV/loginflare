@@ -23,7 +23,7 @@ export interface SocialConnection {
 export interface PublicProvider { id: string; name: string; type: ConnectionType; iconUrl?: string | null }
 export interface LinkedIdentity { id: string; providerId: string; accountId: string; name: string; type: ConnectionType; enabled: boolean; iconUrl?: string | null }
 export interface SecurityCapabilities { hasPassword: boolean; identities: LinkedIdentity[]; providers: PublicProvider[]; proofPurpose?: SecurityPurpose; proofExpiresAt?: number }
-export const securityPurposes = ['link', 'unlink', 'set-password', 'emails/add', 'emails/resend', 'emails/set-primary', 'emails/remove', 'two-factor/enable', 'two-factor/disable', 'two-factor/generate-backup-codes'] as const;
+export const securityPurposes = ['link', 'unlink', 'set-password', 'emails/add', 'emails/resend', 'emails/set-primary', 'emails/remove', 'two-factor/enable', 'two-factor/disable', 'two-factor/generate-backup-codes', 'account/delete'] as const;
 export type SecurityPurpose = typeof securityPurposes[number];
 export function defaultConnectionConfig(type: ConnectionType): ConnectionConfig {
     return {

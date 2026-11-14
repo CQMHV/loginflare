@@ -16,6 +16,7 @@ import { auditAuthentication } from './audit';
 import { apiAccessClaims } from './api-access-policy';
 import { managementScopes } from '../shared/machines';
 import { defaultBranding } from '../shared/branding';
+import { accountDeletion } from './account-deletion';
 
 export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
     validateConfig(env);
@@ -113,6 +114,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             applicationPolicy(management),
             policy.plugin,
             emailManagement(env, schedule),
+            accountDeletion(env, (ctx, code) => multifactor.endpoints.verifyTOTP({ ...ctx, body: { code } })),
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
             username({ displayUsername: false }),
             multifactor,

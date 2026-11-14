@@ -22,6 +22,7 @@ import { auditLogs, auditRequestHeader, observeAudit } from './audit';
 import { machines } from './machines';
 import { managementApi } from './management-api';
 import { dispatch, runScheduled } from './runtime';
+import { deletionRoutes } from './account-deletion-routes';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -208,6 +209,7 @@ app.route('/api/management/v1', managementApi);
 app.route('/api/browser', browserRoutes);
 app.route('/api/developer/applications', developerApplications);
 app.route('/api/account/applications', accountApplications);
+app.route('/api/account', deletionRoutes);
 app.route('/api', management);
 app.route('/api/oauth', consent);
 app.route('/', avatars);
@@ -286,9 +288,10 @@ app.all('/api/auth/*', async (c) => {
                 if (identity.user.role !== 'admin') return c.json({ code: 'FORBIDDEN' }, 403);
                 if (c.req.method === 'POST') {
                     if (typeof body.userId !== 'string') return c.json({ code: 'INVALID_INPUT' }, 400);
-                    const target = await c.env.DB.prepare('SELECT "role" FROM "user" WHERE "id" = ?').bind(body.userId).first<{ role: string | null }>();
+                    const target = await c.env.DB.prepare('SELECT "role", "deletionRequestedAt" FROM "user" WHERE "id" = ?').bind(body.userId).first<{ role: string | null; deletionRequestedAt: number | null }>();
                     if (!target) return c.json({ code: 'USER_NOT_FOUND' }, 404);
                     if (target.role !== 'user') return c.json({ code: 'ADMIN_ACCOUNT_PROTECTED' }, 403);
+                    if (target.deletionRequestedAt !== null) return c.json({ code: 'ACCOUNT_DELETION_PENDING' }, 409);
                 }
             }
         }
@@ -314,7 +317,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|select-account|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections|admin\/access\/resources|admin\/access\/resources\/detail|admin\/access\/roles|admin\/audit-logs|admin\/machines\/applications|admin\/machines\/applications\/detail|admin\/machines\/roles)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|select-account|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account-deleted|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections|admin\/access\/resources|admin\/access\/resources\/detail|admin\/access\/roles|admin\/audit-logs|admin\/machines\/applications|admin\/machines\/applications\/detail|admin\/machines\/roles)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);

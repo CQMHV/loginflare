@@ -31,6 +31,7 @@ import { cancelBrowserFlow, completeBrowserLogin, ensureBrowserFlow, startBrowse
 import { browserFlowId, browserFlowTargetAccount, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
 import { ApiResourcesPage, ApiResourceDetailPage, BusinessRolesPage, UserBusinessRoles, AuditLogsPage } from './AccessManagement';
 import { MachineApplicationsPage, MachineApplicationDetailPage, MachineRolesPage } from './Machines';
+import { AccountDeletion, AccountDeletionReceipt } from './AccountDeletion';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -716,7 +717,7 @@ function SecurityPage() {
             <TextField label={t('newPassword')} type="password" name="newPassword" autoComplete="new-password" value={newPassword} onValueChange={setNewPassword} minLength={8} maxLength={128} required supportingText={t('passwordHint')} />
             <TextField label={t('confirmPassword')} type="password" name="confirmPassword" autoComplete="new-password" value={confirmation} onValueChange={setConfirmation} minLength={8} maxLength={128} required />
         </SecurityDialog>}
-        <SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>}</>;
+        <SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /><AccountDeletion /></>}</>;
 }
 
 function formatDate(value: string | undefined, locale: Locale): string {
@@ -863,6 +864,7 @@ function LocaleRoutes() {
             <Route path="forgot-password" element={<AuthPage mode="forgot-password" />} />
             <Route path="reset-password" element={<AuthPage mode="reset-password" />} />
             <Route path="consent" element={<ConsentPage />} />
+            <Route path="account-deleted" element={<AccountDeletionReceipt locale={locale} />} />
             <Route element={<Protected />}>
                 <Route element={<AccountLayout />}>
                     <Route path="account" element={<ProfilePage />} />

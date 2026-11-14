@@ -9,8 +9,10 @@ import { resolveLocale } from './locale';
 import { browserAccountsEn, browserAccountsZh, browserAccountErrorsEn, browserAccountErrorsZh } from './browser-account-translations';
 import { accessEn, accessZh, accessErrorsEn, accessErrorsZh } from './access-translations';
 import { machinesEn, machinesZh, machineErrorsEn, machineErrorsZh } from './machine-translations';
+import { deletionEn, deletionZh, deletionErrorsEn, deletionErrorsZh } from './deletion-translations';
 
 const enUS = {
+    deletion: deletionEn,
     machines: machinesEn,
     access: accessEn,
     browserAccounts: browserAccountsEn,
@@ -271,6 +273,7 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    deletion: deletionZh,
     machines: machinesZh,
     access: accessZh,
     browserAccounts: browserAccountsZh,
@@ -539,6 +542,8 @@ Object.assign(enUS.errors, accessErrorsEn);
 Object.assign(zhCN.errors, accessErrorsZh);
 Object.assign(enUS.errors, machineErrorsEn);
 Object.assign(zhCN.errors, machineErrorsZh);
+Object.assign(enUS.errors, deletionErrorsEn);
+Object.assign(zhCN.errors, deletionErrorsZh);
 document.documentElement.lang = initialLocale;
 
 void i18n.use(initReactI18next).init({
