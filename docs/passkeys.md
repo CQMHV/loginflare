@@ -10,7 +10,7 @@ Use **Sign in with a passkey** on the login page, including after selecting a re
 
 Apply `0026_passkeys.sql` before this version. It adds the native credential table, an internal session reference, indexes and guards, without changing issuer, user IDs or keys. It is additive for older Workers. Remote migration approval and deployment are separate operations.
 
-Pending MFA login challenges issued before source binding was introduced must restart sign-in after upgrading. New challenges explicitly retain their passkey or password/provider source in the existing verification store; no additional migration is needed.
+Pending MFA login challenges issued before source binding was introduced must restart sign-in after upgrading. New challenges explicitly retain their passkey or password/provider source in the existing verification store; no additional migration is needed. If the credential is removed while MFA is pending, completion returns HTTP 400 with `PASSKEY_NOT_AVAILABLE`, including final-insert races. A credential already unavailable before verification does not consume a recovery code.
 
 `@better-auth/passkey@1.7.13` matches the locked Better Auth version. The browser helper is `@simplewebauthn/browser@13.3.0`. Both are MIT licensed; notices use the existing license generator. The helper handles serialization without requiring newer browser JSON APIs. Native verification runs in the existing Workers runtime, without a new binding or external verification service.
 

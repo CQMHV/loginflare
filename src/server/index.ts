@@ -25,6 +25,7 @@ import { dispatch, runScheduled } from './runtime';
 import { deletionRoutes } from './account-deletion-routes';
 import { webhooks } from './webhooks';
 import { collectWebhookHistory, deliverWebhooks } from './webhook-delivery';
+import type { AuthRequestState } from './auth-errors';
 
 const routes: Record<string, readonly string[]> = {
     '/passkey/generate-register-options': ['POST'],
@@ -287,7 +288,7 @@ app.all('/api/auth/*', async (c) => {
         }
     }
 
-    const delivery = { failed: false };
+    const delivery: AuthRequestState = { failed: false };
     if (path === '/social/start' && body.purpose && body.purpose !== 'login') {
         const identity = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
@@ -322,6 +323,9 @@ app.all('/api/auth/*', async (c) => {
     const response = (path === '/sign-out' ? await signOutBrowserAccount(c.env, c.req.raw.headers) : null) ?? await auth.handler(c.req.raw);
     if (delivery.failed) return c.json({ code: 'EMAIL_DELIVERY_FAILED' }, 503);
     if (response.status >= 500) {
+        if (delivery.failure === 'PASSKEY_NOT_AVAILABLE' && ['/passkey/verify-authentication', '/two-factor/verify-totp', '/two-factor/verify-backup-code'].includes(path)) {
+            return c.json({ code: 'PASSKEY_NOT_AVAILABLE' }, 400);
+        }
         // A secondary reservation can win after the signup preflight. The
         // database rolls back signup; expose the same address-conflict result.
         if (path === '/sign-up/email' && typeof body.email === 'string') {
@@ -329,8 +333,8 @@ app.all('/api/auth/*', async (c) => {
                 .bind(body.email.toLowerCase()).first();
             if (reserved) return c.json({ code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' }, 400);
         }
-        console.error(JSON.stringify({ event: 'auth_request_failed', path: logPath(c.req.path), status: response.status }));
-        return c.json({ code: 'REQUEST_FAILED' }, 503);
+        console.error(JSON.stringify({ event: 'auth_request_failed', requestId: c.req.header(auditRequestHeader), path: logPath(c.req.path), status: response.status, reason: delivery.failure ?? 'AUTH_INTERNAL_ERROR' }));
+        return c.json({ code: delivery.failure === 'TURNSTILE_UNAVAILABLE' ? 'TURNSTILE_UNAVAILABLE' : 'REQUEST_FAILED' }, 503);
     }
     return response;
 });

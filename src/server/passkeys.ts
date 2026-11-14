@@ -30,6 +30,7 @@ export function accountPasskeys(env: Env, rpName: string) {
         if (binding.passkeyId) {
             const flow = ctx.headers && await readBrowserFlow(env, ctx.headers);
             if (!flow || flow.id !== binding.browserFlowId || flow.status !== 'pending' || flow.userId !== binding.userId) fail();
+            if (!await env.DB.prepare('SELECT 1 FROM "passkey" WHERE "id" = ? AND "userId" = ?').bind(binding.passkeyId, binding.userId).first()) fail();
         }
         authentications.set(ctx.context, binding);
         return binding;

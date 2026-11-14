@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { isAPIError } from 'better-auth/api';
 import { admin, captcha, jwt, multiSession, twoFactor, username } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { z } from 'zod';
@@ -18,8 +19,9 @@ import { managementScopes } from '../shared/machines';
 import { defaultBranding } from '../shared/branding';
 import { accountDeletion } from './account-deletion';
 import { accountPasskeys } from './passkeys';
+import { classifyAuthFailure, type AuthRequestState } from './auth-errors';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
+export function createAuth(env: Env, delivery: AuthRequestState = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
     const multifactor = twoFactor({ issuer: brandName, allowPasswordless: true });
@@ -32,6 +34,18 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
         if (!credentialPaths.every((path) => passwordMfa({ ...context, path }))) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
         return passwordMfa(context) || context.path === '/callback/:id' || context.path === '/social/verify-email' || context.path === '/passkey/verify-authentication';
     };
+    const challenge = captcha({
+        provider: 'cloudflare-turnstile', secretKey: env.TURNSTILE_SECRET_KEY,
+        endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/emails/recovery/start', '/send-verification-email'],
+    });
+    const verifyChallenge = challenge.onRequest;
+    challenge.onRequest = async (request, context) => {
+        const result = await verifyChallenge(request, context);
+        // Upstream catches provider transport/HTTP errors and returns a 500
+        // before endpoint hooks run. Keep that phase distinct from storage errors.
+        if (result && 'response' in result && result.response.status >= 500) delivery.failure = 'TURNSTILE_UNAVAILABLE';
+        return result;
+    };
     async function send(user: { email: string; name: string; locale?: unknown }, url: string) {
         try {
             await sendAccountMail(env, user, url);
@@ -40,7 +54,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             throw error;
         }
     }
-    return betterAuth({
+    const auth = betterAuth({
         appName: brandName,
         baseURL: env.AUTH_URL,
         basePath: '/api/auth',
@@ -50,6 +64,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
         trustedOrigins: [env.AUTH_URL],
         telemetry: { enabled: false },
         logger: { disabled: true },
+        onAPIError: { throw: true },
         emailAndPassword: {
             enabled: true,
             requireEmailVerification: true,
@@ -156,12 +171,20 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                     return applicationPrivileges(env, management, clientId, ['create', 'update', 'rotate'].includes(action));
                 },
             }),
-            captcha({
-                provider: 'cloudflare-turnstile',
-                secretKey: env.TURNSTILE_SECRET_KEY,
-                endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/emails/recovery/start', '/send-verification-email'],
-            }),
+            challenge,
             auditAuthentication(env),
         ],
     });
+    const nativeHandler = auth.handler;
+    auth.handler = async (request) => {
+        try { return await nativeHandler(request); }
+        catch (error) {
+            if (isAPIError(error)) throw error;
+            // Better Call otherwise prints raw non-API errors even with the
+            // Better Auth logger disabled. Keep classification request-local.
+            delivery.failure = classifyAuthFailure(error);
+            return new Response(null, { status: 500, statusText: 'Internal Server Error' });
+        }
+    };
+    return auth;
 }

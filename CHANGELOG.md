@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Return an explicit passkey-unavailable 400 for interrupted MFA, including final session-insert races; retain 503 for actual storage failures.
+- Classify authentication service failures by request ID without raw error logging. Report Turnstile outages separately with localized retry guidance and preserve normal verification refusals.
+
 - Preserve the exact passkey source across TOTP/recovery-code login and reject removed credentials at the final session insert. Require pending MFA challenges without an authentication source to restart sign-in after upgrading.
 - Recover expired webhook leases as uncertain attempts instead of cancelling live subscriptions; fence completion writes by lease ownership and expiry.
 - Avoid default R2 bucket name collisions for long Worker names while preserving existing bindings and explicit resource names.

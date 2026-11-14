@@ -197,6 +197,7 @@ const enUS = {
     passwordMismatch: 'Your passwords do not match.',
     errors: {
         UNKNOWN_ERROR: 'We couldn’t complete this request. Please try again.',
+        TURNSTILE_UNAVAILABLE: 'Security verification is temporarily unavailable. Please try again.',
         INVALID_BACKUP_CODE: 'This recovery code is invalid or has already been used.',
         INVALID_TWO_FACTOR_COOKIE: 'Your sign-in challenge expired. Sign in again to continue.',
         TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: 'Too many attempts. Sign in again to start a new challenge.',
@@ -460,6 +461,7 @@ const zhCN: typeof enUS = {
     passwordMismatch: '两次输入的密码不一致。',
     errors: {
         UNKNOWN_ERROR: '无法完成此请求，请重试。',
+        TURNSTILE_UNAVAILABLE: '安全验证服务暂时不可用，请稍后重试。',
         INVALID_BACKUP_CODE: '此恢复码无效或已使用。',
         INVALID_TWO_FACTOR_COOKIE: '登录验证已过期，请返回重新登录。',
         TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: '尝试次数过多，请返回重新登录以开始新的验证。',

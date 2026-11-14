@@ -69,10 +69,13 @@ it.each(['totp', 'backup-code'] as const)('rejects %s completion after the authe
     const f = await fixture(), key = await register(f), setup = await enableMfa(f);
     const attempt = await login(f); expect(await attempt.result.json()).toMatchObject({ twoFactorRedirect: true });
     const before = await env.DB.prepare('SELECT count(*) n FROM session').first('n');
+    const backupCodes = await env.DB.prepare('SELECT "backupCodes" FROM "twoFactor" WHERE "userId" = ?').bind(f.identity.user.id).first('backupCodes');
     expect((await f.client.request('/api/auth/passkey/delete-passkey', { cookie: f.cookie, body: { id: key.id, password } })).status).toBe(200);
     const done = await f.client.request('/api/auth/two-factor/verify-' + method, { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers,
         body: { code: method === 'totp' ? await authenticatorCode(setup.totpURI) : setup.backupCodes[0] } });
-    expect(done.ok, await done.clone().text()).toBe(false);
+    expect(done.status, await done.clone().text()).toBe(400);
+    expect(await done.json()).toMatchObject({ code: 'PASSKEY_NOT_AVAILABLE' });
+    expect(await env.DB.prepare('SELECT "backupCodes" FROM "twoFactor" WHERE "userId" = ?').bind(f.identity.user.id).first('backupCodes')).toBe(backupCodes);
     expect(await env.DB.prepare('SELECT count(*) n FROM session').first('n')).toBe(before);
 });
 it.each(['totp', 'backup-code'] as const)('checks the passkey at the final %s session insertion', async (method) => {
@@ -83,8 +86,18 @@ it.each(['totp', 'backup-code'] as const)('checks the passkey at the final %s se
     f.client.bindings.DB = race.proxy;
     const done = await f.client.request('/api/auth/two-factor/verify-' + method, { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers,
         body: { code: method === 'totp' ? await authenticatorCode(setup.totpURI) : setup.backupCodes[0] } });
-    expect(race.invoked()).toBe(true); expect(done.ok).toBe(false);
+    expect(race.invoked()).toBe(true); expect(done.status).toBe(400);
+    expect(await done.json()).toMatchObject({ code: 'PASSKEY_NOT_AVAILABLE' });
     expect(await env.DB.prepare('SELECT count(*) n FROM session').first('n')).toBe(before);
+});
+it('keeps unrelated MFA session storage failures as service errors', async () => {
+    const f = await fixture(); await register(f); const setup = await enableMfa(f), attempt = await login(f);
+    expect(await attempt.result.json()).toMatchObject({ twoFactorRedirect: true });
+    const fault = interceptSql(env.DB, /insert into ["`]session["`]/i, async () => { throw new Error('D1_ERROR: failed query containing PASSKEY_NOT_AVAILABLE in unrelated data'); });
+    f.client.bindings.DB = fault.proxy;
+    const response = await f.client.request('/api/auth/two-factor/verify-totp', { cookie: attempt.cookie + '; ' + cookies(attempt.result), headers: attempt.headers, body: { code: await authenticatorCode(setup.totpURI) } });
+    expect(fault.invoked()).toBe(true); expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'REQUEST_FAILED' });
 });
 it('keeps a pending MFA usable when another passkey is removed', async () => {
     const f = await fixture(), other = await register(f); f.key = await authenticator();
