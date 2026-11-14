@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildMigrationBundle } from './migration-bundle.mjs';
 import { release } from './releases.mjs';
@@ -50,7 +51,9 @@ function cloudflare(token, account) {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const slug = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 function resourceName(value, worker, template, suffix = '') {
-    const selected = !value || value === template ? worker.slice(0, 63 - suffix.length).replace(/-+$/, '') + suffix : value;
+    const derived = worker.length + suffix.length <= 63 ? worker + suffix
+        : worker.slice(0, 63 - suffix.length - 13).replace(/-+$/, '') + '-' + createHash('sha256').update(worker).digest('hex').slice(0, 12) + suffix;
+    const selected = !value || value === template ? derived : value;
     if (!slug.test(selected) || selected.length > 63) throw new Error(`Invalid Cloudflare resource name: ${selected}.`);
     return selected;
 }

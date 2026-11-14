@@ -8,6 +8,8 @@
 
 登录域名须属于一个已接入 Cloudflare 的有效站点。账号须启用 R2；实际发信需要 Workers Paid 和 [Email Sending](https://developers.cloudflare.com/email-service/)。
 
+默认桶名由完整 Worker 名称派生。超过 R2 的 63 字符限制时，名称会包含确定的 SHA-256 摘要前缀，避免长名称同前缀的 Worker 共用桶。已有实例绑定和显式配置的桶名保持不变。
+
 1. 在 Cloudflare 填写三项 **Worker 机密**。如果导入已有仓库时连接页只提供构建变量，等 Worker 出现在控制台后，在其 **设置 → 变量和机密** 中填写。不要写入 Git 或构建变量。
 
    | 字段 | 示例或用途 |

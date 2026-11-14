@@ -8,6 +8,8 @@ Use the button for a new repository, or import your existing organization reposi
 
 You need an active Cloudflare zone for your login hostname, R2 enabled, and Workers Paid with [Email Sending](https://developers.cloudflare.com/email-service/) for real delivery.
 
+Default bucket names derive from the full Worker name. Names that would exceed R2's 63-character limit include a deterministic SHA-256 prefix, so Workers sharing a long name prefix receive different buckets. Existing live bindings and explicitly configured bucket names are preserved.
+
 1. Enter three **Worker secrets** in Cloudflare. If the existing repository import only offers build variables, add the values under the Worker’s **Settings → Variables and Secrets** when the Worker appears. Do not add them to build variables or Git.
 
    | Field | Example or purpose |

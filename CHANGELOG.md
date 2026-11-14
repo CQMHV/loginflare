@@ -4,6 +4,7 @@
 
 - Preserve the exact passkey source across TOTP/recovery-code login and reject removed credentials at the final session insert. Require pending MFA challenges without an authentication source to restart sign-in after upgrading.
 - Recover expired webhook leases as uncertain attempts instead of cancelling live subscriptions; fence completion writes by lease ownership and expiry.
+- Avoid default R2 bucket name collisions for long Worker names while preserving existing bindings and explicit resource names.
 
 - Replace browser maintenance upgrades with reviewed CLI releases and a fingerprinted first-installation flow. Keep private instance configuration and authentication material in a separate private R2 bucket; require migration 0023 and the new installation inputs.
 - Retire the old browser maintenance endpoints. The new installation flow does not adopt databases from that earlier flow; existing operators must review the documented upgrade and recovery boundary before rollout.
