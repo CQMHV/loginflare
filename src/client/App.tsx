@@ -33,6 +33,7 @@ import { ApiResourcesPage, ApiResourceDetailPage, BusinessRolesPage, UserBusines
 import { MachineApplicationsPage, MachineApplicationDetailPage, MachineRolesPage } from './Machines';
 import { AccountDeletion, AccountDeletionReceipt } from './AccountDeletion';
 import { authenticatePasskey, browserSupportsWebAuthn, cancelPasskey, Passkeys, passkeyError } from './Passkeys';
+import { WebhooksPage, WebhookDeliveriesPage } from './Webhooks';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -648,6 +649,7 @@ function AdminLayout() {
             <NavigationLink to={localizedPath(locale, 'admin/machines/applications')}><Icon name="sessions" />{t('machines.applications')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/machines/roles')}><Icon name="shield" />{t('machines.roles')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/audit-logs')}><Icon name="sessions" />{t('access.audit')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/webhooks')}><Icon name="globe" />{t('webhooks.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink></>} />;
 }
@@ -922,6 +924,8 @@ function LocaleRoutes() {
                         <Route path="admin/machines/applications/detail" element={<MachineApplicationDetailPage key={new URLSearchParams(search).get('clientId') ?? ''} locale={locale} />} />
                         <Route path="admin/machines/roles" element={<MachineRolesPage />} />
                         <Route path="admin/audit-logs" element={<AuditLogsPage locale={locale} />} />
+                        <Route path="admin/webhooks" element={<WebhooksPage locale={locale} />} />
+                        <Route path="admin/webhooks/deliveries" element={<WebhookDeliveriesPage locale={locale} />} />
                         <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
                         <Route path="admin/applications/detail" element={<ApplicationEditor key={`admin:${new URLSearchParams(search).get('clientId') ?? ''}`} locale={locale} />} />

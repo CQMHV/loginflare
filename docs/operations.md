@@ -8,6 +8,7 @@ Workers Logs contains structured `http_request` events: production samples succe
 
 Monitor readiness, 5xx rate and latency, `email_recovery_delivery_failed`, `database_maintenance_failed`, and deployment failure output. Other delivery errors follow the request failure path. Investigate repeated delivery failures without changing account-verification requirements. Inspect maintenance failures and oldest pending expiry work before increasing cleanup budgets. Never log request bodies, cookies, tokens, complete OAuth URLs or mail links.
 
+For configured account Webhooks, also inspect `webhook_delivery_failed`, `webhook_maintenance` and the oldest pending/failed delivery records. Receiver failures do not block login. Preserve the instance authentication secret with encrypted subscription keys; keep the separate receiver's secret, inbox deduplication and archive/checkpoint backups consistent. Use the [isolated event recovery exercise](webhooks.md#delivery-and-recovery) after relevant changes. Audit export failures appear in its independent Worker as `audit_export_failed`; bounded polling must catch up before the 90-day source retention expires.
 
 Before upgrading, identify the exact Worker, D1, media R2 and PRIVATE R2 bindings, issuer, migration ledger and pending migration hashes. Validate the previous Worker against any online migration before adding its digest to `migrations/online.json`; do not add approval merely because SQL executes. Preserve private installation material and its fingerprint.
 

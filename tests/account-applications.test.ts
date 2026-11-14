@@ -175,8 +175,8 @@ it('upgrades existing native consent, pending codes, issued offline grants and o
     const migrationIndex = env.TEST_MIGRATIONS.findIndex((migration) => migration.name.startsWith('0017_'));
     // Deletion cleanup depends on the 0017 projection; passkey guards in turn
     // depend on the deletion marker. Preserve that order in this legacy fixture.
-    const dependentMigrations = env.TEST_MIGRATIONS.filter((migration) => /^002[56]_/.test(migration.name));
-    const infrastructureMigrations = env.TEST_MIGRATIONS.slice(migrationIndex + 1).filter((migration) => !/^002[56]_/.test(migration.name));
+    const dependentMigrations = env.TEST_MIGRATIONS.filter((migration) => /^002[567]_/.test(migration.name));
+    const infrastructureMigrations = env.TEST_MIGRATIONS.slice(migrationIndex + 1).filter((migration) => !/^002[567]_/.test(migration.name));
     expect(migrationIndex).toBeGreaterThan(0);
     expect(infrastructureMigrations.length).toBeGreaterThan(0);
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.slice(0, migrationIndex));

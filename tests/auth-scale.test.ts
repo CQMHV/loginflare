@@ -74,7 +74,12 @@ it('skips runtime schema introspection while retaining an explicit schema gate',
 
 it.each(['table', 'column'] as const)('rejects an explicit schema gate with a missing %s', async (missing) => {
     if (missing === 'table') await env.DB.prepare('DROP TABLE "session"').run();
-    else await env.DB.prepare('ALTER TABLE "user" DROP COLUMN "locale"').run();
+    else {
+        // Deliberately corrupt the fixture schema, including the fact trigger
+        // that now depends on locale; then exercise the explicit schema gate.
+        await env.DB.prepare('DROP TRIGGER "business_user_updated"').run();
+        await env.DB.prepare('ALTER TABLE "user" DROP COLUMN "locale"').run();
+    }
     const context = await createAuth(harness().bindings).$context;
     await expect(context.explicitSchemaCheck!()).rejects.toThrow();
 });

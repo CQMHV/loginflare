@@ -1,0 +1,9 @@
+{
+    "$schema": "../../node_modules/wrangler/config-schema.json",
+    "name": "loginflare-webhook-receiver-example",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-11-14",
+    "observability": { "enabled": true, "redact_query_string": true, "logs": { "invocation_logs": false } },
+    "d1_databases": [{ "binding": "DB", "database_name": "loginflare-webhook-inbox-example", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+    "secrets": { "required": ["WEBHOOK_SECRET"] }
+}

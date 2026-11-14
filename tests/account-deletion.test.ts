@@ -73,6 +73,7 @@ it('freezes the user and owned applications atomically and completes without del
     expect((await request(f, p.preview)).status).toBe(403);
     await collect();
     expect(await env.DB.prepare('SELECT id FROM user WHERE id = ?').bind(f.identity.user.id).first()).toBeNull();
+    expect((await env.DB.prepare("SELECT type, data FROM businessEvent WHERE subjectId = ? AND type IN ('user.deleted','user.suspended')").bind(f.identity.user.id).all()).results).toEqual([{ type: 'user.deleted', data: '{}' }]);
     expect(await env.DB.prepare('SELECT clientId FROM oauthClient WHERE clientId = ?').bind(app.application.clientId).first()).toBeNull();
     expect((await session(f.client, otherCookie))!.user.id).toBe(other.user.id);
     expect(await env.DB.prepare('SELECT status FROM accountDeletion WHERE id = ?').bind(result.operationId).first('status')).toBe('complete');
