@@ -24,6 +24,8 @@ async function account(context: BrowserContext, security: SecurityCapabilities) 
         const path = new URL(route.request().url()).pathname;
         if (path === '/api/auth/get-session') await route.fulfill({ json: identity });
         else if (path === '/api/auth/social/security') await route.fulfill({ json: security });
+        // The security page also reads passkeys for this synthetic session.
+        else if (path === '/api/auth/passkey/list-user-passkeys') await route.fulfill({ json: [] });
         else if (path === '/api/auth/verify-password') await route.fulfill(route.request().postDataJSON().password === 'test-only-password'
             ? { json: { status: true } } : { status: 400, json: { code: 'INVALID_PASSWORD' } });
         else if (path === '/api/auth/social/start') {
@@ -41,6 +43,7 @@ async function account(context: BrowserContext, security: SecurityCapabilities) 
 test('hides third-party account controls when no provider or identity exists', async ({ page, context }) => {
     await account(context, { hasPassword: true, providers: [], identities: [] });
     await page.goto('/zh-cn/account/security');
+    await expect(page.getByText('尚未登记通行密钥。', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: '修改密码', exact: true })).toBeVisible();
     await expect(page.getByRole('region', { name: '第三方账号', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /绑定|解绑/ })).toHaveCount(0);

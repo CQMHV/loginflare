@@ -231,12 +231,13 @@ test('completes registration, recovery, account management, and administrator co
     await switchArea(page, 'Administration');
     await expect(page).toHaveURL('/en-us/admin/users');
     const administrationNavigation = page.getByRole('navigation', { name: 'Administration navigation', exact: true });
-    await expect(administrationNavigation.getByRole('link')).toHaveCount(9);
+    await expect(administrationNavigation.getByRole('link')).toHaveCount(10);
     await expect(administrationNavigation.getByRole('link', { name: 'Users', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'Applications', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'API resources', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'Business roles', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'Audit logs', exact: true })).toBeVisible();
+    await expect(administrationNavigation.getByRole('link', { name: 'Webhooks', exact: true })).toHaveAttribute('href', '/en-us/admin/webhooks');
     await expect(administrationNavigation.getByRole('link', { name: 'Machine applications', exact: true })).toBeVisible();
     await expect(administrationNavigation.getByRole('link', { name: 'Machine roles', exact: true })).toBeVisible();
     await expect(accountNavigation).toHaveCount(0);
@@ -259,7 +260,9 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByRole('button', { name: /^切换区域:/ })).toHaveAccessibleName('切换区域: 管理后台');
     await page.goto('/zh-cn/admin');
     await expect(page).toHaveURL('/zh-cn/admin/users');
-    await expect(page.getByRole('navigation', { name: '管理导航', exact: true }).getByRole('link')).toHaveCount(9);
+    const chineseAdministrationNavigation = page.getByRole('navigation', { name: '管理导航', exact: true });
+    await expect(chineseAdministrationNavigation.getByRole('link')).toHaveCount(10);
+    await expect(chineseAdministrationNavigation.getByRole('link', { name: '业务事件通知', exact: true })).toHaveAttribute('href', '/zh-cn/admin/webhooks');
     await expect(page.getByRole('navigation', { name: '账号导航', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('admin-mobile-zh-cn.png'), fullPage: true });
