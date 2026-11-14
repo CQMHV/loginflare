@@ -25,6 +25,13 @@ import { dispatch, runScheduled } from './runtime';
 import { deletionRoutes } from './account-deletion-routes';
 
 const routes: Record<string, readonly string[]> = {
+    '/passkey/generate-register-options': ['POST'],
+    '/passkey/generate-authenticate-options': ['GET'],
+    '/passkey/verify-registration': ['POST'],
+    '/passkey/verify-authentication': ['POST'],
+    '/passkey/list-user-passkeys': ['GET'],
+    '/passkey/update-passkey': ['POST'],
+    '/passkey/delete-passkey': ['POST'],
     '/sign-up/email': ['POST'],
     '/sign-in/email': ['POST'],
     '/sign-in/username': ['POST'],
@@ -68,6 +75,11 @@ const routes: Record<string, readonly string[]> = {
 };
 
 const fields: Record<string, readonly string[]> = {
+    '/passkey/generate-register-options': ['password'],
+    '/passkey/verify-registration': ['response', 'name'],
+    '/passkey/verify-authentication': ['response', 'oauth_query'],
+    '/passkey/update-passkey': ['id', 'name', 'password'],
+    '/passkey/delete-passkey': ['id', 'password'],
     '/sign-up/email': ['name', 'username', 'email', 'password', 'locale', 'callbackURL'],
     '/sign-in/email': ['email', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
     '/sign-in/username': ['username', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
@@ -103,6 +115,7 @@ const fields: Record<string, readonly string[]> = {
 };
 
 const privatePaths = new Set(['/update-user', '/verify-password', '/change-password', '/revoke-session', '/revoke-other-sessions',
+    '/passkey/generate-register-options', '/passkey/verify-registration', '/passkey/list-user-passkeys', '/passkey/update-passkey', '/passkey/delete-passkey',
     '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove',
     '/two-factor/enable', '/two-factor/disable', '/two-factor/generate-backup-codes',
     '/social/security', '/social/unlink', '/social/set-password', '/social/avatar-source']);

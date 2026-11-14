@@ -1,5 +1,6 @@
 # Account deletion
 
+With Passkeys enabled, migration 0026 and the updated collector append cleanup for WebAuthn enrollment/permit records and credentials without reordering existing durable stages. See [Passkeys](passkeys.md).
 
 [简体中文](account-deletion.zh-CN.md)
 

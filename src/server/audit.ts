@@ -119,6 +119,8 @@ async function requestActor(env: Env, headers: Headers, browserOperation = false
 }
 
 const nativeEvents: Record<string, string> = {
+    '/passkey/verify-authentication': 'authentication.sign_in', '/passkey/verify-registration': 'passkey.created',
+    '/passkey/update-passkey': 'passkey.renamed', '/passkey/delete-passkey': 'passkey.deleted',
     '/sign-up/email': 'user.registered', '/verify-email': 'email.verified', '/sign-in/email': 'authentication.sign_in', '/sign-in/username': 'authentication.sign_in',
     '/sign-out': 'authentication.sign_out', '/update-user': 'user.updated', '/change-password': 'password.changed', '/reset-password': 'password.reset',
     '/revoke-session': 'session.revoked', '/revoke-other-sessions': 'session.others_revoked',

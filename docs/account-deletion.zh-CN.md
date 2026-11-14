@@ -1,5 +1,6 @@
 # 账号注销
 
+启用通行密钥后，迁移 0026 及新版清理器追加清理 WebAuthn 登记/许可记录和凭据，不重排既有持久化阶段，详见[通行密钥](passkeys.zh-CN.md)。
 
 [English](account-deletion.md)
 

@@ -115,6 +115,8 @@ export async function collectAccountDeletions(env: Pick<Env, 'DB'>, budget: { av
         // Keep the single primary reservation until the parent DELETE removes
         // it atomically. Releasing it in a previous Cron would split uniqueness.
         { table: 'userEmail', where: '"userId" = ? AND "email" <> (SELECT "email" FROM "user" WHERE "id" = ?) COLLATE NOCASE', values: [job.userId, job.userId] },
+        { table: 'verification', where: `CASE WHEN json_valid("value") THEN json_extract("value", '$.userData.id') END = ? OR CASE WHEN json_valid("value") THEN json_extract("value", '$.userId') END = ?`, values: [job.userId, job.userId] },
+        { table: 'passkey', where: '"userId" = ?', values: [job.userId] },
     ];
     const ownedLease = `EXISTS (SELECT 1 FROM "accountDeletion" WHERE "id" = ? AND "lease" = ? AND "leaseUntil" > ? AND "status" = 'pending')`;
     try {

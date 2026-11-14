@@ -10,8 +10,10 @@ import { browserAccountsEn, browserAccountsZh, browserAccountErrorsEn, browserAc
 import { accessEn, accessZh, accessErrorsEn, accessErrorsZh } from './access-translations';
 import { machinesEn, machinesZh, machineErrorsEn, machineErrorsZh } from './machine-translations';
 import { deletionEn, deletionZh, deletionErrorsEn, deletionErrorsZh } from './deletion-translations';
+import { passkeysEn, passkeysZh, passkeyErrorsEn, passkeyErrorsZh } from './passkey-translations';
 
 const enUS = {
+    passkeys: passkeysEn,
     deletion: deletionEn,
     machines: machinesEn,
     access: accessEn,
@@ -273,6 +275,7 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    passkeys: passkeysZh,
     deletion: deletionZh,
     machines: machinesZh,
     access: accessZh,
@@ -543,6 +546,8 @@ Object.assign(zhCN.errors, accessErrorsZh);
 Object.assign(enUS.errors, machineErrorsEn);
 Object.assign(zhCN.errors, machineErrorsZh);
 Object.assign(enUS.errors, deletionErrorsEn);
+Object.assign(enUS.errors, passkeyErrorsEn);
+Object.assign(zhCN.errors, passkeyErrorsZh);
 Object.assign(zhCN.errors, deletionErrorsZh);
 document.documentElement.lang = initialLocale;
 

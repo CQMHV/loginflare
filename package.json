@@ -35,6 +35,7 @@
     },
     "dependencies": {
         "@better-auth/oauth-provider": "1.7.13",
+        "@better-auth/passkey": "1.7.13",
         "@dnd-kit/dom": "0.5.3",
         "@dnd-kit/react": "0.5.3",
         "@fontsource-variable/noto-sans-sc": "5.3.1",
@@ -42,6 +43,7 @@
         "@material-symbols/svg-500": "0.45.8",
         "@material/material-color-utilities": "0.3.0",
         "@material/web": "2.5.0",
+        "@simplewebauthn/browser": "13.3.0",
         "@tanstack/react-query": "5.105.0",
         "@xmldom/xmldom": "0.9.12",
         "better-auth": "1.7.13",

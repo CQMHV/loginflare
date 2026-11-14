@@ -17,6 +17,7 @@ import { apiAccessClaims } from './api-access-policy';
 import { managementScopes } from '../shared/machines';
 import { defaultBranding } from '../shared/branding';
 import { accountDeletion } from './account-deletion';
+import { accountPasskeys } from './passkeys';
 
 export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
     validateConfig(env);
@@ -29,7 +30,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
     const passwordMfa = credentialHook.matcher;
     credentialHook.matcher = (context) => {
         if (!credentialPaths.every((path) => passwordMfa({ ...context, path }))) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
-        return passwordMfa(context) || context.path === '/callback/:id' || context.path === '/social/verify-email';
+        return passwordMfa(context) || context.path === '/callback/:id' || context.path === '/social/verify-email' || context.path === '/passkey/verify-authentication';
     };
     async function send(user: { email: string; name: string; locale?: unknown }, url: string) {
         try {
@@ -79,7 +80,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             changeEmail: { enabled: false },
             deleteUser: { enabled: false },
         },
-        session: { cookieCache: { enabled: false }, additionalFields: { socialFlowId: { type: 'string', required: false, input: false } } },
+        session: { cookieCache: { enabled: false }, additionalFields: { socialFlowId: { type: 'string', required: false, input: false }, passkeyId: { type: 'string', required: false, input: false, returned: false } } },
         advanced: {
             database: { validateSchema: false },
             useSecureCookies: env.APP_ENV !== 'development',
@@ -91,6 +92,12 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             window: 60,
             max: 100,
             customRules: {
+                '/passkey/generate-register-options': { window: 60, max: 5 },
+                '/passkey/verify-registration': { window: 60, max: 5 },
+                '/passkey/generate-authenticate-options': { window: 60, max: 20 },
+                '/passkey/verify-authentication': { window: 60, max: 10 },
+                '/passkey/delete-passkey': { window: 60, max: 5 },
+                '/passkey/update-passkey': { window: 60, max: 5 },
                 '/sign-in/email': { window: 60, max: 5 },
                 '/sign-in/username': { window: 60, max: 5 },
                 '/sign-up/email': { window: 60, max: 3 },
@@ -117,6 +124,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             accountDeletion(env, (ctx, code) => multifactor.endpoints.verifyTOTP({ ...ctx, body: { code } })),
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
             username({ displayUsername: false }),
+            accountPasskeys(env, brandName),
             multifactor,
             socialAuthentication(env, selected),
             browserSessionPlugin(env),

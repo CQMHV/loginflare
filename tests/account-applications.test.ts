@@ -173,10 +173,10 @@ it.each(['authorization_code', 'refresh_token'] as const)('prevents an actual in
 it('upgrades existing native consent, pending codes, issued offline grants and opaque verification values without a revocation gap', async () => {
     await reset();
     const migrationIndex = env.TEST_MIGRATIONS.findIndex((migration) => migration.name.startsWith('0017_'));
-    // Deletion cleanup depends on the 0017 projection. Preserve that order
-    // in this legacy fixture.
-    const dependentMigrations = env.TEST_MIGRATIONS.filter((migration) => /^0025_/.test(migration.name));
-    const infrastructureMigrations = env.TEST_MIGRATIONS.slice(migrationIndex + 1).filter((migration) => !/^0025_/.test(migration.name));
+    // Deletion cleanup depends on the 0017 projection; passkey guards in turn
+    // depend on the deletion marker. Preserve that order in this legacy fixture.
+    const dependentMigrations = env.TEST_MIGRATIONS.filter((migration) => /^002[56]_/.test(migration.name));
+    const infrastructureMigrations = env.TEST_MIGRATIONS.slice(migrationIndex + 1).filter((migration) => !/^002[56]_/.test(migration.name));
     expect(migrationIndex).toBeGreaterThan(0);
     expect(infrastructureMigrations.length).toBeGreaterThan(0);
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.slice(0, migrationIndex));
