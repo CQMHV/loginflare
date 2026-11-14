@@ -103,6 +103,29 @@ it('recovers a lost completion write without pretending that a successful receiv
     expect((await delivery())!.status).toBe('succeeded'); expect((await delivery())!.totalAttempts).toBe(2);
     expect((await env.DB.prepare('SELECT outcome,code FROM webhookAttempt ORDER BY number').all()).results).toEqual([{ outcome: 'uncertain', code: 'WORKER_INTERRUPTED' }, { outcome: 'succeeded', code: null }]);
 });
+it.each(['claim', 'dns', 'completion'] as const)('recovers an expired lease at %s without cancelling a live subscription', async (boundary) => {
+    await subscription(['user.created']); await event();
+    const expire = () => env.DB.prepare('UPDATE webhookDelivery SET leaseUntil = 1').run();
+    const fault = interceptSql(env.DB, boundary === 'claim' ? /SELECT d\.\*, s\."url"/ : /UPDATE "webhookAttempt" SET "outcome" = \?/, expire);
+    if (boundary === 'dns') vi.mocked(resolve4).mockImplementationOnce(async () => { await expire(); return ['93.184.216.34']; });
+    await deliverWebhooks(boundary === 'dns' ? env : { ...env, DB: fault.proxy }, { maximum: 1 });
+    expect(sent).toHaveLength(boundary === 'completion' ? 1 : 0);
+    const before = (await delivery())!;
+    expect(before.status).toBe('pending'); expect(before.attempts).toBe(0); expect(before.lastCode).toBeNull();
+    expect(await env.DB.prepare('SELECT outcome FROM webhookAttempt').first('outcome')).toBe('pending');
+    await deliverWebhooks(env, { maximum: 1 });
+    expect((await delivery())!.status).toBe('succeeded'); expect((await delivery())!.attempts).toBe(1);
+    expect((await delivery())!.eventId).toBe(before.eventId);
+    expect((await env.DB.prepare('SELECT outcome,code FROM webhookAttempt ORDER BY number').all()).results).toEqual([{ outcome: 'uncertain', code: 'WORKER_INTERRUPTED' }, { outcome: 'succeeded', code: null }]);
+});
+it.each(['claim', 'completion'] as const)('does not settle an attempt after another worker takes ownership at %s', async (boundary) => {
+    await subscription(['user.created']); await event();
+    const fault = interceptSql(env.DB, boundary === 'claim' ? /SELECT d\.\*, s\."url"/ : /UPDATE "webhookAttempt" SET "outcome" = \?/, () => env.DB.prepare('UPDATE webhookDelivery SET lease = ?, leaseUntil = ?').bind('new-owner', Date.now() + 30_000).run());
+    await deliverWebhooks({ ...env, DB: fault.proxy }, { maximum: 1 });
+    expect(sent).toHaveLength(boundary === 'claim' ? 0 : 1); expect((await delivery())!.status).toBe('pending'); expect((await delivery())!.attempts).toBe(0);
+    expect(await env.DB.prepare('SELECT lease FROM webhookDelivery').first('lease')).toBe('new-owner');
+    expect(await env.DB.prepare('SELECT outcome FROM webhookAttempt').first('outcome')).toBe('pending');
+});
 it.each([{ status: 302, headers: new Headers({ Location: 'http://127.0.0.1/internal' }), code: 'REDIRECT_REJECTED' }, { status: 200, headers: new Headers({ 'Content-Length': '65537' }), code: 'RESPONSE_TOO_LARGE' }])('rejects unsafe receiver responses: $code', async ({ status, headers, code }) => {
     await subscription(['user.created']); await event(); reply = () => new Response(null, { status, headers });
     await deliverWebhooks(env); expect(sent).toHaveLength(1); expect((await delivery())!.lastCode).toBe(code);

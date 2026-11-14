@@ -10,8 +10,12 @@ class DeliveryError extends Error { constructor(readonly code: string, readonly 
 const liveSubscription = `EXISTS (SELECT 1 FROM "webhookSubscription" s JOIN "businessEvent" e ON e."id" = d."eventId" WHERE s."id" = d."subscriptionId" AND s."enabled" = 1 AND s."generation" = d."generation" AND EXISTS (SELECT 1 FROM json_each(s."events") WHERE value = e."type"))`;
 
 async function send(env: Env, job: Job, lease: string): Promise<number> {
-    const current = () => env.DB.prepare(`SELECT 1 FROM "webhookDelivery" d WHERE d."id" = ? AND d."lease" = ? AND d."leaseUntil" > ? AND d."status" = 'pending' AND ${liveSubscription}`).bind(job.id, lease, Date.now()).first();
-    if (!await current()) throw new DeliveryError('SUBSCRIPTION_CHANGED');
+    const current = async () => {
+        const row = await env.DB.prepare(`SELECT ${liveSubscription} AS "eligible" FROM "webhookDelivery" d WHERE d."id" = ? AND d."lease" = ? AND d."leaseUntil" > ? AND d."status" = 'pending'`).bind(job.id, lease, Date.now()).first<{ eligible: number }>();
+        if (!row) throw new DeliveryError('LEASE_LOST');
+        if (!row.eligible) throw new DeliveryError('SUBSCRIPTION_CHANGED');
+    };
+    await current();
     let url: URL;
     try { url = publicUrl(job.url); } catch { throw new DeliveryError('INVALID_TARGET'); }
     const signal = AbortSignal.timeout(5000);
@@ -24,7 +28,7 @@ async function send(env: Env, job: Job, lease: string): Promise<number> {
     const body = JSON.stringify(event), timestamp = String(Math.floor(Date.now() / 1000));
     const signature = await webhookSignature(secret, timestamp, body);
     if (signal.aborted) throw new DeliveryError('TIMEOUT');
-    if (!await current()) throw new DeliveryError('SUBSCRIPTION_CHANGED');
+    await current();
     let response: Response;
     try { response = await within(fetch(url, { method: 'POST', redirect: 'manual', credentials: 'omit', signal, body, headers: {
         'Content-Type': 'application/json', 'Loginflare-Event-Id': job.eventId, 'Loginflare-Delivery-Id': job.id,
@@ -69,20 +73,26 @@ export async function deliverWebhooks(env: Env, options: { maximum?: number; now
         ]);
         if (!result[0]!.meta.changes) continue;
         const job = await env.DB.prepare(`SELECT d.*, s."url", s."secret", e."type", e."subjectId", e."data", e."createdAt" AS "occurredAt" FROM "webhookDelivery" d JOIN "webhookSubscription" s ON s."id" = d."subscriptionId" JOIN "businessEvent" e ON e."id" = d."eventId" WHERE d."id" = ? AND d."lease" = ?`).bind(candidate, lease).first<Job>();
-        if (!job) throw new Error('WEBHOOK_CLAIM_LOST');
+        if (!job) break;
         attempted++;
         let status: number | null = null, code: string | null = null;
         try { status = await send(env, job, lease); if (status < 200 || status >= 300) code = 'HTTP_ERROR'; }
         catch (error) { code = error instanceof DeliveryError ? error.code : 'DELIVERY_FAILED'; status = error instanceof DeliveryError ? error.httpStatus ?? null : null; }
+        // Leave an expired/lost lease unsettled so its next owner can record an
+        // uncertain attempt and retry the same event without spending a retry.
+        if (code === 'LEASE_LOST') break;
         const cancelled = code === 'SUBSCRIPTION_CHANGED', success = code === null;
         const finished = cancelled || success || job.attempts >= delays.length, completed = now();
         const outcome = cancelled ? 'cancelled' : success ? 'succeeded' : finished ? 'failed' : 'pending';
-        await env.DB.batch([
-            env.DB.prepare(`UPDATE "webhookAttempt" SET "outcome" = ?, "code" = ?, "httpStatus" = ?, "completedAt" = ?, "expiresAt" = ? WHERE "id" = ? AND EXISTS (SELECT 1 FROM "webhookDelivery" WHERE "id" = ? AND "lease" = ?)`)
-                .bind(success ? 'succeeded' : 'failed', code, status, completed, completed + retention, lease, job.id, lease),
-            env.DB.prepare(`UPDATE "webhookDelivery" SET "status" = ?, "attempts" = "attempts" + 1, "lastCode" = ?, "httpStatus" = ?, "nextAttemptAt" = ?, "completedAt" = ?, "expiresAt" = ?, "lease" = NULL, "leaseUntil" = 0 WHERE "id" = ? AND "lease" = ?`)
-                .bind(outcome, code, status, finished ? completed : completed + delays[job.attempts]!, finished ? completed : null, finished ? completed + retention : null, job.id, lease),
+        const settled = await env.DB.batch([
+            env.DB.prepare(`UPDATE "webhookAttempt" SET "outcome" = ?, "code" = ?, "httpStatus" = ?, "completedAt" = ?, "expiresAt" = ? WHERE "id" = ? AND "outcome" = 'pending' AND EXISTS (SELECT 1 FROM "webhookDelivery" WHERE "id" = ? AND "lease" = ? AND "status" = 'pending' AND "leaseUntil" > max(?, unixepoch('subsec') * 1000))`)
+                .bind(success ? 'succeeded' : 'failed', code, status, completed, completed + retention, lease, job.id, lease, completed),
+            // Both writes are one transaction: settle only when its first
+            // statement accepted this attempt under a still-live lease.
+            env.DB.prepare(`UPDATE "webhookDelivery" SET "status" = ?, "attempts" = "attempts" + 1, "lastCode" = ?, "httpStatus" = ?, "nextAttemptAt" = ?, "completedAt" = ?, "expiresAt" = ?, "lease" = NULL, "leaseUntil" = 0 WHERE "id" = ? AND "lease" = ? AND "status" = 'pending' AND EXISTS (SELECT 1 FROM "webhookAttempt" WHERE "id" = ? AND "outcome" IN ('succeeded','failed') AND "completedAt" = ?)`)
+                .bind(outcome, code, status, finished ? completed : completed + delays[job.attempts]!, finished ? completed : null, finished ? completed + retention : null, job.id, lease, lease, completed),
         ]);
+        if (!settled[1]!.meta.changes) break;
     }
     return { attempted, cancelled: cancelled?.[0]?.meta.changes ?? 0 };
 }
