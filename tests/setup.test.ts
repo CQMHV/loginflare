@@ -102,11 +102,41 @@ it('continues setup across Worker builds, creates one key, and removes only the 
     expect(f.patches).toEqual([{ secrets: { CF_SETUP_TOKEN: null, SETUP_ORIGIN: null, SETUP_ADMIN_EMAIL: null } }]);
     expect(f.secrets).toEqual(['UNRELATED']);
     const rebuilt = { ...f.deployment, CF_SETUP_TOKEN: undefined, SETUP_ORIGIN: undefined, SETUP_ADMIN_EMAIL: undefined, LOGINFLARE_BUILD_ID: 'new-build' };
-    expect((await f.request('/api/health', undefined, canonical, rebuilt)).status).toBe(503);
+    expect((await f.request('/api/health', undefined, canonical, rebuilt)).status).toBe(200);
+    expect((await f.request('/api/readiness', undefined, canonical, rebuilt)).status).toBe(503);
     expect((await f.request('/', undefined, progress, rebuilt)).headers.get('Location')).toBe(canonical + '/setup');
     expect((await instanceEnv(rebuilt, initial!)).BETTER_AUTH_SECRET).toBe((await instanceEnv(f.deployment, initial!)).BETTER_AUTH_SECRET);
     expect((await f.request('/api/setup/status', undefined, progress, rebuilt)).status).toBe(200);
     expect((await f.request('/api/maintenance/status')).status).toBe(404);
+});
+
+it('checks uncached instance material for readiness and keeps liveness independent', async () => {
+    const f = fixture();
+    await f.initialize();
+    await env.DB.prepare('UPDATE lfInstallation SET completedAt = ?').bind(Date.now()).run();
+    const row = (await readInstallation(env.DB))!;
+    await instanceEnv(f.deployment, row);
+    const ready = await f.request('/api/readiness');
+    expect(ready.status).toBe(200);
+    expect(ready.headers.get('Cache-Control')).toBe('no-store');
+    const original = await (await f.deployment.PRIVATE!.get('installation.json'))!.text();
+    await f.deployment.PRIVATE!.put('installation.json', original + ' ');
+    expect(await (await f.request('/api/readiness')).json()).toEqual({ status: 'unavailable' });
+    expect((await f.request('/api/readiness')).status).toBe(503);
+    expect((await f.request('/api/health')).status).toBe(200);
+    await f.deployment.PRIVATE!.delete('installation.json');
+    expect((await f.request('/api/readiness')).status).toBe(503);
+});
+
+it('does not report dependency failures as healthy readiness', async () => {
+    const f = fixture();
+    const prepare = vi.spyOn(env.DB, 'prepare').mockImplementation(() => { throw new Error('private database failure'); });
+    try {
+        expect((await f.request('/api/health')).status).toBe(200);
+        const response = await f.request('/api/readiness');
+        expect(response.status).toBe(503);
+        expect(await response.text()).not.toContain('private database failure');
+    } finally { prepare.mockRestore(); }
 });
 
 it('reports a conflicting DNS record without overwriting it', async () => {

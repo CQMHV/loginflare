@@ -22,8 +22,19 @@ import { auditLogs, auditRequestHeader, observeAudit } from './audit';
 import { machines } from './machines';
 import { managementApi } from './management-api';
 import { dispatch, runScheduled } from './runtime';
+import { deletionRoutes } from './account-deletion-routes';
+import { webhooks } from './webhooks';
+import { collectWebhookHistory, deliverWebhooks } from './webhook-delivery';
+import type { AuthRequestState } from './auth-errors';
 
 const routes: Record<string, readonly string[]> = {
+    '/passkey/generate-register-options': ['POST'],
+    '/passkey/generate-authenticate-options': ['GET'],
+    '/passkey/verify-registration': ['POST'],
+    '/passkey/verify-authentication': ['POST'],
+    '/passkey/list-user-passkeys': ['GET'],
+    '/passkey/update-passkey': ['POST'],
+    '/passkey/delete-passkey': ['POST'],
     '/sign-up/email': ['POST'],
     '/sign-in/email': ['POST'],
     '/sign-in/username': ['POST'],
@@ -67,6 +78,11 @@ const routes: Record<string, readonly string[]> = {
 };
 
 const fields: Record<string, readonly string[]> = {
+    '/passkey/generate-register-options': ['password'],
+    '/passkey/verify-registration': ['response', 'name'],
+    '/passkey/verify-authentication': ['response', 'oauth_query'],
+    '/passkey/update-passkey': ['id', 'name', 'password'],
+    '/passkey/delete-passkey': ['id', 'password'],
     '/sign-up/email': ['name', 'username', 'email', 'password', 'locale', 'callbackURL'],
     '/sign-in/email': ['email', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
     '/sign-in/username': ['username', 'password', 'rememberMe', 'callbackURL', 'oauth_query'],
@@ -102,6 +118,7 @@ const fields: Record<string, readonly string[]> = {
 };
 
 const privatePaths = new Set(['/update-user', '/verify-password', '/change-password', '/revoke-session', '/revoke-other-sessions',
+    '/passkey/generate-register-options', '/passkey/verify-registration', '/passkey/list-user-passkeys', '/passkey/update-passkey', '/passkey/delete-passkey',
     '/emails', '/emails/add', '/emails/resend', '/emails/verify', '/emails/set-primary', '/emails/remove',
     '/two-factor/enable', '/two-factor/disable', '/two-factor/generate-backup-codes',
     '/social/security', '/social/unlink', '/social/set-password', '/social/avatar-source']);
@@ -110,6 +127,9 @@ const app = new Hono<{ Bindings: Env }>();
 function logPath(path: string): string {
     if (path.startsWith('/api/management/')) return '/api/management/v1/:resource';
     if (path.startsWith('/api/admin/machines/')) return '/api/admin/machines/:resource';
+    if (path === '/api/admin/webhooks' || path === '/api/admin/webhooks/deliveries') return path;
+    if (/^\/api\/admin\/webhooks\/deliveries\/[^/]+(?:\/retry)?$/.test(path)) return '/api/admin/webhooks/deliveries/:id';
+    if (/^\/api\/admin\/webhooks\/[^/]+(?:\/rotate-secret)?$/.test(path)) return '/api/admin/webhooks/:id';
     if (path === '/api/admin/audit-logs') return path;
     if (/^\/api\/admin\/audit-logs\/[^/]+$/.test(path)) return '/api/admin/audit-logs/:id';
     if (/^\/api\/admin\/access\/(resources|roles|permissions)$/.test(path)) return path;
@@ -182,6 +202,9 @@ app.use('/api/*', async (c, next) => {
     await next();
     c.header('Cache-Control', 'no-store');
     c.header('X-Request-ID', requestId);
+    if (c.res.status < 400 && (!['GET', 'HEAD'].includes(c.req.method) || c.req.path === '/api/auth/verify-email' || c.req.path.startsWith('/api/auth/callback/'))) {
+        c.executionCtx.waitUntil(deliverWebhooks(c.env).catch(() => { console.error(JSON.stringify({ event: 'webhook_delivery_failed' })); }));
+    }
     if (c.env.APP_ENV === 'development' || c.res.status >= 500 || crypto.getRandomValues(new Uint32Array(1))[0]! < 0x1_0000_0000 * 0.01) {
         console.log(JSON.stringify({ event: 'http_request', requestId, method: c.req.method, path: logPath(c.req.path), status: c.res.status, durationMs: Date.now() - started }));
     }
@@ -195,7 +218,6 @@ app.use('/api/*', (c, next) => {
 });
 app.use('/api/*', observeAudit);
 
-app.get('/api/health', (c) => c.json({ status: 'ok' }));
 app.get('/api/config', (c) => {
     validateConfig(c.env);
     return c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY });
@@ -204,11 +226,13 @@ app.get('/api/config', (c) => {
 app.route('/api/admin/applications', applications);
 app.route('/api/admin/access', accessManagement);
 app.route('/api/admin/audit-logs', auditLogs);
+app.route('/api/admin/webhooks', webhooks);
 app.route('/api/admin/machines', machines);
 app.route('/api/management/v1', managementApi);
 app.route('/api/browser', browserRoutes);
 app.route('/api/developer/applications', developerApplications);
 app.route('/api/account/applications', accountApplications);
+app.route('/api/account', deletionRoutes);
 app.route('/api', management);
 app.route('/api/oauth', consent);
 app.route('/', avatars);
@@ -264,7 +288,7 @@ app.all('/api/auth/*', async (c) => {
         }
     }
 
-    const delivery = { failed: false };
+    const delivery: AuthRequestState = { failed: false };
     if (path === '/social/start' && body.purpose && body.purpose !== 'login') {
         const identity = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
@@ -287,9 +311,10 @@ app.all('/api/auth/*', async (c) => {
                 if (identity.user.role !== 'admin') return c.json({ code: 'FORBIDDEN' }, 403);
                 if (c.req.method === 'POST') {
                     if (typeof body.userId !== 'string') return c.json({ code: 'INVALID_INPUT' }, 400);
-                    const target = await c.env.DB.prepare('SELECT "role" FROM "user" WHERE "id" = ?').bind(body.userId).first<{ role: string | null }>();
+                    const target = await c.env.DB.prepare('SELECT "role", "deletionRequestedAt" FROM "user" WHERE "id" = ?').bind(body.userId).first<{ role: string | null; deletionRequestedAt: number | null }>();
                     if (!target) return c.json({ code: 'USER_NOT_FOUND' }, 404);
                     if (target.role !== 'user') return c.json({ code: 'ADMIN_ACCOUNT_PROTECTED' }, 403);
+                    if (target.deletionRequestedAt !== null) return c.json({ code: 'ACCOUNT_DELETION_PENDING' }, 409);
                 }
             }
         }
@@ -298,6 +323,9 @@ app.all('/api/auth/*', async (c) => {
     const response = (path === '/sign-out' ? await signOutBrowserAccount(c.env, c.req.raw.headers) : null) ?? await auth.handler(c.req.raw);
     if (delivery.failed) return c.json({ code: 'EMAIL_DELIVERY_FAILED' }, 503);
     if (response.status >= 500) {
+        if (delivery.failure === 'PASSKEY_NOT_AVAILABLE' && ['/passkey/verify-authentication', '/two-factor/verify-totp', '/two-factor/verify-backup-code'].includes(path)) {
+            return c.json({ code: 'PASSKEY_NOT_AVAILABLE' }, 400);
+        }
         // A secondary reservation can win after the signup preflight. The
         // database rolls back signup; expose the same address-conflict result.
         if (path === '/sign-up/email' && typeof body.email === 'string') {
@@ -305,8 +333,8 @@ app.all('/api/auth/*', async (c) => {
                 .bind(body.email.toLowerCase()).first();
             if (reserved) return c.json({ code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' }, 400);
         }
-        console.error(JSON.stringify({ event: 'auth_request_failed', path: logPath(c.req.path), status: response.status }));
-        return c.json({ code: 'REQUEST_FAILED' }, 503);
+        console.error(JSON.stringify({ event: 'auth_request_failed', requestId: c.req.header(auditRequestHeader), path: logPath(c.req.path), status: response.status, reason: delivery.failure ?? 'AUTH_INTERNAL_ERROR' }));
+        return c.json({ code: delivery.failure === 'TURNSTILE_UNAVAILABLE' ? 'TURNSTILE_UNAVAILABLE' : 'REQUEST_FAILED' }, 503);
     }
     return response;
 });
@@ -315,7 +343,7 @@ app.all('/api/*', (c) => c.json({ code: 'NOT_FOUND' }, 404));
 app.all('*', async (c) => {
     if (!['GET', 'HEAD'].includes(c.req.method)) return c.text('Method not allowed', 405);
     const page = /^\/(en-us|zh-cn)\/?$/.test(c.req.path)
-        || /^\/(en-us|zh-cn)\/(login|select-account|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections|admin\/access\/resources|admin\/access\/resources\/detail|admin\/access\/roles|admin\/audit-logs|admin\/machines\/applications|admin\/machines\/applications\/detail|admin\/machines\/roles)\/?$/.test(c.req.path);
+        || /^\/(en-us|zh-cn)\/(login|select-account|two-factor|social\/complete|signup|verify-email|verified|forgot-password|reset-password|consent|account-deleted|account|account\/emails|account\/security|account\/sessions|account\/applications|developer|developer\/applications|developer\/applications\/new|developer\/applications\/detail|admin|admin\/users|admin\/users\/detail|admin\/applications|admin\/applications\/detail|admin\/branding|admin\/social-connections|admin\/access\/resources|admin\/access\/resources\/detail|admin\/access\/roles|admin\/audit-logs|admin\/webhooks|admin\/webhooks\/deliveries|admin\/machines\/applications|admin\/machines\/applications\/detail|admin\/machines\/roles)\/?$/.test(c.req.path);
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);
@@ -353,6 +381,9 @@ export default {
     async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
         ctx.waitUntil(runScheduled(env, async (scoped) => {
             const result = await maintainDatabase(scoped);
+            const webhooks = await deliverWebhooks(scoped);
+            await collectWebhookHistory(scoped);
+            console.log(JSON.stringify({ event: 'webhook_maintenance', ...webhooks }));
             console.log(JSON.stringify({ event: 'database_maintenance', ...result }));
         }).catch(() => {
             console.error(JSON.stringify({ event: 'database_maintenance_failed' }));

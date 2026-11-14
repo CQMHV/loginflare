@@ -173,7 +173,10 @@ it.each(['authorization_code', 'refresh_token'] as const)('prevents an actual in
 it('upgrades existing native consent, pending codes, issued offline grants and opaque verification values without a revocation gap', async () => {
     await reset();
     const migrationIndex = env.TEST_MIGRATIONS.findIndex((migration) => migration.name.startsWith('0017_'));
-    const infrastructureMigrations = env.TEST_MIGRATIONS.slice(migrationIndex + 1);
+    // Deletion cleanup depends on the 0017 projection; passkey guards in turn
+    // depend on the deletion marker. Preserve that order in this legacy fixture.
+    const dependentMigrations = env.TEST_MIGRATIONS.filter((migration) => /^002[567]_/.test(migration.name));
+    const infrastructureMigrations = env.TEST_MIGRATIONS.slice(migrationIndex + 1).filter((migration) => !/^002[567]_/.test(migration.name));
     expect(migrationIndex).toBeGreaterThan(0);
     expect(infrastructureMigrations.length).toBeGreaterThan(0);
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.slice(0, migrationIndex));
@@ -188,6 +191,7 @@ it('upgrades existing native consent, pending codes, issued offline grants and o
     await env.DB.prepare('INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)')
         .bind('opaque', 'opaque', 'opaque-value-that-is-not-json', expiry, now, now).run();
     await applyD1Migrations(env.DB, [env.TEST_MIGRATIONS[migrationIndex]]);
+    await applyD1Migrations(env.DB, dependentMigrations);
     const policies = await env.DB.prepare('SELECT "activatedAt", "gcAfter" FROM "oauthGrantPolicy" WHERE "userId" = ?').bind(identity.user.id).all<{ activatedAt: string | null; gcAfter: string }>();
     expect(policies.results.filter((policy) => policy.activatedAt === null)).toHaveLength(2);
     expect(policies.results.filter((policy) => policy.activatedAt !== null)).toHaveLength(1);

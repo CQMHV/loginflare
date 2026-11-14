@@ -33,7 +33,7 @@ export async function main(input) {
     const config = JSON.parse(readFileSync(resolve(root, 'wrangler.local.jsonc'), 'utf8'));
     const databaseId = config.d1_databases?.find(({ binding }) => binding === 'DB')?.database_id;
     if (config.vars?.APP_ENV !== 'development' || !databaseId) throw new Error('The local development database is not configured.');
-    if (options.action === 'migrate') await snapshotLocal(root, undefined, localState);
+    if (options.action === 'migrate') await snapshotLocal(root, undefined, localState, true);
     const wranglerRequire = createRequire(createRequire(import.meta.url).resolve('wrangler/package.json'));
     const { Miniflare, convertV4MiniflareOptions } = await import(pathToFileURL(wranglerRequire.resolve('miniflare')).href);
     const runtime = convertV4MiniflareOptions({

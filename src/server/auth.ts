@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { isAPIError } from 'better-auth/api';
 import { admin, captcha, jwt, multiSession, twoFactor, username } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { z } from 'zod';
@@ -16,14 +17,35 @@ import { auditAuthentication } from './audit';
 import { apiAccessClaims } from './api-access-policy';
 import { managementScopes } from '../shared/machines';
 import { defaultBranding } from '../shared/branding';
+import { accountDeletion } from './account-deletion';
+import { accountPasskeys } from './passkeys';
+import { classifyAuthFailure, type AuthRequestState } from './auth-errors';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
+export function createAuth(env: Env, delivery: AuthRequestState = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
     const multifactor = twoFactor({ issuer: brandName, allowPasswordless: true });
-    const passwordMfa = multifactor.hooks.after[0]!.matcher;
-    multifactor.hooks.after[0]!.matcher = (context) => passwordMfa(context)
-        || context.path === '/callback/:id' || context.path === '/social/verify-email';
+    const credentialPaths = ['/sign-in/email', '/sign-in/username', '/sign-in/phone-number'];
+    if (multifactor.hooks.after.length !== 1) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
+    const [credentialHook] = multifactor.hooks.after;
+    if (!credentialHook) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
+    const passwordMfa = credentialHook.matcher;
+    credentialHook.matcher = (context) => {
+        if (!credentialPaths.every((path) => passwordMfa({ ...context, path }))) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
+        return passwordMfa(context) || context.path === '/callback/:id' || context.path === '/social/verify-email' || context.path === '/passkey/verify-authentication';
+    };
+    const challenge = captcha({
+        provider: 'cloudflare-turnstile', secretKey: env.TURNSTILE_SECRET_KEY,
+        endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/emails/recovery/start', '/send-verification-email'],
+    });
+    const verifyChallenge = challenge.onRequest;
+    challenge.onRequest = async (request, context) => {
+        const result = await verifyChallenge(request, context);
+        // Upstream catches provider transport/HTTP errors and returns a 500
+        // before endpoint hooks run. Keep that phase distinct from storage errors.
+        if (result && 'response' in result && result.response.status >= 500) delivery.failure = 'TURNSTILE_UNAVAILABLE';
+        return result;
+    };
     async function send(user: { email: string; name: string; locale?: unknown }, url: string) {
         try {
             await sendAccountMail(env, user, url);
@@ -32,7 +54,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             throw error;
         }
     }
-    return betterAuth({
+    const auth = betterAuth({
         appName: brandName,
         baseURL: env.AUTH_URL,
         basePath: '/api/auth',
@@ -42,6 +64,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
         trustedOrigins: [env.AUTH_URL],
         telemetry: { enabled: false },
         logger: { disabled: true },
+        onAPIError: { throw: true },
         emailAndPassword: {
             enabled: true,
             requireEmailVerification: true,
@@ -72,7 +95,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             changeEmail: { enabled: false },
             deleteUser: { enabled: false },
         },
-        session: { cookieCache: { enabled: false }, additionalFields: { socialFlowId: { type: 'string', required: false, input: false } } },
+        session: { cookieCache: { enabled: false }, additionalFields: { socialFlowId: { type: 'string', required: false, input: false }, passkeyId: { type: 'string', required: false, input: false, returned: false } } },
         advanced: {
             database: { validateSchema: false },
             useSecureCookies: env.APP_ENV !== 'development',
@@ -84,6 +107,12 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             window: 60,
             max: 100,
             customRules: {
+                '/passkey/generate-register-options': { window: 60, max: 5 },
+                '/passkey/verify-registration': { window: 60, max: 5 },
+                '/passkey/generate-authenticate-options': { window: 60, max: 20 },
+                '/passkey/verify-authentication': { window: 60, max: 10 },
+                '/passkey/delete-passkey': { window: 60, max: 5 },
+                '/passkey/update-passkey': { window: 60, max: 5 },
                 '/sign-in/email': { window: 60, max: 5 },
                 '/sign-in/username': { window: 60, max: 5 },
                 '/sign-up/email': { window: 60, max: 3 },
@@ -107,14 +136,16 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             applicationPolicy(management),
             policy.plugin,
             emailManagement(env, schedule),
+            accountDeletion(env, (ctx, code) => multifactor.endpoints.verifyTOTP({ ...ctx, body: { code } })),
             admin({ defaultRole: 'user', adminRoles: ['admin'] }),
             username({ displayUsername: false }),
+            accountPasskeys(env, brandName),
             multifactor,
             socialAuthentication(env, selected),
             browserSessionPlugin(env),
             multiSession({ maximumSessions: 5 }),
             jwt({
-                jwks: { keyPairConfig: { alg: 'RS256' } },
+                jwks: { keyPairConfig: { alg: 'RS256' }, rotationInterval: 90 * 86400, gracePeriod: 48 * 3600 },
                 jwt: { issuer: `${env.AUTH_URL}/api/auth` },
                 disableSettingJwtHeader: true,
             }),
@@ -140,12 +171,20 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
                     return applicationPrivileges(env, management, clientId, ['create', 'update', 'rotate'].includes(action));
                 },
             }),
-            captcha({
-                provider: 'cloudflare-turnstile',
-                secretKey: env.TURNSTILE_SECRET_KEY,
-                endpoints: ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/emails/recovery/start', '/send-verification-email'],
-            }),
+            challenge,
             auditAuthentication(env),
         ],
     });
+    const nativeHandler = auth.handler;
+    auth.handler = async (request) => {
+        try { return await nativeHandler(request); }
+        catch (error) {
+            if (isAPIError(error)) throw error;
+            // Better Call otherwise prints raw non-API errors even with the
+            // Better Auth logger disabled. Keep classification request-local.
+            delivery.failure = classifyAuthFailure(error);
+            return new Response(null, { status: 500, statusText: 'Internal Server Error' });
+        }
+    };
+    return auth;
 }

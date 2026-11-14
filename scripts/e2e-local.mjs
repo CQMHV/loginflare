@@ -86,6 +86,7 @@ const options = convertV4MiniflareOptions({
         if (target.origin === origin && target.pathname === '/api/auth/jwks' && request.method === 'GET') return instance.dispatchFetch(request);
         if (request.url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify' && request.method === 'POST') {
             const body = await request.json();
+            if (body.response === 'isolated-e2e-captcha-unavailable') return Response.json({ success: false }, { status: 503 });
             return Response.json({ success: body.response === 'isolated-e2e-captcha-token' });
         }
         throw new Error('E2E outbound network is disabled');

@@ -28,9 +28,12 @@ import { SocialConnectionsPage } from './SocialConnections';
 import { ErrorNotice, useFeedback } from './feedback';
 import { BrowserAccountChooser, BrowserAccountMenu, useBrowserAccounts } from './BrowserAccounts';
 import { cancelBrowserFlow, completeBrowserLogin, ensureBrowserFlow, startBrowserFlow } from './browser-account-actions';
-import { browserFlowId, browserFlowTargetAccount, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
+import { browserContextEvent, browserContextVersion, browserFlowId, browserFlowTargetAccount, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
 import { ApiResourcesPage, ApiResourceDetailPage, BusinessRolesPage, UserBusinessRoles, AuditLogsPage } from './AccessManagement';
 import { MachineApplicationsPage, MachineApplicationDetailPage, MachineRolesPage } from './Machines';
+import { AccountDeletion, AccountDeletionReceipt } from './AccountDeletion';
+import { authenticatePasskey, browserSupportsWebAuthn, cancelPasskey, Passkeys, passkeyError } from './Passkeys';
+import { WebhooksPage, WebhookDeliveriesPage } from './Webhooks';
 
 interface AppContextValue {
     identity: Identity | null | undefined;
@@ -244,6 +247,10 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const [recoveryChallenge, setRecoveryChallenge] = useState<string>();
     const [recoveryCode, setRecoveryCode] = useState('');
     const captureSecrets = useClearSecrets(() => { setPassword(''); setConfirmPassword(''); setRecoveryCode(''); setRecoveryChallenge(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1); }, mode);
+    useEffect(() => {
+        window.addEventListener(browserContextEvent, cancelPasskey); window.addEventListener('pagehide', cancelPasskey);
+        return () => { cancelPasskey(); window.removeEventListener(browserContextEvent, cancelPasskey); window.removeEventListener('pagehide', cancelPasskey); };
+    }, [mode]);
     const token = new URLSearchParams(location.search).get('token');
     const urlError = new URLSearchParams(location.search).get('error');
     const needsCaptcha = ['login', 'signup', 'verify-email'].includes(mode) || (mode === 'forgot-password' && !recoveryChallenge);
@@ -286,6 +293,28 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         login: 'loginDescription', signup: 'signupDescription', 'verify-email': 'verificationDescription',
         'forgot-password': 'forgotDescription', 'reset-password': 'resetDescription', verified: 'verifiedDescription',
     };
+
+    async function signInPasskey() {
+        if (busy) return;
+        const page = window.location.pathname, signedQuery = oauthSearch(window.location.search);
+        let current = () => window.location.pathname === page && oauthSearch(window.location.search) === signedQuery;
+        setBusy(true); setError(undefined);
+        try {
+            await ensureBrowserFlow(locale, oauthQuery || undefined);
+            const version = browserContextVersion();
+            // Starting a login flow intentionally replaces the displayed identity
+            // with an anonymous session. Keep the ceremony bound to its browser
+            // transaction rather than that transient account-query generation.
+            current = () => browserContextVersion() === version && window.location.pathname === page && oauthSearch(window.location.search) === signedQuery;
+            const result = await authenticatePasskey(oauthQuery, current);
+            if (!current()) return;
+            if (result?.redirect) { await completeBrowserLogin(result, true); return; }
+            if (!result?.twoFactorRedirect) await completeBrowserLogin(result);
+            await refresh(); savePreference(locale);
+            navigate(result?.twoFactorRedirect ? authPath('two-factor') : localizedPath(locale, 'account'), { replace: true });
+        } catch (cause) { if (current()) setError(errorCode(passkeyError(cause))); }
+        finally { setBusy(false); }
+    }
 
     async function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -407,6 +436,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     setRecoveryChallenge(undefined); setRecoveryCode(''); setError(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1);
                 }}>{t('emails.recoveryStartOver')}</Button>}
             </form>}
+        {mode === 'login' && browserSupportsWebAuthn() && <Button className="secondary full" disabled={busy} onClick={() => { void signInPasskey(); }}>{t('passkeys.signIn')}</Button>}
         {['login', 'signup'].includes(mode) && <SocialButtons locale={locale} />}
         {mode === 'login' && <p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p>}
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
@@ -619,6 +649,7 @@ function AdminLayout() {
             <NavigationLink to={localizedPath(locale, 'admin/machines/applications')}><Icon name="sessions" />{t('machines.applications')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/machines/roles')}><Icon name="shield" />{t('machines.roles')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/audit-logs')}><Icon name="sessions" />{t('access.audit')}</NavigationLink>
+            <NavigationLink to={localizedPath(locale, 'admin/webhooks')}><Icon name="globe" />{t('webhooks.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
             <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink></>} />;
 }
@@ -716,7 +747,7 @@ function SecurityPage() {
             <TextField label={t('newPassword')} type="password" name="newPassword" autoComplete="new-password" value={newPassword} onValueChange={setNewPassword} minLength={8} maxLength={128} required supportingText={t('passwordHint')} />
             <TextField label={t('confirmPassword')} type="password" name="confirmPassword" autoComplete="new-password" value={confirmation} onValueChange={setConfirmation} minLength={8} maxLength={128} required />
         </SecurityDialog>}
-        <SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /></>}</>;
+        <SocialSettings /><MfaSettings enabled={!!identity?.user.twoFactorEnabled} refresh={refresh} /><Passkeys /><AccountDeletion /></>}</>;
 }
 
 function formatDate(value: string | undefined, locale: Locale): string {
@@ -863,6 +894,7 @@ function LocaleRoutes() {
             <Route path="forgot-password" element={<AuthPage mode="forgot-password" />} />
             <Route path="reset-password" element={<AuthPage mode="reset-password" />} />
             <Route path="consent" element={<ConsentPage />} />
+            <Route path="account-deleted" element={<AccountDeletionReceipt locale={locale} />} />
             <Route element={<Protected />}>
                 <Route element={<AccountLayout />}>
                     <Route path="account" element={<ProfilePage />} />
@@ -892,6 +924,8 @@ function LocaleRoutes() {
                         <Route path="admin/machines/applications/detail" element={<MachineApplicationDetailPage key={new URLSearchParams(search).get('clientId') ?? ''} locale={locale} />} />
                         <Route path="admin/machines/roles" element={<MachineRolesPage />} />
                         <Route path="admin/audit-logs" element={<AuditLogsPage locale={locale} />} />
+                        <Route path="admin/webhooks" element={<WebhooksPage locale={locale} />} />
+                        <Route path="admin/webhooks/deliveries" element={<WebhookDeliveriesPage locale={locale} />} />
                         <Route path="admin/users/detail" element={<UserDetailPage key={new URLSearchParams(search).get('id') ?? ''} />} />
                         <Route path="admin/applications" element={<ApplicationsPage locale={locale} />} />
                         <Route path="admin/applications/detail" element={<ApplicationEditor key={`admin:${new URLSearchParams(search).get('clientId') ?? ''}`} locale={locale} />} />

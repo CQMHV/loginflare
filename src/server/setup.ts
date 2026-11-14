@@ -110,10 +110,10 @@ async function loadMaterial(env: Env, row: Installation) {
 }
 
 const materialCache = new WeakMap<R2Bucket, { fingerprint: string; until: number; value: Promise<Material> }>();
-export async function instanceEnv(env: Env, row: Installation): Promise<Env> {
+export async function instanceEnv(env: Env, row: Installation, fresh = false): Promise<Env> {
     if (!row.fingerprint || !env.PRIVATE) throw new SetupError('INSTANCE_KEYS_MISSING', 503);
     const current = materialCache.get(env.PRIVATE);
-    const value = current?.fingerprint === row.fingerprint && current.until > Date.now() ? current.value
+    const value = !fresh && current?.fingerprint === row.fingerprint && current.until > Date.now() ? current.value
         : loadMaterial(env, row).then(({ value }) => value);
     if (value !== current?.value) {
         materialCache.set(env.PRIVATE, { fingerprint: row.fingerprint, until: Date.now() + 30_000, value });

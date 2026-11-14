@@ -1,0 +1,16 @@
+{
+    "$schema": "../../node_modules/wrangler/config-schema.json",
+    "name": "loginflare-web-example",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-10-26",
+    "compatibility_flags": ["nodejs_compat"],
+    "observability": { "enabled": true, "redact_query_string": true },
+    "triggers": { "crons": ["*/5 * * * *"] },
+    "secrets": { "required": ["LOGINFLARE_CLIENT_SECRET", "LOGINFLARE_SESSION_KEY"] },
+    "vars": {
+        "LOGINFLARE_ISSUER": "https://auth.example.com/api/auth",
+        "LOGINFLARE_ORIGIN": "https://app.example.com",
+        "LOGINFLARE_CLIENT_ID": "replace-with-client-id"
+    },
+    "d1_databases": [{ "binding": "SESSIONS", "database_name": "loginflare-web-sessions", "migrations_dir": "migrations" }]
+}

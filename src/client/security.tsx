@@ -34,7 +34,7 @@ export async function socialAuthorizationUrl(connectionId: string, purpose: 'log
 
 // This stores only the UI action to reopen after a redirect. Authorization always
 // comes from the server's session-bound proof or the current password at submit.
-export function useSecurityIntent(module: 'social' | 'emails') {
+export function useSecurityIntent(module: 'social' | 'emails' | 'passkeys') {
     const identity = useIdentity().data;
     // Reauthentication rotates the session. This non-authorizing UI selection
     // follows the same user; the new session must supply its own server proof.

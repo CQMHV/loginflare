@@ -60,23 +60,31 @@ export function createOAuthPolicy(env: Env) {
             .bind(identifier).first<{ revokedAt: string | null }>();
         if (policy?.revokedAt) throw new APIError('BAD_REQUEST', { error: 'invalid_grant', error_description: 'The authorization is unavailable.' });
     }
+    async function requireEligibleClient(clientId: string, usingToken = false) {
+        if (!await env.DB.prepare('SELECT 1 FROM "oauthClient" WHERE "clientId" = ? AND coalesce("disabled", 0) = 0').bind(clientId).first()) {
+            throw new APIError(usingToken ? 'UNAUTHORIZED' : 'BAD_REQUEST', { error: usingToken ? 'invalid_token' : 'invalid_grant', error_description: 'The application is unavailable.' });
+        }
+    }
 
     const extension: OAuthProviderExtension = {
         claims: {
             async idToken(input) {
                 // Runs before native token issuance; the D1 constraint is the concurrent-write backstop.
                 await requireEligibleUser(input.user?.id);
+                await requireEligibleClient(input.client.clientId);
                 await requireAvailableCode(input);
                 return {};
             },
             async accessToken(input) {
                 if (input.grantType === 'client_credentials' && !input.user) return {};
                 await requireEligibleUser(input.user?.id, input.grantType === undefined);
+                await requireEligibleClient(input.client.clientId, input.grantType === undefined);
                 await requireAvailableCode(input);
                 return {};
             },
-            async userInfo({ user }) {
+            async userInfo({ user, client }) {
                 await requireEligibleUser(user.id, true);
+                if (client) await requireEligibleClient(client.clientId, true);
                 return {};
             },
         },

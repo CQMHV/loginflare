@@ -12,9 +12,11 @@ export interface ManagedApplication {
     clientSecret?: string;
 }
 export interface AuditPage {
-    items: Array<{ id: string; event: string; outcome: 'success' | 'failure'; createdAt: string }>;
+    items: AuditRecord[];
     pageInfo: { nextCursor: string | null; previousCursor: string | null };
 }
+const auditTextFields = ['actorUserId', 'actorClientId', 'targetUserId', 'clientId', 'targetType', 'targetId', 'reason', 'requestId', 'ipAddress', 'userAgent'] as const;
+export type AuditRecord = { id: string; event: string; outcome: 'success' | 'failure'; createdAt: string } & Partial<Record<typeof auditTextFields[number], string | null>>;
 export class ManagementApiError extends Error {
     constructor(readonly code: string, readonly status: number, readonly writeMayHaveCompleted = false) { super(code); }
 }
@@ -119,7 +121,15 @@ export async function connectManagement(env: ManagementWorkerBindings, scopes: M
                 && ['success', 'failure'].includes(String(item.outcome)) && typeof item.createdAt === 'string') || !record(result.pageInfo)
                 || ![result.pageInfo.nextCursor, result.pageInfo.previousCursor].every((cursor) => cursor === null || typeof cursor === 'string' && cursor.length <= 2048)) throw new ManagementApiError('INVALID_RESPONSE', 200);
             return {
-                items: result.items.map((item) => ({ id: String(item.id), event: String(item.event), outcome: item.outcome === 'success' ? 'success' : 'failure', createdAt: String(item.createdAt) })),
+                items: result.items.map((item): AuditRecord => {
+                    const record: AuditRecord = { id: String(item.id), event: String(item.event), outcome: item.outcome === 'success' ? 'success' : 'failure', createdAt: String(item.createdAt) };
+                    for (const field of auditTextFields) if (Object.hasOwn(item, field)) {
+                        const value = item[field];
+                        if (value !== null && (typeof value !== 'string' || value.length > (field === 'userAgent' ? 512 : 255) || /[\u0000-\u001f\u007f]/.test(value))) throw new ManagementApiError('INVALID_RESPONSE', 200);
+                        record[field] = value as string | null;
+                    }
+                    return record;
+                }),
                 pageInfo: { nextCursor: typeof result.pageInfo.nextCursor === 'string' ? result.pageInfo.nextCursor : null, previousCursor: typeof result.pageInfo.previousCursor === 'string' ? result.pageInfo.previousCursor : null },
             };
         },

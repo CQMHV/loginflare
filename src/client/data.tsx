@@ -9,7 +9,7 @@ import { browserContextEvent, browserFlowId, selectedBrowserAccount, selectBrows
 
 export const identityKey = ['identity'] as const;
 export const freshness = { identity: 15_000, sessions: 15_000, ordinary: 60_000, configuration: 300_000 };
-export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections' | 'access' | 'audit' | 'machines';
+export type Resource = 'emails' | 'sessions' | 'users' | 'user' | 'applications' | 'application' | 'authorized-applications' | 'consent' | 'branding' | 'security' | 'social-connections' | 'access' | 'audit' | 'machines' | 'passkeys' | 'webhooks';
 type Group = Resource | 'profile';
 type SyncMessage = { type: 'identity' | 'signout' | 'invalidate' | 'branding' | 'social' | 'applications' | 'accounts' | 'access' | 'machines'; owner?: string; accountId?: string; groups?: Group[] };
 const SyncContext = createContext<(message: SyncMessage) => void>(() => {});

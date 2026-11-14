@@ -41,7 +41,7 @@ export function selectBrowserAccount(accountId: string, notify = true) {
     if (!notify) return;
     contextVersion++;
     window.dispatchEvent(new Event('loginflare:clear-sensitive'));
-    for (const key of ['loginflare.security-intent.social', 'loginflare.security-intent.emails']) write(key, '');
+    for (const key of ['loginflare.security-intent.social', 'loginflare.security-intent.emails', 'loginflare.security-intent.passkeys']) write(key, '');
     window.dispatchEvent(new Event(browserContextEvent));
 }
 export function rememberBrowserFlow(flowId: string, kind: string, oauthQuery = '', target = '') {

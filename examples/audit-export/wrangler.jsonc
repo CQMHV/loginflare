@@ -1,0 +1,12 @@
+{
+    "$schema": "../../node_modules/wrangler/config-schema.json",
+    "name": "loginflare-audit-export-example",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-11-14",
+    "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+    "triggers": { "crons": ["*/5 * * * *"] },
+    "observability": { "enabled": true, "redact_query_string": true, "logs": { "invocation_logs": false } },
+    "vars": { "AUTH_ISSUER": "https://identity.example.com/api/auth", "MACHINE_CLIENT_ID": "replace-with-machine-client-id" },
+    "d1_databases": [{ "binding": "DB", "database_name": "loginflare-audit-archive-example", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+    "secrets": { "required": ["MACHINE_CLIENT_SECRET"] }
+}

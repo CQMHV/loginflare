@@ -112,7 +112,7 @@ Application logout and Loginflare logout are separate operations:
 
 Native logout confirmation pages send only an Origin referrer, never protocol queries; their form policy permits the exact registered post-logout destination's Origin while retaining the provider's signed-cookie confirmation checks.
 
-Signing keys use the provider's D1 model; JWT private-key encryption remains enabled. Routine redeployments must preserve the database, issuer, and authentication secret. Automatic signing-key rotation is not enabled by the current JWT configuration.
+Signing keys use the provider's D1 model; JWT private-key encryption remains enabled. Routine redeployments must preserve the database, issuer, and authentication secret. New RS256 keys have a 90-day signing lifetime; expired keys remain published for a 48-hour verification grace period. Migration 0024 gives existing indefinite keys a deadline 90 days after upgrade. This does not rotate the authentication master secret. Clients must refresh JWKS when encountering an unknown `kid`.
 
 ## Account security events
 
@@ -159,9 +159,9 @@ Run the Web and SPA commands in separate terminals. Open the URLs from the table
 
 The servers bind only to `127.0.0.1`. Browsers with standard `.localhost` handling resolve these names locally. If a DNS proxy overrides that handling, configure your browser's development-only resolver to map `web.localhost` and `spa.localhost` to `127.0.0.1`; the automated browser test supplies these exact Chromium resolver rules. The repository does not modify the system hosts file, install a root CA, or create a tunnel. Certificate exceptions in tests apply only to the local test browser context.
 
-The Web example keeps its client secret, tokens, and sessions in the Node process. It validates state, nonce, issuer, audience, and ID Token signatures through `openid-client`; it fetches UserInfo with the expected subject. An opaque HttpOnly, Secure, SameSite=Lax cookie identifies the local application session. Forms enforce Origin and a session-bound CSRF value. Tokens refresh on requests when less than one minute remains. The process loses its sessions on restart; it is not a production application-session store.
+The Hono/Workers Web example stores encrypted tokens and sessions in its own D1 database, preserving them across process/isolate restarts. The Node launcher only bridges local HTTPS to the same Worker. It validates state, nonce, issuer, audience, ID Token signatures and UserInfo subject through `openid-client`. An opaque HttpOnly, Secure, SameSite=Lax cookie identifies the session; forms enforce Origin and CSRF checks. D1 coordinates renewal when less than one minute remains. See the [deployment and session-storage guide](../examples/server-web/README.md) for bindings, secrets, refresh failure handling and cleanup.
 
-The SPA stores the SDK user and tokens in memory. The SDK's short-lived authorization transaction uses `sessionStorage` to survive a redirect; a separate boolean remembers whether to restart top-level authorization after reload. No token is stored in localStorage or sessionStorage. Renewal uses the SDK's refresh-token path while the page remains open. Clearing local state does not prove server-side token revocation.
+The React SPA stores the SDK user and tokens in memory. The SDK's short-lived authorization transaction uses `sessionStorage` to survive a redirect; a separate boolean remembers whether to restart top-level authorization after reload. No token is stored in localStorage or sessionStorage. Manual and timed renewal share one in-flight request per tab. Each tab owns its own grant; clearing local state does not prove server-side token revocation. Build with `pnpm exec vite build --config examples/spa/vite.config.ts` and deploy `work/example-spa-dist` with SPA fallback, an exact HTTPS origin and that origin's registered callback URLs. Only issuer and client ID belong in its `VITE_` build variables.
 
 The examples display profile claims but never print access tokens, refresh tokens, client secrets, or complete callback URLs. Their errors intentionally omit raw SDK exceptions, which can contain protocol data.
 

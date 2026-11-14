@@ -81,7 +81,12 @@ export async function activeApiToken(env: Env, payload: Record<string, unknown>)
     if (payload.lf_principal === 'machine') return activeMachineToken(env, payload);
     const audience = typeof payload.aud === 'string' ? [payload.aud] : Array.isArray(payload.aud) && payload.aud.every((value) => typeof value === 'string') ? payload.aud as string[] : [];
     const resources = audience.filter((value) => value !== `${env.AUTH_URL}/api/auth/oauth2/userinfo`);
-    if (!resources.length) return true;
+    if (!resources.length) {
+        if (typeof payload.sub !== 'string' || typeof payload.client_id !== 'string') return false;
+        return !!await env.DB.prepare(`SELECT 1 FROM "user" u JOIN "oauthClient" c ON c."clientId" = ?
+            WHERE u."id" = ? AND coalesce(u."banned", 0) = 0 AND u."emailVerified" = 1 AND coalesce(c."disabled", 0) = 0`)
+            .bind(payload.client_id, payload.sub).first();
+    }
     if (typeof payload.sub !== 'string' || typeof payload.client_id !== 'string' || typeof payload.scope !== 'string' || typeof payload.lf_grant !== 'string') return false;
     const grant = await env.DB.prepare('SELECT 1 FROM "oauthGrantPolicy" WHERE "authorizationCodeId" = ? AND "userId" = ? AND "clientId" = ? AND "revokedAt" IS NULL')
         .bind(payload.lf_grant, payload.sub, payload.client_id).first();

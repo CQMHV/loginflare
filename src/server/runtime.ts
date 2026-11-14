@@ -1,4 +1,4 @@
-import type { Env } from './config';
+import { validateConfig, type Env } from './config';
 import { advanceInstallation, handleSetup, instanceEnv, readInstallation, setupPage } from './setup';
 
 type BusinessFetch = (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
@@ -7,6 +7,22 @@ const json = (code: string, status: number) => Response.json({ code }, { status,
 
 async function dispatchInner(request: Request, env: Env, ctx: ExecutionContext, business: BusinessFetch): Promise<Response> {
     const url = new URL(request.url), path = url.pathname;
+    if (readMethod(request) && path === '/api/health') return Response.json({ status: 'ok' }, { headers: { 'Cache-Control': 'no-store' } });
+    if (readMethod(request) && path === '/api/readiness') {
+        try {
+            if (env.APP_ENV === 'development') {
+                await env.DB.prepare('SELECT 1').first();
+                validateConfig(env);
+            } else {
+                const row = await readInstallation(env.DB);
+                if (!row?.completedAt || row.step !== 'ready' || row.origin !== url.origin) throw new Error('Not ready');
+                await instanceEnv(env, row, true);
+            }
+            return Response.json({ status: 'ready' }, { headers: { 'Cache-Control': 'no-store' } });
+        } catch {
+            return Response.json({ status: 'unavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+        }
+    }
     if (path === '/maintenance' || /^\/(en-us|zh-cn)\/maintenance\/?$/.test(path) || /^\/api\/maintenance(?:\/|$)/.test(path)) {
         return json('NOT_FOUND', 404);
     }

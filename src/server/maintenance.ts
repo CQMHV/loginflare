@@ -1,4 +1,5 @@
 import type { Env } from './config';
+import { collectAccountDeletions } from './account-deletion';
 
 const batchSize = 500;
 const maximumBatches = 20;
@@ -19,6 +20,12 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
     const cutoffIso = new Date(cutoff).toISOString();
     const nowIso = new Date(now).toISOString();
     const result: MaintenanceResult = { batches: 0, deleted: {}, deferred: 0, budgetExhausted: false };
+    await collectAccountDeletions(env, {
+        // Leave a batch for every expiry class and grant-policy collection;
+        // a long deletion queue must not starve ordinary credential expiry.
+        available: () => result.batches < 4 && clock() - started < maximumDuration / 2,
+        used: (count) => { result.batches += count; },
+    }, now);
     const positions = new Map((await env.DB.prepare('SELECT "tableName", "expiresAt", "id" FROM "maintenanceCursor"').all<{ tableName: string; expiresAt: string; id: string }>()).results.map((row) => [row.tableName, row]));
     const tasks = [
         { table: 'rateLimit', cutoff },
@@ -27,6 +34,7 @@ export async function maintainDatabase(env: Pick<Env, 'DB' | 'AVATARS'>, now = D
         { table: 'securityProof', cutoff },
         { table: 'browserAuthFlow', cutoff },
         { table: 'auditLog', cutoff },
+        { table: 'accountDeletion', cutoff, guard: 'AND "status" = \'complete\'' },
         { table: 'browserAccount', cutoff, guard: 'AND ("sessionId" IS NULL OR NOT EXISTS (SELECT 1 FROM "session" s WHERE s."id" = "browserAccount"."sessionId" AND s."expiresAt" > strftime(\'%Y-%m-%dT%H:%M:%fZ\', \'now\')))' },
         { table: 'verification', cutoff: cutoffIso },
         { table: 'userAvatar', cutoff, column: 'deleteAfter', avatars: true },

@@ -112,7 +112,7 @@ Loginflare 登录页允许使用主邮箱或用户名和同一密码登录，两
 
 原生退出确认页仅发送 Origin 形式的 referrer，不发送协议查询；表单策略仅放行精确已登记退出回跳地址的 Origin，继续保留上游签名 Cookie 确认校验。
 
-签名密钥使用上游的 D1 模型，保持 JWT 私钥加密开启。常规部署应保留数据库、issuer 和认证密钥。当前 JWT 配置未开启自动签名密钥轮换。
+签名密钥使用上游的 D1 模型，保持 JWT 私钥加密开启。常规部署应保留数据库、issuer 和认证密钥。新 RS256 密钥的签名有效期为 90 天，过期公钥继续发布 48 小时供存量令牌验证。迁移 0024 为既有无期限密钥设置升级后 90 天的截止时间；这不会轮换认证主密钥。客户端遇到未知 `kid` 时必须刷新 JWKS。
 
 ## 账号安全事件
 
@@ -159,9 +159,9 @@ pnpm example:spa
 
 服务仅监听 `127.0.0.1`。支持标准 `.localhost` 行为的浏览器会在本地解析这些名称。如果 DNS 代理覆盖了此行为，可配置仅用于开发的浏览器解析规则，将 `web.localhost` 和 `spa.localhost` 指向 `127.0.0.1`；自动化浏览器测试使用了这两条精确 Chromium 解析规则。仓库不会修改 hosts、安装根证书或创建隧道，测试中的证书例外仅作用于本地测试浏览器上下文。
 
-Web 示例把密钥、令牌、应用会话保存在 Node 进程中，通过 `openid-client` 校验 state、nonce、issuer、audience 和 ID Token 签名，读取 UserInfo 时匹配预期 subject。浏览器只保存随机 HttpOnly、Secure、SameSite=Lax 会话 Cookie，应用表单校验 Origin 和会话内 CSRF 值。请求发生时，若 Access Token 剩余不足一分钟便刷新。重启后会话丢失，示例不是生产会话存储方案。
+Hono/Workers Web 示例在应用自己的 D1 中加密保存令牌与会话，跨进程和 isolate 重启保留。Node 启动器只将本地 HTTPS 转接到同一 Worker。通过 `openid-client` 校验 state、nonce、issuer、audience、ID Token 签名及 UserInfo subject。浏览器只保存随机 HttpOnly、Secure、SameSite=Lax Cookie，表单校验 Origin 与 CSRF；D1 协调剩余不足一分钟时的令牌刷新。绑定、密钥、刷新失败处理及清理见[部署指南](../examples/server-web/README.zh-CN.md)。
 
-SPA 的 SDK 用户与令牌仅保存在内存中。SDK 的短期授权事务使用 `sessionStorage` 以跨越页面回跳；另有一个布尔值记录刷新页面后是否重新发起顶层授权。localStorage 和 sessionStorage 均不保存令牌。页面打开期间通过 SDK 的刷新令牌流程续期；清除本地状态不代表服务端令牌已撤销。
+React SPA 的用户与令牌仅保存在内存中。SDK 短期授权事务使用 `sessionStorage` 跨越回跳，另有布尔值记录是否在刷新页面后重新发起顶层授权。localStorage 和 sessionStorage 均不保存令牌，手动与定时刷新共享同一标签页的进行中请求。各标签页独立授权；清除本地状态不代表服务端撤销。运行 `pnpm exec vite build --config examples/spa/vite.config.ts` 后，将 `work/example-spa-dist` 部署到支持 SPA 路由回退的 HTTPS origin，并登记对应回调。`VITE_` 构建变量中只放 issuer 和 client ID。
 
 示例展示资料字段，不打印 Access Token、Refresh Token、客户端密钥或完整回调链接；错误提示也不直接输出可能包含协议数据的 SDK 异常。
 

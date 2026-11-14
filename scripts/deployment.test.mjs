@@ -1,9 +1,47 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { validateDeploymentConfiguration, verifyCheckout } from './deployment.mjs';
+import { resolveTarget, validateDeploymentConfiguration, verifyCheckout } from './deployment.mjs';
 
 const template = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
+const database = { uuid: '00000000-0000-4000-8000-000000000001', name: 'test-db' };
+async function target(name, configuration = template, bindings) {
+    return resolveTarget(async (path) => {
+        if (path.startsWith('/workers/services/')) return bindings ? {} : null;
+        if (path.endsWith('/settings')) return { bindings };
+        if (path.startsWith('/d1/database?')) return [];
+        if (path.startsWith('/d1/database')) return database;
+        throw new Error('Unexpected API request: ' + path);
+    }, configuration, 'test-account', name);
+}
+test('default bucket names remain distinct for long Worker names with a shared prefix', async () => {
+    const prefix = 'a'.repeat(55);
+    const first = (await target(prefix + '-one')).target, second = (await target(prefix + '-two')).target;
+    for (const binding of ['avatars', 'privateBucket']) {
+        assert.notEqual(first[binding], second[binding]);
+        assert.match(first[binding], /^[a-z0-9][a-z0-9-]*[a-z0-9]$/);
+        assert.ok(first[binding].length <= 63);
+        assert.equal((await target(prefix + '-one')).target[binding], first[binding]);
+    }
+    const boundary = (await target('a'.repeat(55))).target;
+    assert.equal(boundary.avatars, 'a'.repeat(55) + '-avatars');
+    assert.equal(boundary.privateBucket, 'a'.repeat(55) + '-private');
+    const maximum = (await target('a'.repeat(63))).target;
+    assert.equal(maximum.avatars.length, 63);
+    assert.equal(maximum.privateBucket.length, 63);
+});
+test('resource naming preserves short defaults, explicit names and existing live bindings', async () => {
+    const short = (await target('example')).target;
+    assert.equal(short.avatars, 'example-avatars'); assert.equal(short.privateBucket, 'example-private');
+    const configured = { ...template, r2_buckets: template.r2_buckets.map((item) => ({ ...item, bucket_name: item.binding.toLowerCase() })) };
+    const explicit = (await target('a'.repeat(63), configured)).target;
+    assert.equal(explicit.avatars, 'avatars'); assert.equal(explicit.privateBucket, 'private');
+    const bindings = [{ name: 'DB', type: 'd1', id: database.uuid },
+        { name: 'AVATARS', type: 'r2_bucket', bucket_name: 'previous-avatars' }, { name: 'PRIVATE', type: 'r2_bucket', bucket_name: 'previous-private' }];
+    const existing = (await target('a'.repeat(63), template, bindings)).target;
+    assert.equal(existing.avatars, 'previous-avatars'); assert.equal(existing.privateBucket, 'previous-private');
+    await assert.rejects(target('example', configured, bindings), /differs from the active binding/);
+});
 test('public release template leaves resource IDs to Cloudflare and separates the private bucket', () => {
     assert.equal(validateDeploymentConfiguration(template), template);
     assert.equal(template.d1_databases[0].database_id, undefined);

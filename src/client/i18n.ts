@@ -9,8 +9,14 @@ import { resolveLocale } from './locale';
 import { browserAccountsEn, browserAccountsZh, browserAccountErrorsEn, browserAccountErrorsZh } from './browser-account-translations';
 import { accessEn, accessZh, accessErrorsEn, accessErrorsZh } from './access-translations';
 import { machinesEn, machinesZh, machineErrorsEn, machineErrorsZh } from './machine-translations';
+import { deletionEn, deletionZh, deletionErrorsEn, deletionErrorsZh } from './deletion-translations';
+import { passkeysEn, passkeysZh, passkeyErrorsEn, passkeyErrorsZh } from './passkey-translations';
+import { webhooksEn, webhooksZh, webhookErrorsEn, webhookErrorsZh } from './webhook-translations';
 
 const enUS = {
+    webhooks: webhooksEn,
+    passkeys: passkeysEn,
+    deletion: deletionEn,
     machines: machinesEn,
     access: accessEn,
     browserAccounts: browserAccountsEn,
@@ -191,6 +197,7 @@ const enUS = {
     passwordMismatch: 'Your passwords do not match.',
     errors: {
         UNKNOWN_ERROR: 'We couldn’t complete this request. Please try again.',
+        TURNSTILE_UNAVAILABLE: 'Security verification is temporarily unavailable. Please try again.',
         INVALID_BACKUP_CODE: 'This recovery code is invalid or has already been used.',
         INVALID_TWO_FACTOR_COOKIE: 'Your sign-in challenge expired. Sign in again to continue.',
         TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: 'Too many attempts. Sign in again to start a new challenge.',
@@ -271,6 +278,9 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    webhooks: webhooksZh,
+    passkeys: passkeysZh,
+    deletion: deletionZh,
     machines: machinesZh,
     access: accessZh,
     browserAccounts: browserAccountsZh,
@@ -451,6 +461,7 @@ const zhCN: typeof enUS = {
     passwordMismatch: '两次输入的密码不一致。',
     errors: {
         UNKNOWN_ERROR: '无法完成此请求，请重试。',
+        TURNSTILE_UNAVAILABLE: '安全验证服务暂时不可用，请稍后重试。',
         INVALID_BACKUP_CODE: '此恢复码无效或已使用。',
         INVALID_TWO_FACTOR_COOKIE: '登录验证已过期，请返回重新登录。',
         TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE: '尝试次数过多，请返回重新登录以开始新的验证。',
@@ -539,6 +550,12 @@ Object.assign(enUS.errors, accessErrorsEn);
 Object.assign(zhCN.errors, accessErrorsZh);
 Object.assign(enUS.errors, machineErrorsEn);
 Object.assign(zhCN.errors, machineErrorsZh);
+Object.assign(enUS.errors, deletionErrorsEn);
+Object.assign(enUS.errors, passkeyErrorsEn);
+Object.assign(enUS.errors, webhookErrorsEn);
+Object.assign(zhCN.errors, webhookErrorsZh);
+Object.assign(zhCN.errors, passkeyErrorsZh);
+Object.assign(zhCN.errors, deletionErrorsZh);
 document.documentElement.lang = initialLocale;
 
 void i18n.use(initReactI18next).init({

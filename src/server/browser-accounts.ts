@@ -15,8 +15,8 @@ export const maximumBrowserAccounts = 5;
 const uuid = z.string().uuid();
 const accountHeader = 'X-Loginflare-Account';
 const flowHeader = 'X-Loginflare-Flow';
-const transientNames = ['two_factor', 'dont_remember', 'social_flow', 'security_proof', 'state', 'oauth_state'];
-const loginPaths = new Set(['/api/auth/sign-in/email', '/api/auth/sign-in/username']);
+const transientNames = ['two_factor', 'dont_remember', 'social_flow', 'security_proof', 'state', 'oauth_state', 'better-auth-passkey'];
+const loginPaths = new Set(['/api/auth/sign-in/email', '/api/auth/sign-in/username', '/api/auth/passkey/verify-authentication']);
 const authenticationPaths = new Set([...loginPaths, '/api/auth/social/start', '/api/auth/two-factor/verify-totp', '/api/auth/two-factor/verify-backup-code']);
 const anonymousAuthPaths = new Set(['/api/auth/sign-up/email', '/api/auth/send-verification-email', '/api/auth/verify-email', '/api/auth/reset-password', '/api/auth/emails/recovery/start', '/api/auth/emails/recovery/verify', '/api/auth/error']);
 function names(env: Env) {
@@ -149,7 +149,7 @@ export function browserSessionPlugin(env: Env): BetterAuthPlugin {
             }
             if (flow.targetUserId && flow.targetUserId !== session.userId) throw new APIError('FORBIDDEN', { code: 'BROWSER_WRONG_ACCOUNT' });
             if (flow.status !== 'pending') {
-                if (ctx.context.session?.user.id === session.userId && !['/sign-in/email', '/sign-in/username', '/callback/:id', '/social/verify-email'].includes(ctx.path ?? '')) return;
+                if (ctx.context.session?.user.id === session.userId && !['/sign-in/email', '/sign-in/username', '/callback/:id', '/social/verify-email', '/passkey/verify-authentication'].includes(ctx.path ?? '')) return;
                 throw new APIError('BAD_REQUEST', { code: 'BROWSER_FLOW_EXPIRED' });
             }
             await env.DB.prepare('UPDATE "browserAuthFlow" SET "userId" = ? WHERE "id" = ? AND "status" = ? AND "expiresAt" > ?')

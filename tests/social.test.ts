@@ -7,6 +7,7 @@ import worker from '../src/server/index';
 import { sourcePng } from './fixtures/avatars';
 import { defaultConnectionConfig, type ConnectionType, type SocialConnection } from '../src/shared/social';
 import { authenticatorCode } from './totp';
+import { authenticator } from './passkey-authenticator';
 
 vi.mock('node:dns/promises', () => ({ resolve4: async () => ['93.184.216.34'], resolve6: async () => [] }));
 interface Profile { sub: string; email?: string; email_verified?: boolean; name?: string; picture?: string }
@@ -354,7 +355,7 @@ async function loginReauth(b: ReturnType<typeof browser>, row: SocialConnection,
     expect(finish.status, await finish.clone().text()).toBe(200);
 }
 
-it('requires local MFA again before issuing a passwordless social operation proof', async () => {
+it.each(['emails/add', 'account/delete', 'passkeys/add'] as const)('requires local MFA again before issuing a passwordless %s proof', async (action) => {
     const a = await admin(), row = await connector(a), b = browser(a.client);
     const profile = { sub: 'mfa', email: 'sensitive-mfa@example.com', email_verified: true };
     await login(b, row, profile); await b.request('/api/auth/social/finish', {});
@@ -363,17 +364,34 @@ it('requires local MFA again before issuing a passwordless social operation proo
     expect(enabled.status, await enabled.clone().text()).toBe(200);
     const { totpURI } = await enabled.json<{ totpURI: string }>();
     expect((await b.request('/api/auth/two-factor/verify-totp', { code: await authenticatorCode(totpURI) })).status).toBe(200);
-    const response = await callback(b, row, await start(b, row, { purpose: 'reauth', action: 'emails/add' }), profile);
+    const response = await callback(b, row, await start(b, row, { purpose: 'reauth', action }), profile);
     expect(response.headers.get('location')).toContain('two-factor?social=1');
     expect(await (await b.request('/api/auth/social/flow')).json()).toMatchObject({ stage: 'mfa' });
     expect((await b.request('/api/auth/emails/add', { email: 'before-mfa@example.com' })).ok).toBe(false);
+    if (action === 'account/delete') expect((await b.request('/api/account/delete', { preview: 'before-mfa' })).ok).toBe(false);
+    if (action === 'passkeys/add') expect((await b.request('/api/auth/passkey/generate-register-options', {})).ok).toBe(false);
     expect((await b.request('/api/auth/two-factor/verify-backup-code', { code: 'not-a-valid-recovery-code' })).ok).toBe(false);
     expect((await b.request('/api/auth/two-factor/verify-totp', { code: await authenticatorCode(totpURI) })).status).toBe(200);
     const finish = await b.request('/api/auth/social/finish', {});
     expect(finish.status, await finish.clone().text()).toBe(200);
-    expect(await (await b.request('/api/auth/social/security')).json()).toMatchObject({ proofPurpose: 'emails/add' });
-    const added = await b.request('/api/auth/emails/add', { email: 'after-mfa@example.com' });
-    expect(added.status, await added.clone().text()).toBe(200);
+    expect(await (await b.request('/api/auth/social/security')).json()).toMatchObject({ proofPurpose: action });
+    if (action === 'account/delete') {
+        const preview = await (await b.request('/api/account/deletion-preview')).json<{ preview: string }>();
+        const deleted = await b.request('/api/account/delete', { preview: preview.preview });
+        expect(deleted.status, await deleted.clone().text()).toBe(202);
+    } else if (action === 'passkeys/add') {
+        const options = await b.request('/api/auth/passkey/generate-register-options', {});
+        expect(options.status, await options.clone().text()).toBe(200);
+        const data = await options.json<{ challenge: string }>();
+        expect(data).toMatchObject({ rp: { id: 'localhost' }, authenticatorSelection: { userVerification: 'required' } });
+        const key = await authenticator();
+        const registered = await b.request('/api/auth/passkey/verify-registration', { response: await key.registration(data.challenge), name: 'Provider verified key' });
+        expect(registered.status, await registered.clone().text()).toBe(200);
+        expect((await b.request('/api/auth/passkey/generate-register-options', {})).ok).toBe(false);
+    } else {
+        const added = await b.request('/api/auth/emails/add', { email: 'after-mfa@example.com' });
+        expect(added.status, await added.clone().text()).toBe(200);
+    }
 });
 
 it('reauthenticates the exact linked identity, protects the last method, and permits password recovery', async () => {

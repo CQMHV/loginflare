@@ -11,29 +11,34 @@
     "scripts": {
         "dev": "vite",
         "build": "node scripts/licenses.mjs && vite build",
+        "build:examples": "vite build --config examples/spa/vite.config.ts && wrangler deploy --dry-run --config examples/server-web/wrangler.jsonc --outdir work/server-web-dry-run && wrangler deploy --dry-run --config examples/webhook-receiver/wrangler.jsonc --outdir work/webhook-receiver-dry-run && wrangler deploy --dry-run --config examples/audit-export/wrangler.jsonc --outdir work/audit-export-dry-run",
         "licenses:generate": "node scripts/licenses.mjs",
-        "typecheck": "wrangler types --config wrangler.local.jsonc && node examples/worker-api/generate-types.mjs && node examples/management-worker/generate-types.mjs && tsc --noEmit",
+        "typecheck": "wrangler types --config wrangler.local.jsonc && node examples/worker-api/generate-types.mjs && node examples/management-worker/generate-types.mjs && node examples/server-web/generate-types.mjs && node examples/webhook-receiver/generate-types.mjs && node examples/audit-export/generate-types.mjs && tsc --noEmit",
         "test": "vitest run",
         "test:e2e": "playwright test",
-        "test:ops": "node --test scripts/database.test.mjs scripts/database-schema.test.mjs scripts/deployment.test.mjs scripts/migration-bundle.test.mjs scripts/releases.test.mjs",
+        "test:ops": "node --test scripts/database.test.mjs scripts/database-schema.test.mjs scripts/deployment.test.mjs scripts/migration-bundle.test.mjs scripts/releases.test.mjs scripts/local-snapshot.test.mjs",
         "example:web": "node --env-file-if-exists=examples/server-web/.env examples/server-web/server.mjs",
         "example:spa": "vite --config examples/spa/vite.config.ts",
         "example:tls": "node examples/setup-tls.mjs",
         "example:api": "wrangler dev --config examples/worker-api/wrangler.jsonc --port 5183",
         "example:management": "wrangler dev --config examples/management-worker/wrangler.jsonc --port 5184 --test-scheduled",
+        "example:webhook": "wrangler dev --config examples/webhook-receiver/wrangler.jsonc --port 5186",
+        "example:audit-export": "wrangler dev --config examples/audit-export/wrangler.jsonc --port 5187 --test-scheduled",
         "db:migrate": "node scripts/database.mjs migrate --local",
         "db:check": "node scripts/database.mjs check --local",
         "db:backup": "node scripts/local-snapshot.mjs",
         "test:scale": "node scripts/scale.mjs",
+        "test:events:recovery": "node scripts/events-recovery.mjs",
         "admin:promote": "node scripts/database.mjs promote",
         "types": "wrangler types --config wrangler.local.jsonc",
         "setup:local": "node scripts/setup-local.mjs",
-        "check": "pnpm typecheck && pnpm test && pnpm test:ops && pnpm build",
+        "check": "pnpm typecheck && pnpm test && pnpm test:ops && pnpm build && pnpm build:examples",
         "build:deploy": "node scripts/licenses.mjs && vite build --mode deployment",
         "deploy": "node scripts/deployment.mjs"
     },
     "dependencies": {
         "@better-auth/oauth-provider": "1.7.13",
+        "@better-auth/passkey": "1.7.13",
         "@dnd-kit/dom": "0.5.3",
         "@dnd-kit/react": "0.5.3",
         "@fontsource-variable/noto-sans-sc": "5.3.1",
@@ -41,6 +46,7 @@
         "@material-symbols/svg-500": "0.45.8",
         "@material/material-color-utilities": "0.3.0",
         "@material/web": "2.5.0",
+        "@simplewebauthn/browser": "13.3.0",
         "@tanstack/react-query": "5.105.0",
         "@xmldom/xmldom": "0.9.12",
         "better-auth": "1.7.13",
@@ -84,7 +90,9 @@
             "AVATARS": {
                 "description": "Private object storage for avatars, branding and provider icons. Keep public bucket access disabled."
             },
-            "PRIVATE": { "description": "Private storage for the instance configuration and authentication keys. Keep this bucket when replacing the Worker." },
+            "PRIVATE": {
+                "description": "Private storage for the instance configuration and authentication keys. Keep this bucket when replacing the Worker."
+            },
             "EMAIL": {
                 "description": "Cloudflare Email Service. Workers Paid is required to deliver the setup email."
             }

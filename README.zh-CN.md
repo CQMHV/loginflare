@@ -4,6 +4,8 @@
 
 [English](README.md) · [部署说明](docs/deployment.zh-CN.md) · [应用接入](docs/oauth.zh-CN.md) · [架构说明](docs/architecture.md) · [规模与验证](docs/scaling.md)
 
+先按[部署说明](docs/deployment.zh-CN.md)建立实例，再接入 [Hono/Workers Web 应用](examples/server-web/README.zh-CN.md)或 [React SPA](docs/oauth.zh-CN.md)。生产环境需要有效 Cloudflare zone、Workers Paid、R2、事务邮件 Email Service 和 Turnstile，实际服务用量及业务应用资源决定运行成本。上线前阅读[运行与恢复](docs/operations.zh-CN.md)、[容量边界](docs/scaling.md)与[安全报告方式](SECURITY.md)。本版本不提供组织、SAML 和原生/设备客户端，完整边界见下文。
+
 Loginflare 是完整可用的通用账号与身份管理平台，面向从小团队到大型公开服务的独立部署。它包含面向用户的账号中心、开发者中心、管理控制台，以及供独立 Web 和 SPA 应用接入的标准 OAuth/OIDC 登录能力，支持邮箱或用户名登录、邮箱验证、密码恢复和会话管理。系统通过一个 Cloudflare Worker 运行，使用 D1、R2、Email Service、Turnstile 和 Workers Static Assets。
 
 可通过 Cloudflare 独立安装 Loginflare。管理后台仅限管理员访问。Web/SPA 示例用于验证完整的应用接入流程。面向具体业务的应用可在独立分支中开发，加入各自的品牌和业务规则。
@@ -15,7 +17,8 @@ Loginflare 是完整可用的通用账号与身份管理平台，面向从小团
 - 注册、验证邮箱、重发验证邮件，使用邮箱或用户名登录，以及退出。
 - 管理 Google、GitHub、Microsoft、Discord、X、Telegram、OIDC 和 OAuth 2.0 连接器，支持无密码注册、显式绑定与第三方再次认证，详见[第三方登录](docs/social.zh-CN.md)。
 - 找回密码，以及通过当前密码修改密码。
-- 验证器动态码（TOTP）MFA，支持一次性恢复码的保存与重置，覆盖邮箱、用户名及 OAuth 登录。
+- 验证器动态码（TOTP）MFA，支持一次性恢复码的保存与重置，覆盖邮箱、用户名、提供方、通行密钥及 OAuth 登录。
+- 重新认证后添加、命名和管理通行密钥，并用于登录，详见[通行密钥](docs/passkeys.zh-CN.md)。
 - 修改显示名称与用户名、上传和裁剪头像、查看和撤销活跃会话。
 - 同一浏览器最多同时登录五个账号，各标签页独立切换，支持单独退出或退出此浏览器的全部账号。
 - 在独立页面管理主邮箱与辅助邮箱，通过验证码验证新地址并切换主邮箱。
@@ -24,12 +27,15 @@ Loginflare 是完整可用的通用账号与身份管理平台，面向从小团
 - 管理员设置整站 Logo、品牌名、主题色与 Material 配色方案。
 - 通过授权码 + PKCE S256 登录，提供 OIDC 发现、UserInfo、RS256 ID Token、刷新令牌和应用发起的中心退出。
 - 管理 API 资源、业务权限 scope、角色与用户分配，签发绑定资源的访问令牌，提供 Workers/Hono 鉴权示例，详见[访问控制](docs/access-control.zh-CN.md)。
+- 配置签名的异步账号 Webhook，查看投递与重投保留期内事件，详见[业务事件通知](docs/webhooks.zh-CN.md)。
 - 管理员查询认证、授权、安全和管理操作的审计日志，按保留期限有界清理。
 - 独立管理机器应用和机器角色，通过短期客户端凭据令牌调用版本化管理 API，详见[机器身份与管理接口](docs/management-api.zh-CN.md)。
 - 英文和简体中文页面、错误提示与事务邮件。
 - 复用 Better Auth 的账号与会话能力，使用 D1 原子持久化限流和定时过期数据清理，服务端验证 Turnstile。
 
-当前版本不包含组织、多租户、SAML、删除账号、网页分配本站后台管理员权限、模拟登录或管理员代设密码。原生/设备客户端、动态注册、第三方 API 令牌托管和跨应用协同退出也不在范围内，相应接口不对外开放。用户业务角色、机器角色和本站管理员权限分别管理。
+普通用户可在**安全 → 注销账号**重新认证，并明确确认删除名下全部应用。账号及应用立即停止使用，持久化后台任务继续删除其数据及所有用户对这些应用的授权。身份校验、保留策略与 API 行为见[账号注销](docs/account-deletion.zh-CN.md)。
+
+当前版本不包含组织、多租户、SAML、网页分配本站后台管理员权限、模拟登录或管理员代设密码。原生/设备客户端、动态注册、第三方 API 令牌托管和跨应用协同退出也不在范围内，相应接口不对外开放。用户业务角色、机器角色和本站管理员权限分别管理。不开放管理员自助注销、管理员或机器代删账号及应用所有权转移。
 
 用户名与显示名称分别设置。注册表单要求填写唯一用户名，长度为 3–30 个字符，仅含英文字母、数字、下划线或点；用户名以小写保存，登录不区分大小写。已有账号可以继续通过邮箱登录，并在个人资料中补设用户名。用户名可以修改，设置后不能清空。两种登录方式均要求邮箱已验证，邮箱登录只接受主邮箱。
 
@@ -102,7 +108,7 @@ pnpm admin:promote -- --email admin@example.com --local
 
 ## 验证
 
-`pnpm check` 执行类型检查、Worker 集成测试、运维命令测试和生产构建；浏览器流程另用 `pnpm test:e2e` 验证。[CI 工作流](.github/workflows/ci.yml) 会在 PR 和推送到 `main` 时执行这两组检查，以及使用 10、10,000 个生成用户和三秒负载窗口的隔离规模检查。测试使用本地 D1、模拟邮件和 Turnstile 测试密钥，浏览器报告保留七天。百万用户基准仍单独手动运行。
+`pnpm check` 执行类型检查、Worker 集成测试、运维命令测试、生产构建、React SPA 构建，以及 Web、Webhook 接收端、审计转存三个 Worker 的本地 dry-run 打包；浏览器流程另用 `pnpm test:e2e` 验证。[CI 工作流](.github/workflows/ci.yml) 会在 PR 和推送到 `main` 时执行这两组检查，以及使用 10、10,000 个生成用户和三秒负载窗口的隔离规模检查。测试使用本地 D1、模拟邮件和 Turnstile 测试密钥，浏览器报告保留七天。百万用户基准仍单独手动运行。
 
 ```powershell
 pnpm typecheck
@@ -144,6 +150,8 @@ pnpm exec playwright install chromium
 业务 API 由管理员登记 audience、权限 scope、允许访问的应用和业务角色。应用沿用相同 OAuth 流程请求资源访问令牌；[Workers/Hono 示例](examples/worker-api/README.md)验证签名与 audience、检查当前授权并执行接口权限规则。[审计日志](docs/access-control.zh-CN.md#审计日志)在后台提供安全与访问控制管理事件查询。
 
 可信后端自动化使用单独配置的机器应用。[管理 API](docs/management-api.zh-CN.md)在 `/api/management/v1` 下提供按 scope 限制的用户、登录应用、业务访问控制和审计操作，并公开 OpenAPI 文档。[定时 Worker 示例](examples/management-worker/README.md)以只读令牌检查审计日志，导出自动开通辅助方法，不提供未认证的操作触发接口。
+
+[Webhook 接收端](examples/webhook-receiver/README.zh-CN.md)验签后写入持久化 inbox；独立的[审计转存示例](examples/audit-export/README.zh-CN.md)按持久化游标复制白名单字段并去重，完整性仍受源保留期与轮询预算约束。
 
 普通中心退出保留上游 `offline_access` 刷新授权语义。应用自行管理本地会话，退出 Loginflare 不代表所有应用都退出。密码恢复、停用账号等安全操作另有凭据失效规则，详见接入说明。
 
