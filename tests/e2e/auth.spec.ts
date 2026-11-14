@@ -45,10 +45,23 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page).toHaveURL('/en-us/verified');
     await expect(page.getByRole('heading', { name: 'Email verified' })).toBeVisible();
     await page.getByRole('link', { name: 'Sign in', exact: true }).click();
-    await page.getByLabel('Email or username', { exact: true }).fill(username.toUpperCase());
-    await page.getByLabel('Password', { exact: true }).fill('Browser-test-password-917!');
-    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled({ timeout: 20_000 });
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+    await expect(signIn).toBeEnabled({ timeout: 20_000 });
+    await page.getByLabel('Email or username', { exact: true }).fill('previous@example.test');
+    await page.getByLabel('Password', { exact: true }).fill('Previous-password-123!');
+    // Form-associated custom elements can restore their value without emitting input.
+    for (const [name, value] of [['identifier', username.toUpperCase()], ['password', 'Browser-test-password-917!']]) {
+        await page.locator(`md-outlined-text-field[name="${name}"]`).evaluate((field, restored) => {
+            (field as HTMLElement & { formStateRestoreCallback(value: string): void }).formStateRestoreCallback(restored);
+        }, value);
+    }
+    await expect(page.getByLabel('Email or username', { exact: true })).toHaveValue(username.toUpperCase());
+    const usernameSignIn = page.waitForResponse((response) =>
+        /\/api\/auth\/sign-in\/(email|username)$/.test(response.url()) && response.request().method() === 'POST');
+    await signIn.click();
+    const usernameResponse = await usernameSignIn;
+    expect(new URL(usernameResponse.url()).pathname).toBe('/api/auth/sign-in/username');
+    expect(usernameResponse.status()).toBe(200);
     await expect(page).toHaveURL('/en-us/account');
     await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
     const profileLink = page.getByRole('link', { name: 'Profile', exact: true });

@@ -9,6 +9,7 @@ export const password = 'Integration-password-812!';
 type RuntimeEnv = Parameters<typeof createAuth>[0];
 
 export interface RecordedMail {
+    from: unknown;
     subject: string;
     text: string;
     html: string;
@@ -25,6 +26,7 @@ export function harness() {
                 if (failMail) throw new Error('Test mail delivery failure');
                 if (!('subject' in message)) throw new Error('Expected a structured email');
                 messages.push({
+                    from: message.from,
                     subject: message.subject,
                     text: message.text ?? '',
                     html: message.html ?? '',

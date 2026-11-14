@@ -77,23 +77,15 @@ The Cron handler does not delete `userEmail` addresses. An unverified secondary 
 
 Native Better Auth `DATE` columns use ISO UTC text. Custom email-challenge timestamps and rate-limit counters use explicit integer milliseconds. Request queries do not alternate between date encodings.
 
-Before SQL migrations, the operator wrapper prepares stored callback metadata and normalizes native dates in bounded batches. Origin updates compare the old metadata and callback strings and abort on a concurrent change. After migration the gate checks committed table/column definitions, indexes, triggers, foreign keys, native date storage, and callback-metadata/URI-registry consistency. Run a read-only local check with:
+Run a read-only local check for pending migrations and foreign-key violations:
 
 ```powershell
 pnpm db:check
 ```
 
-Remote checks select the deployed instance and use its authenticated maintenance interface:
+Remote releases check the database’s migration history before publishing. Only tested online migrations run automatically on existing instances; incompatible changes need their own operations procedure. See [deployment](deployment.md).
 
-```powershell
-node scripts/database.mjs check --url https://accounts.example.com --cookie-file private-cookie.txt
-```
-
-The shared migration core includes the final check. Automated builds only deploy code; schema changes run through the persistent maintenance protocol. Preparation, migration or structural-check failures keep the instance in maintenance. Runtime schema autodiscovery is disabled.
-
-Upgrades close admission and fence database operations under the same protocol for the web interface and CLI. R2 operations with an unconfirmed outcome prevent exclusive migration. Existing uninstrumented instances require the stopped transition procedure and verified drain evidence first; changing repository scripts does not update existing cloud build triggers. See the [deployment procedure](deployment.md).
-
-Create a consistent local snapshot with `pnpm db:backup`, optionally followed by an output directory. By default a fresh timestamped backup is written under `work/backups/`. The manifest includes local D1 snapshots, existing `.dev.vars`, and managed local credentials. Treat it as private authentication material. Recover the matching database, origin, and authentication secret together; encrypted signing keys depend on that secret.
+Stop the development server and any scheduled writers before running `pnpm db:backup`, optionally followed by an output directory. By default a fresh timestamped backup is written under `work/backups/`. The manifest includes local D1 snapshots, local R2 objects (both media and private keys), existing `.dev.vars`, managed local credentials, and SHA-256 checksums. Verify a newly created snapshot with `node scripts/verify-snapshot.mjs <snapshot-directory>` before copying it into an isolated restore directory. Verification checks paths, checksums, SQLite integrity and foreign keys; it does not prove cross-storage consistency if writers were active. Earlier snapshots without checksums must be checked using their original recovery procedure. Treat the entire backup as private authentication material. Recover the matching database, origin, and authentication secret together; encrypted signing keys depend on that secret.
 
 Stop development before restoring `d1/` files to `.cloudflare/state/v3/d1` and restoring other manifest files to their original paths. Run restore verification in an isolated directory. A local backup is not a remote D1 recovery point. For a remote update, use the reviewed environment's D1 recovery facilities and verify its target before restoring.
 

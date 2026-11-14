@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useBranding } from './branding';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
 import { ApiError, fetchJson } from './api';
@@ -137,13 +138,14 @@ export function MachineApplicationDetailPage({ locale }: { locale: Locale }) {
 }
 
 function PermissionPicker({ catalog, permissionIds, managementScopes, onPermissionsChange, onManagementChange, disabled }: { catalog: PermissionCatalog; permissionIds: string[]; managementScopes: string[]; onPermissionsChange: (ids: string[]) => void; onManagementChange: (scopes: string[]) => void; disabled: boolean }) {
+    const brand = useBranding();
     const { t } = useTranslation(), [search, setSearch] = useState(''), [page, setPage] = useState(0);
     const matches = catalog.permissions.filter((permission) => `${permission.name} ${permission.scope} ${permission.resourceName}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
     const items = matches.slice(page * 20, page * 20 + 20);
     return <><fieldset className="access-selection" disabled={disabled}><legend>{t('machines.permissions')}</legend><TextField label={t('machines.findPermissions')} value={search} onValueChange={(value) => { setSearch(value); setPage(0); }} maxLength={254} disabled={disabled} />
         <div className="access-selection-items machine-permission-options">{items.map((permission) => <Checkbox key={permission.id} label={`${permission.resourceName} · ${permission.name} (${permission.scope})`} checked={permissionIds.includes(permission.id)} disabled={disabled} onCheckedChange={(checked) => onPermissionsChange(checked ? [...permissionIds, permission.id] : permissionIds.filter((id) => id !== permission.id))} />)}{!items.length && <p className="muted">{t('machines.noPermissions')}</p>}</div>
         <small className="muted">{t('machines.selectedCount', { count: permissionIds.length })}</small><PageNavigation pageInfo={{ previousCursor: page ? String(page - 1) : null, nextCursor: matches.length > (page + 1) * 20 ? String(page + 1) : null }} count={items.length} cursor={page ? String(page) : null} onNavigate={(cursor) => setPage(Number(cursor ?? 0))} />
-    </fieldset><fieldset className="access-selection" disabled={disabled}><legend>{t('machines.managementPermissions')}</legend><p className="muted">{t('machines.managementDescription')}</p><div className="access-selection-items">{catalog.managementScopes.map((scope) => <Checkbox key={scope} label={`${t(`machines.managementScopes.${scope.replaceAll(':', '_')}`, { defaultValue: scope })} (${scope})`} checked={managementScopes.includes(scope)} disabled={disabled} onCheckedChange={(checked) => onManagementChange(checked ? [...managementScopes, scope] : managementScopes.filter((value) => value !== scope))} />)}</div></fieldset></>;
+    </fieldset><fieldset className="access-selection" disabled={disabled}><legend>{t('machines.managementPermissions')}</legend><p className="muted">{t('machines.managementDescription', { brand: brand.name })}</p><div className="access-selection-items">{catalog.managementScopes.map((scope) => <Checkbox key={scope} label={`${t(`machines.managementScopes.${scope.replaceAll(':', '_')}`, { defaultValue: scope })} (${scope})`} checked={managementScopes.includes(scope)} disabled={disabled} onCheckedChange={(checked) => onManagementChange(checked ? [...managementScopes, scope] : managementScopes.filter((value) => value !== scope))} />)}</div></fieldset></>;
 }
 
 function MachineRoleDialog({ id, onClose }: { id?: string; onClose: () => void }) {

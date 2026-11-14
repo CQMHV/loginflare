@@ -303,9 +303,14 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         try {
             switch (mode) {
                 case 'login': {
-                    const identifier = loginIdentifier.trim();
+                    const form = new FormData(event.currentTarget);
+                    const identifier = String(form.get('identifier') ?? '').trim();
                     const path = identifier.includes('@') ? '/sign-in/email' : '/sign-in/username';
-                    const credentials = { ...(identifier.includes('@') ? { email: identifier } : { username: identifier }), password, rememberMe };
+                    const credentials = {
+                        ...(identifier.includes('@') ? { email: identifier } : { username: identifier }),
+                        password: String(form.get('password') ?? ''),
+                        rememberMe,
+                    };
                     await ensureBrowserFlow(locale, oauthQuery || undefined);
                     if (oauthQuery) {
                         const result = await providerRequest(path, credentials, captchaToken);
@@ -472,6 +477,7 @@ function SelectAccountPage() {
 }
 
 function ConsentPage() {
+    const brand = useBranding();
     const { locale, identity } = useApp();
     const { t } = useTranslation();
     const location = useLocation();
@@ -498,7 +504,7 @@ function ConsentPage() {
         {!consent && <ErrorNotice code={consentError} />}
         {!consent && !consentError && <Busy />}
         {consent && <>
-            <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name })}</p>
+            <p className="section-description">{t('oauth.consentDescription', { name: consent.client.name, brand: brand.name })}</p>
             <p className="consent-account">{t('oauth.consentAccount', { email: identity.user.email })}</p>
             {consent.resource && <div className="consent-resource"><strong>{consent.resource.name}</strong><code className="break-all">{consent.resource.identifier}</code></div>}
             <p>{t('oauth.consentPermissions')}</p>
@@ -514,7 +520,7 @@ function ConsentPage() {
 function Protected({ adminOnly = false, developerOnly = false }: { adminOnly?: boolean; developerOnly?: boolean }) {
     const { identity, locale } = useApp();
     if (identity === undefined) return <Busy />;
-    if (!identity) return <Navigate to={localizedPath(locale, 'login')} replace />;
+    if (!identity) return <Navigate to={flowPath(localizedPath(locale, 'login'))} replace />;
     if (adminOnly && identity.user.role !== 'admin') return <StatePage forbidden />;
     if (developerOnly && (identity.user.banned || !identity.user.emailVerified)) return <StatePage forbidden />;
     return <Outlet />;

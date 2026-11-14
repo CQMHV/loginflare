@@ -1,0 +1,23 @@
+CREATE TABLE "lfInstallation" (
+    "id" INTEGER PRIMARY KEY CHECK ("id" = 1),
+    "instanceId" TEXT NOT NULL,
+    "origin" TEXT NOT NULL,
+    "adminEmail" TEXT NOT NULL,
+    "step" TEXT NOT NULL CHECK ("step" IN ('target', 'domain', 'sending', 'turnstile', 'ready')),
+    "accountId" TEXT,
+    "workerName" TEXT,
+    "zoneId" TEXT,
+    "zoneName" TEXT,
+    "fingerprint" TEXT,
+    "lease" TEXT,
+    "leaseUntil" INTEGER NOT NULL DEFAULT 0,
+    "retryAt" INTEGER NOT NULL DEFAULT 0,
+    "error" TEXT,
+    "errorDetail" TEXT,
+    "invitationHash" TEXT,
+    "invitationExpiresAt" INTEGER,
+    "lastInvitationAt" INTEGER NOT NULL DEFAULT 0,
+    "completedAt" INTEGER,
+    CHECK ("step" <> 'ready' OR "fingerprint" IS NOT NULL),
+    CHECK ("completedAt" IS NULL OR "step" = 'ready')
+);

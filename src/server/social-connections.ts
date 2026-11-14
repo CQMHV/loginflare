@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
 import type { Env } from './config';
 import { createAuth } from './auth';
+import { readBranding } from './branding-settings';
 import { databaseRateLimit } from './rate-limit';
 import { publicUrl } from './social-network';
 import { connectionTypes, type ConnectionConfig, type ConnectionType, type PublicProvider, type SocialConnection } from '../shared/social';
@@ -151,7 +152,7 @@ socialConnections.post('/api/admin/social-connections/:id/test', async (c) => {
     if (!body.success) return c.json({ code: 'INVALID_INPUT' }, 400);
     const selected = await connection(c.env, c.req.param('id'), true);
     if (!selected) return c.json({ code: 'SOCIAL_CONNECTION_NOT_FOUND' }, 404);
-    return createAuth(c.env, undefined, (task) => c.executionCtx.waitUntil(task), selected).handler(new Request(`${c.env.AUTH_URL}/api/auth/social/start`, {
+    return createAuth(c.env, undefined, (task) => c.executionCtx.waitUntil(task), selected, undefined, [], (await readBranding(c.env.DB)).name).handler(new Request(`${c.env.AUTH_URL}/api/auth/social/start`, {
         method: 'POST', headers: c.req.raw.headers, body: JSON.stringify({ connectionId: selected.id, locale: body.data.locale, purpose: 'test' }),
     }));
 });

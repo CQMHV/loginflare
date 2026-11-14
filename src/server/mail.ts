@@ -1,27 +1,20 @@
 import type { Env } from './config.ts';
 import { isLocale, localeToPath, type Locale } from '../shared/locales.ts';
 import { readBranding } from './branding-settings';
-import { brandColors } from '../shared/brand-colors';
+import { renderMail } from './mail-template';
 
 type MailUser = { email: string; name: string; locale?: unknown; id?: string };
 const copy = {
     'en-US': {
         verify: ['Verify your email', 'Confirm your email address to finish setting up your {{brand}} account.', 'Verify email'],
-        ignore: 'If you did not request this email, you can safely ignore it.',
     },
     'zh-CN': {
         verify: ['验证你的邮箱', '请确认邮箱地址，完成 {{brand}} 账号注册。', '验证邮箱'],
-        ignore: '如果你没有发起此请求，可以忽略这封邮件。',
     },
-} satisfies Record<Locale, { verify: string[]; ignore: string }>;
-
-function escapeHtml(value: string): string {
-    return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
-}
+} satisfies Record<Locale, { verify: string[] }>;
 
 export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: string): Promise<void> {
     const brand = await readBranding(env.DB);
-    const colors = brandColors(brand.primaryColor, brand.colorScheme).light;
     const locale = isLocale(user.locale) ? user.locale : 'en-US';
     const path = localeToPath[locale];
     const url = new URL(sourceUrl);
@@ -31,15 +24,6 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
     if (originalCallback) {
         const original = new URL(originalCallback, env.AUTH_URL);
         if (original.origin !== env.AUTH_URL) throw new Error('Invalid mail callback origin');
-        if (original.pathname === `/${path}/setup/verified`) {
-            // Only the currently bound candidate can receive an installation
-            // callback. A caller-provided callback is not installation authority.
-            const candidate = user.id ? await env.DB.prepare(`SELECT 1 FROM "lfControl" WHERE "id" = 1
-                AND "installation" = 'installing' AND "candidateUserId" = ? AND "candidateEmail" = ?`)
-                .bind(user.id, user.email.toLowerCase()).first() : null;
-            if (!candidate) throw new Error('Invalid installation mail callback');
-            callback.pathname = original.pathname;
-        }
         // Preserve the provider-signed flow query while the account preference
         // determines the email and result-page language.
         callback.search = original.search;
@@ -53,12 +37,27 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
             to: user.email,
             from: { email: env.EMAIL_FROM, name: brand.name },
             subject: `${subject} · ${brand.name}`,
-            text: `${introduction}\n\n${link}\n\n${copy[locale].ignore}`,
-            html: `<!doctype html><html lang="${locale}"><body style="margin:0;background:${colors.surface};font-family:Arial,sans-serif;color:${colors['on-surface']}"><main style="max-width:520px;margin:40px auto;background:${colors['surface-container-lowest']};padding:40px;border-radius:16px"><p style="font-weight:700;color:${colors.primary}">${escapeHtml(brand.name)}</p><h1 style="font-size:24px">${escapeHtml(subject)}</h1><p>${escapeHtml(introduction)}</p><p style="margin:32px 0"><a href="${escapeHtml(link)}" style="display:inline-block;padding:14px 22px;background:${colors.primary};color:${colors['on-primary']};border-radius:8px;text-decoration:none">${escapeHtml(label)}</a></p><p style="font-size:13px;color:${colors['on-surface-variant']}">${escapeHtml(copy[locale].ignore)}</p></main></body></html>`,
+            ...renderMail({ brand, origin: env.AUTH_URL, locale, title: subject!, introduction, action: { label: label!, url: link } }),
         });
     } catch {
         throw new Error('EMAIL_DELIVERY_FAILED');
     }
+}
+
+export async function sendInstallationMail(env: Env, email: string, token: string, locale: Locale): Promise<void> {
+    const brand = await readBranding(env.DB);
+    const link = new URL(`/${localeToPath[locale]}/setup`, env.AUTH_URL);
+    link.hash = token;
+    const chinese = locale === 'zh-CN';
+    const subject = chinese ? `创建 ${brand.name} 管理员` : `Create your ${brand.name} administrator`;
+    const message = chinese ? '打开此链接设置用户名和密码。链接仅可使用一次，20 分钟后失效。'
+        : 'Open this link to choose your username and password. It can be used once and expires in 20 minutes.';
+    await env.EMAIL.send({
+        to: email, from: { email: env.EMAIL_FROM, name: brand.name }, subject,
+        ...renderMail({ brand, origin: env.AUTH_URL, locale,
+            title: chinese ? '创建首个管理员' : 'Create the first administrator', introduction: message,
+            action: { label: chinese ? '创建管理员' : 'Create administrator', url: link.toString() } }),
+    });
 }
 
 export async function sendEmailCode(env: Env, user: MailUser, code: string, purpose: 'verify' | 'recovery' | 'social'): Promise<void> {
@@ -75,8 +74,7 @@ export async function sendEmailCode(env: Env, user: MailUser, code: string, purp
             to: user.email,
             from: { email: env.EMAIL_FROM, name: brand.name },
             subject: `${subject} · ${brand.name}`,
-            text: `${introduction}\n\n${code}\n\n${expiry}\n\n${copy[locale].ignore}`,
-            html: `<!doctype html><html lang="${locale}"><body style="font-family:Arial,sans-serif;color:#20242c"><main style="max-width:520px;margin:40px auto;padding:32px"><h1>${escapeHtml(subject)}</h1><p>${escapeHtml(introduction)}</p><p style="font-size:32px;letter-spacing:6px;font-weight:bold">${code}</p><p>${expiry}</p><p>${copy[locale].ignore}</p></main></body></html>`,
+            ...renderMail({ brand, origin: env.AUTH_URL, locale, title: subject, introduction, code, note: expiry }),
         });
     } catch {
         throw new Error('EMAIL_DELIVERY_FAILED');

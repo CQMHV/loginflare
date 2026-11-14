@@ -213,8 +213,9 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
     });
 }
 
+for (const timing of ['immediate', 'after-navigation'] as const)
 for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['user', 320]] as const) {
-    test(`keeps the ${role} header menus accessible and bounded at ${width}px`, async ({ page, context }) => {
+    test(`keeps the ${role} header menus accessible and bounded at ${width}px with ${timing} feedback`, async ({ page, context }) => {
         const server = await mockAccount(context);
         server.state.actor = identity('alpha', role);
         await page.setViewportSize({ width, height: 812 });
@@ -250,7 +251,20 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
         await expect(account).toBeFocused();
         await language.press('ArrowDown');
         await expect(page.getByRole('menuitem', { name: 'English', exact: true })).toBeFocused();
-        await page.route(`${testOrigin}/api/auth/update-user`, (route) => route.fulfill({ status: 503, json: { code: 'REQUEST_FAILED' } }));
+        if (timing === 'immediate') {
+            // Resolve before the deferred locale navigation commits, as a fast response can in production.
+            await page.evaluate(() => {
+                const original = window.fetch;
+                window.fetch = (input, init) => String(input) === '/api/auth/update-user'
+                    ? Promise.resolve(new Response(JSON.stringify({ code: 'REQUEST_FAILED' }), { status: 503 }))
+                    : original(input, init);
+            });
+        } else {
+            await page.route(`${testOrigin}/api/auth/update-user`, async (route) => {
+                await page.waitForURL('/en-us/account');
+                await route.fulfill({ status: 503, json: { code: 'REQUEST_FAILED' } });
+            });
+        }
         await page.keyboard.press('Space');
         await expect(page).toHaveURL('/en-us/account');
         const failure = page.locator('.feedback-toast[role="alert"]');

@@ -24,6 +24,13 @@ function names(env: Env) {
     return { browser: `${prefix}loginflare.browser`, session: `${prefix}better-auth.session_token`, native: `${prefix}better-auth.` };
 }
 const attributes = (env: Env) => ({ path: '/', httpOnly: true, secure: env.APP_ENV !== 'development', sameSite: 'Lax' as const });
+function replaceRequestCookie(headers: Headers, cookie: string) {
+    const pair = cookie.split(';', 1)[0]!;
+    const name = pair.slice(0, pair.indexOf('='));
+    const other = (headers.get('cookie') ?? '').split(';').map((value) => value.trim())
+        .filter((value) => value && value.split('=', 1)[0] !== name);
+    headers.set('cookie', [...other, pair].join('; '));
+}
 async function digest(value: string) {
     return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -123,7 +130,7 @@ export async function resolveBrowserRequest(request: Request, env: Env): Promise
         if (!selected) headers.set(accountHeader, row.id);
         const rememberCookie = `${cookieNames.native}dont_remember`;
         if (row.rememberMe === 0) {
-            const signedCookie = await serializeSigned(rememberCookie, 'true', env.BETTER_AUTH_SECRET);
+            const signedCookie = await serializeSigned(rememberCookie, 'true', env.BETTER_AUTH_SECRET, attributes(env));
             cookies[rememberCookie] = parse(signedCookie.split(';', 1)[0]!)[rememberCookie]!;
         } else delete cookies[rememberCookie];
     }
@@ -252,7 +259,7 @@ async function revokeBrowserAccounts(env: Env, headers: Headers, accountId?: str
         if (!row.token) continue;
         // Native deletion hooks revoke online access and preserve the existing
         // offline-consent policy. Only this account's cookies reach signOut.
-        const cookie = await serializeSigned(cookieNames.session, row.token, env.BETTER_AUTH_SECRET);
+        const cookie = await serializeSigned(cookieNames.session, row.token, env.BETTER_AUTH_SECRET, attributes(env));
         const scopedHeaders = new Headers({ origin: env.AUTH_URL, cookie: `${names(env).browser}=${encodeURIComponent(parse(headers.get('cookie') ?? '')[names(env).browser] ?? '')}; ${cookie.split(';', 1)[0]}` });
         const requestId = headers.get('X-Loginflare-Request-ID');
         if (requestId) scopedHeaders.set('X-Loginflare-Request-ID', requestId);
@@ -301,7 +308,7 @@ browserRoutes.post('/auth-flows', async (c) => {
     if (!hash) {
         const cookie = await serializeSigned(names(c.env).browser, crypto.randomUUID() + crypto.randomUUID(), c.env.BETTER_AUTH_SECRET, { ...attributes(c.env), maxAge: rememberedLifetime / 1000 });
         c.header('Set-Cookie', cookie, { append: true });
-        headers = new Headers(headers); headers.append('cookie', cookie.split(';', 1)[0]!);
+        headers = new Headers(headers); replaceRequestCookie(headers, cookie);
         hash = await browserHash(c.env, headers);
     }
     const { kind, accountId, locale, oauth_query: oauthQuery = '' } = body.data;
@@ -394,7 +401,7 @@ export async function browserRequest(request: Request, env: Env, next: (request:
             let hash = await browserHash(env, headers);
             if (!hash) {
                 const cookie = await serializeSigned(cookieNames.browser, crypto.randomUUID() + crypto.randomUUID(), env.BETTER_AUTH_SECRET, { ...attributes(env), maxAge: rememberedLifetime / 1000 });
-                extraCookies.push(cookie); headers.append('cookie', cookie.split(';', 1)[0]!); hash = await browserHash(env, headers);
+                extraCookies.push(cookie); replaceRequestCookie(headers, cookie); hash = await browserHash(env, headers);
             }
             const id = crypto.randomUUID();
             const body = authenticationInput;

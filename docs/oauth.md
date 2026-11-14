@@ -112,7 +112,7 @@ Application logout and Loginflare logout are separate operations:
 
 Native logout confirmation pages send only an Origin referrer, never protocol queries; their form policy permits the exact registered post-logout destination's Origin while retaining the provider's signed-cookie confirmation checks.
 
-Signing keys use the provider's D1 model; JWT private-key encryption remains enabled. Routine redeployments must preserve the database, issuer, and authentication secret. Automatic signing-key rotation is not enabled by the current JWT configuration.
+Signing keys use the provider's D1 model; JWT private-key encryption remains enabled. Routine redeployments must preserve the database, issuer, and authentication secret. New RS256 keys have a 90-day signing lifetime; expired keys remain published for a 48-hour verification grace period. Migration 0024 gives existing indefinite keys a deadline 90 days after upgrade. This does not rotate the authentication master secret. Clients must refresh JWKS when encountering an unknown `kid`.
 
 ## Account security events
 

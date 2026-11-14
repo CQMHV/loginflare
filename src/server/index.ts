@@ -21,7 +21,7 @@ import { accessManagement } from './access-management';
 import { auditLogs, auditRequestHeader, observeAudit } from './audit';
 import { machines } from './machines';
 import { managementApi } from './management-api';
-import { dispatch, scheduledControl } from './runtime';
+import { dispatch, runScheduled } from './runtime';
 
 const routes: Record<string, readonly string[]> = {
     '/sign-up/email': ['POST'],
@@ -156,6 +156,7 @@ const headers = {
 const productionHeaders = secureHeaders({ ...headers, contentSecurityPolicy });
 const avatarHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], sandbox: [] } });
 const brandingHeaders = secureHeaders({ ...headers, contentSecurityPolicy: { defaultSrc: ["'none'"], styleSrc: ["'unsafe-inline'"], sandbox: [] } });
+const publicLogoHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], styleSrc: ["'unsafe-inline'"], sandbox: [] } });
 // Native logout uses a browser form and its own document CSP. Send only the
 // origin as Referer so a same-origin form keeps a usable Origin header.
 const logoutHeaders = secureHeaders({ ...headers, referrerPolicy: 'strict-origin' });
@@ -168,7 +169,8 @@ const developmentHeaders = secureHeaders({
     },
 });
 app.use('*', (c, next) => {
-    if (/^\/(branding\/logos|social\/icons)\/[^/]+$/.test(c.req.path)) return brandingHeaders(c, next);
+    if (/^\/branding\/logos\/[^/]+$/.test(c.req.path)) return publicLogoHeaders(c, next);
+    if (/^\/social\/icons\/[^/]+$/.test(c.req.path)) return brandingHeaders(c, next);
     if (/^\/avatars\/[^/]+$/.test(c.req.path)) return avatarHeaders(c, next);
     if (c.req.path === '/api/auth/oauth2/end-session' || c.req.path === '/api/auth/oauth2/end-session/confirm') return logoutHeaders(c, next);
     return (c.env.APP_ENV === 'development' ? developmentHeaders : productionHeaders)(c, next);
@@ -193,7 +195,6 @@ app.use('/api/*', (c, next) => {
 });
 app.use('/api/*', observeAudit);
 
-app.get('/api/health', (c) => c.json({ status: 'ok' }));
 app.get('/api/config', (c) => {
     validateConfig(c.env);
     return c.json({ turnstileSiteKey: c.env.TURNSTILE_SITE_KEY });
@@ -215,7 +216,7 @@ app.route('/', socialConnections);
 app.all('/.well-known/oauth-authorization-server/api/auth', async (c) => {
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cache-Control', 'no-store');
-    const response = await createAuth(c.env).handler(c.req.raw);
+    const response = await createAuth(c.env, undefined, undefined, undefined, undefined, [], (await readBranding(c.env.DB)).name).handler(c.req.raw);
     return c.newResponse(response.body, response);
 });
 app.use('/api/auth/*', async (c, next) => {
@@ -275,7 +276,7 @@ app.all('/api/auth/*', async (c) => {
     }
     const selected = selectedId ? await connection(c.env, selectedId, !!callbackId || body.purpose === 'test') : null;
     if (selectedId && !selected) return c.json({ code: 'SOCIAL_CONNECTION_NOT_FOUND' }, 404);
-    const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task), selected ?? undefined);
+    const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task), selected ?? undefined, undefined, [], (await readBranding(c.env.DB)).name);
     if (privatePaths.has(path) || path.startsWith('/admin/') || path === '/get-session') {
         const identity = await auth.api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
         if (!identity && path !== '/get-session') return c.json({ code: 'UNAUTHORIZED' }, 401);
@@ -345,18 +346,11 @@ export default {
     fetch(request: Request, env: Env, ctx: ExecutionContext) {
         const headers = new Headers(request.headers);
         headers.set(auditRequestHeader, crypto.randomUUID());
-        // Immutable public objects have no D1/schema dependency and cannot
-        // mutate storage. Keep their established GET/HEAD availability while
-        // installation, recovery or schema maintenance is in progress.
-        if (['GET', 'HEAD'].includes(request.method)
-            && /^\/(?:avatars|branding\/logos|social\/icons)\/[^/]+$/.test(new URL(request.url).pathname)) {
-            return app.fetch(new Request(request, { headers }), env, ctx);
-        }
         return dispatch(new Request(request, { headers }), env, ctx, (incoming, scoped, context) =>
             browserRequest(incoming, scoped, async (resolved) => app.fetch(resolved, scoped, context)));
     },
     async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-        ctx.waitUntil(scheduledControl(env, ctx, async (scoped) => {
+        ctx.waitUntil(runScheduled(env, async (scoped) => {
             const result = await maintainDatabase(scoped);
             console.log(JSON.stringify({ event: 'database_maintenance', ...result }));
         }).catch(() => {

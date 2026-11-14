@@ -15,14 +15,21 @@ import { browserAccounts, browserSessionPlugin } from './browser-accounts';
 import { auditAuthentication } from './audit';
 import { apiAccessClaims } from './api-access-policy';
 import { managementScopes } from '../shared/machines';
+import { defaultBranding } from '../shared/branding';
 
-export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = []) {
+export function createAuth(env: Env, delivery = { failed: false }, schedule?: (task: Promise<unknown>) => void, selected?: LoadedConnection, management?: ApplicationManagement, businessScopes: string[] = [], brandName: string = defaultBranding.name) {
     validateConfig(env);
     const policy = createOAuthPolicy(env);
-    const multifactor = twoFactor({ issuer: 'Loginflare', allowPasswordless: true });
-    const passwordMfa = multifactor.hooks.after[0]!.matcher;
-    multifactor.hooks.after[0]!.matcher = (context) => passwordMfa(context)
-        || context.path === '/callback/:id' || context.path === '/social/verify-email';
+    const multifactor = twoFactor({ issuer: brandName, allowPasswordless: true });
+    const credentialPaths = ['/sign-in/email', '/sign-in/username', '/sign-in/phone-number'];
+    if (multifactor.hooks.after.length !== 1) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
+    const [credentialHook] = multifactor.hooks.after;
+    if (!credentialHook) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
+    const passwordMfa = credentialHook.matcher;
+    credentialHook.matcher = (context) => {
+        if (!credentialPaths.every((path) => passwordMfa({ ...context, path }))) throw new Error('MFA_PLUGIN_CONTRACT_MISMATCH');
+        return passwordMfa(context) || context.path === '/callback/:id' || context.path === '/social/verify-email';
+    };
     async function send(user: { email: string; name: string; locale?: unknown }, url: string) {
         try {
             await sendAccountMail(env, user, url);
@@ -32,7 +39,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
         }
     }
     return betterAuth({
-        appName: 'Loginflare',
+        appName: brandName,
         baseURL: env.AUTH_URL,
         basePath: '/api/auth',
         disabledPaths: ['/token'],
@@ -113,7 +120,7 @@ export function createAuth(env: Env, delivery = { failed: false }, schedule?: (t
             browserSessionPlugin(env),
             multiSession({ maximumSessions: 5 }),
             jwt({
-                jwks: { keyPairConfig: { alg: 'RS256' } },
+                jwks: { keyPairConfig: { alg: 'RS256' }, rotationInterval: 90 * 86400, gracePeriod: 48 * 3600 },
                 jwt: { issuer: `${env.AUTH_URL}/api/auth` },
                 disableSettingJwtHeader: true,
             }),

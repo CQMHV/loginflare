@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto';
 import { validateDeploymentConfiguration } from './scripts/deployment.mjs';
 
 const applicationBuild = process.env.WORKERS_CI_BUILD_UUID ?? randomUUID();
-const applicationBuildTime = Date.now().toString();
 export default defineConfig(({ mode }) => ({
     cacheDir: 'node_modules/.vite/loginflare',
     optimizeDeps: { include: ['@xmldom/xmldom'] },
@@ -43,7 +42,6 @@ export default defineConfig(({ mode }) => ({
                 ...configuration.vars,
                 LOGINFLARE_WORKER_NAME: configuration.name,
                 LOGINFLARE_BUILD_ID: configuration.vars?.APP_ENV === 'development' ? 'development' : applicationBuild,
-                LOGINFLARE_BUILD_TIME: configuration.vars?.APP_ENV === 'development' ? '0' : applicationBuildTime,
                 ...(account ? { LOGINFLARE_ACCOUNT_ID: account } : {}),
             } };
         },

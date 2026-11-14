@@ -6,7 +6,8 @@ import { brandColors } from '../src/shared/brand-colors';
 import { colorSchemes, defaultBranding, type Branding } from '../src/shared/branding';
 import { maximumImageBytes } from '../src/shared/image-limits';
 import { maintainDatabase } from '../src/server/maintenance';
-import { harness, origin, session } from './helpers';
+import { sendAccountMail, sendEmailCode, sendInstallationMail } from '../src/server/mail';
+import { harness, origin, password, session } from './helpers';
 import { avatarPng, avatarJpeg, avatarWebpWithMetadata } from './fixtures/avatars';
 
 const svg = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40"><rect width="80" height="40" fill="#6750a4"/></svg>';
@@ -18,6 +19,43 @@ beforeEach(async () => {
     });
 });
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
+
+it.each(['en-US', 'zh-CN'] as const)('uses current branding in every %s email, including after another rename', async (locale) => {
+    const { client, cookie } = await admin();
+    for (const name of ['Example & <Accounts>', 'Renamed identity service']) {
+        await update(client, cookie, await current(client), { name });
+        client.messages.length = 0;
+        await sendAccountMail(client.bindings, { email: 'mail@example.test', name: 'Person', locale }, `${origin}/api/auth/verify-email?token=fixture`);
+        for (const purpose of ['verify', 'recovery', 'social'] as const) {
+            await sendEmailCode(client.bindings, { email: 'mail@example.test', name: 'Person', locale }, '123456', purpose);
+        }
+        await sendInstallationMail(client.bindings, 'owner@example.test', 'a'.repeat(64), locale);
+        expect(client.messages).toHaveLength(5);
+        for (const message of client.messages) {
+            expect(message.from).toEqual({ email: client.bindings.EMAIL_FROM, name });
+            expect(message.subject).toContain(name);
+            expect(message.subject + message.text + message.html).not.toContain('Loginflare');
+            expect(message.html).not.toContain('<Accounts>');
+            expect(message.html).toContain('class="mail-card"');
+            expect(message.html).toContain('role="presentation"');
+            expect(message.html).toContain('@media(prefers-color-scheme:dark)');
+            expect(message.html).not.toContain('var(--');
+        }
+    }
+});
+
+it('uses the current brand for authenticator enrollment and the public management API title', async () => {
+    const { client, cookie } = await admin();
+    await update(client, cookie, await current(client), { name: 'Example Accounts' });
+    const enrollment = await client.request('/api/auth/two-factor/enable', { cookie, body: { password } });
+    expect(enrollment.status, await enrollment.clone().text()).toBe(200);
+    const { totpURI } = await enrollment.json<{ totpURI: string }>();
+    const uri = new URL(totpURI);
+    expect(uri.searchParams.get('issuer')).toBe('Example Accounts');
+    expect(decodeURIComponent(uri.pathname)).toContain('Example Accounts:');
+    const document = await client.request('/api/management/v1/openapi.json');
+    expect((await document.json<{ info: { title: string } }>()).info.title).toBe('Example Accounts Management API');
+});
 async function admin() { const client = harness(); return { client, cookie: await client.administrator() }; }
 async function current(client = harness()) { return (await client.request('/api/branding')).json<Branding>(); }
 async function update(client: ReturnType<typeof harness>, cookie: string, value: Branding, overrides = {}) {
@@ -99,6 +137,7 @@ it('preserves SVG vectors and serves isolated immutable image responses without 
     expect(response.status).toBe(200); expect(await response.text()).toBe(svg);
     expect(response.headers.get('content-type')).toBe('image/svg+xml');
     expect(response.headers.get('content-disposition')).toBe('attachment');
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
     expect(response.headers.get('content-security-policy')).toContain('sandbox');
     const etag = response.headers.get('etag')!;

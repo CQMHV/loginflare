@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider';
 import { createAuth } from './auth';
+import { readBranding } from './branding-settings';
 import type { Env } from './config';
 import { advanceBrowserOAuthFlow, browserAccounts, browserOAuthQueryMatches, consumeBrowserFlow, readBrowserFlow, resolveBrowserRequest } from './browser-accounts';
 import { activeApiToken, businessScopeCatalog, identityScopes, knownApiScopes, permittedApiScopes } from './api-access-policy';
@@ -147,7 +148,7 @@ oauth.all('*', async (c) => {
         if ((form.has('resource') || scopes.some((scope) => !identityScopes.includes(scope)))
             && !await knownApiScopes(c.env, form.get('client_id') ?? '', form.has('resource') ? [form.get('resource')!] : [], scopes)) return c.json({ error: 'invalid_scope' }, 400);
     }
-    const auth = createAuth(c.env, undefined, undefined, undefined, undefined, discovery ? await businessScopeCatalog(c.env) : []);
+    const auth = createAuth(c.env, undefined, undefined, undefined, undefined, discovery ? await businessScopeCatalog(c.env) : [], (await readBranding(c.env.DB)).name);
     if (jsonBody) {
         const signed = jsonBody.oauth_query;
         if (typeof signed !== 'string' || !await verifyOAuthQueryParams(signed, (await auth.$context).secret)

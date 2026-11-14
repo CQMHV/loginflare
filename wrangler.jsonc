@@ -48,6 +48,10 @@
         {
             "binding": "AVATARS",
             "bucket_name": "loginflare-avatars"
+        },
+        {
+            "binding": "PRIVATE",
+            "bucket_name": "loginflare-private"
         }
     ],
     "workers_dev": true,

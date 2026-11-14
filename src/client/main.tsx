@@ -2,10 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
-const controlPage = /^\/(?:(?:en-us|zh-cn)\/)?(?:setup|maintenance)(?:\/verified)?\/?$/.test(location.pathname);
+const setupPage = /^\/(?:(?:en-us|zh-cn)\/)?setup\/?$/.test(location.pathname);
 
-if (controlPage) {
-    // Recovery must not initialize account, branding or application queries.
+if (setupPage) {
     const { default: Setup } = await import('./Setup');
     root.render(<React.StrictMode><Setup /></React.StrictMode>);
 } else {
