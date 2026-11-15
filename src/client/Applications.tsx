@@ -5,12 +5,15 @@ import { localizedPath, type Locale } from '../shared/locales';
 import { applicationCreateSchema, applicationUpdateSchema, applicationFieldErrors, applicationFields, type ApplicationField, type ApplicationFieldErrors } from '../shared/application-validation';
 import { ApiError, fetchJson } from './api';
 import { Button, ButtonLink, Checkbox, FormDialog, Select, TextField } from './material';
+import { EmptyList, SearchReset } from './list-feedback';
 import { ErrorNotice, useFeedback } from './feedback';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
 import { ResourceFeedback, useDataActions, useResource } from './data';
 import { useClearSecrets, usePageDraft } from './page-state';
 import { ToolbarIcon } from './ToolbarIcon';
 import { useBranding } from './branding';
+import { documentationUrl } from './documentation';
+import { sameSelection } from './form-state';
 
 export interface Application {
     clientId: string;
@@ -55,15 +58,16 @@ function ApplicationActionDialog({ secret, confirmation, busy, error, onCancel, 
     </FormDialog>;
 }
 
-function ConnectionDetails({ application, issuer }: { application: Application; issuer: string }) {
+function ConnectionDetails({ application, issuer, locale }: { application: Application; issuer: string; locale: Locale }) {
     const { t } = useTranslation();
     const brand = useBranding();
     return <section className="card"><div className="card-heading"><h2>{t('oauth.connectionDetails')}</h2><p>{t('oauth.connectionDescription', { brand: brand.name })}</p></div>
         <div className="card-body stack-form">
+            <ol className="connection-steps"><li>{t('oauth.connectionConfigure')} {t(application.type === 'web' ? 'oauth.webStorageHint' : 'oauth.spaSecretHint')}</li><li>{t('oauth.connectionRedirects')} <a href={documentationUrl(locale, application.type === 'web' ? 'examples/server-web/README' : 'docs/oauth')} target="_blank" rel="noreferrer">{t(application.type === 'web' ? 'oauth.webExample' : 'oauth.spaExample')}</a></li><li>{t('oauth.connectionVerify')}</li></ol>
             <TextField label={t('oauth.clientId')} value={application.clientId} readOnly />
             <TextField label={t('oauth.issuer')} value={issuer} readOnly />
             <TextField label={t('oauth.discovery')} value={`${issuer}/.well-known/openid-configuration`} readOnly />
-            <p className="muted">{t(application.type === 'spa' ? 'oauth.spaStorageHint' : 'oauth.typeWebHint')}</p>
+            {application.type === 'spa' && <p className="muted">{t('oauth.spaStorageHint')}</p>}
         </div>
     </section>;
 }
@@ -100,6 +104,7 @@ function DeveloperApplicationsPage({ locale }: { locale: Locale }) {
             <h2 id="developer-applications-empty-title">{t('oauth.firstApplication')}</h2>
             <p>{t('oauth.applicationsEmpty', { brand: brand.name })}</p>
             <ButtonLink to={createPath}>{t('oauth.createApplication')}</ButtonLink>
+            <a href={documentationUrl(locale, 'docs/oauth')} target="_blank" rel="noreferrer">{t('oauth.integrationGuide')}</a>
         </section>}
         {!!applications?.length && <div className="developer-applications-grid">{applications.map((application) => {
             const titleId = `developer-application-${encodeURIComponent(application.clientId)}`;
@@ -134,9 +139,9 @@ function ManagedApplicationsPage({ locale }: { locale: Locale }) {
         setParameters(next);
     }
     return <>
-        <div className="page-heading"><div><h1>{t('oauth.applicationsTitle')}</h1><p>{t('oauth.applicationsDescription')}</p></div></div>
+        <div className="page-heading"><div><h1>{t('oauth.applicationsTitle')}</h1><p>{t('oauth.applicationsDescription')}</p></div><ButtonLink className="secondary" to={localizedPath(locale, 'developer/applications')}>{t('oauth.openDeveloper')}</ButtonLink></div>
         {applicationQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}
-        <section className="card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'clientId', label: t('oauth.clientId') }, { value: 'name', label: t('oauth.applicationName') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('oauth.searchApplications')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
+        <section className="card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'clientId', label: t('oauth.clientId') }, { value: 'name', label: t('oauth.applicationName') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('oauth.searchApplications')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('lookupHints.' + field, { defaultValue: t('exactLookupHint') })} /></div><Button className="secondary" type="submit">{t('search')}</Button><SearchReset onReset={() => { setSearchDraft(undefined); setParameters({}); }} /></form>
         <ResourceFeedback query={applicationQuery} />
         {data && <><div className="table-scroll"><table>
             <thead><tr><th>{t('oauth.applicationName')}</th><th>{t('oauth.applicationType')}</th><th>{t('oauth.developer')}</th><th>{t('status')}</th><th>{t('created')}</th></tr></thead>
@@ -144,7 +149,7 @@ function ManagedApplicationsPage({ locale }: { locale: Locale }) {
                 <td><Link className="application-name" to={listPath(localizedPath(locale, 'admin/applications/detail'), location.search, { clientId: application.clientId })}>{application.name}</Link><small className="application-id">{application.clientId}</small></td>
                 <td>{t(application.type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')}</td><td><ApplicationOwner owner={application.owner} locale={locale} /></td><td><Status disabled={application.disabled} adminSuspended={application.adminSuspended} ownerId={application.ownerId} /></td><td className="muted">{application.createdAt && !Number.isNaN(Date.parse(application.createdAt)) ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(application.createdAt)) : '—'}</td>
             </tr>)}</tbody>
-        </table></div>{data.items.length === 0 && <p className="empty-state">{t('oauth.managedApplicationsEmpty')}</p>}<PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
+        </table></div>{data.items.length === 0 && <EmptyList message={t('oauth.managedApplicationsEmpty')} />}<PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
         </section>
     </>;
 }
@@ -174,6 +179,9 @@ export function ApplicationEditor({ locale, create = false, area = 'admin' }: { 
         postLogoutRedirectUris: application?.postLogoutRedirectUris.join('\n') ?? '', scopes: application?.scopes ?? ['openid', 'profile', 'email', 'offline_access'],
     };
     const { name, type, redirectUris, postLogoutRedirectUris, scopes } = form;
+    const lines = (value: string) => value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const dirty = create || !!application && (name.trim() !== application.name || JSON.stringify(lines(redirectUris)) !== JSON.stringify(application.redirectUris)
+        || JSON.stringify(lines(postLogoutRedirectUris)) !== JSON.stringify(application.postLogoutRedirectUris) || !sameSelection(scopes, application.scopes));
     function clearFieldError(field: ApplicationField) {
         setFieldErrors((current) => { const next = { ...current }; delete next[field]; return next; });
         setError(undefined);
@@ -216,9 +224,8 @@ export function ApplicationEditor({ locale, create = false, area = 'admin' }: { 
     }
 
     async function save(event: FormEvent<HTMLFormElement>) {
-        event.preventDefault(); if (disabled || area !== 'developer') return;
+        event.preventDefault(); if (disabled || area !== 'developer' || !dirty) return;
         setError(undefined);
-        const lines = (value: string) => value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         const input = (create ? applicationCreateSchema : applicationUpdateSchema).safeParse({
             name: name.trim(), ...(create ? { type } : {}),
             redirectUris: lines(redirectUris), postLogoutRedirectUris: lines(postLogoutRedirectUris), scopes,
@@ -277,14 +284,15 @@ export function ApplicationEditor({ locale, create = false, area = 'admin' }: { 
             <ErrorNotice code={error} />
             <TextField name="name" label={t('oauth.applicationName')} value={name} onValueChange={setName} maxLength={100} required disabled={disabled} supportingText={t('oauth.applicationNameHint')} {...fieldFeedback('name')} />
             {create ? <Select name="type" label={t('oauth.applicationType')} value={type} options={[{ value: 'web', label: t('oauth.typeWeb') }, { value: 'spa', label: t('oauth.typeSpa') }]} onChange={(value) => setType(value === 'spa' ? 'spa' : 'web')} disabled={disabled} {...fieldFeedback('type')} /> : <TextField label={t('oauth.applicationType')} value={t(type === 'spa' ? 'oauth.typeSpa' : 'oauth.typeWeb')} readOnly supportingText={t('oauth.typeFixed')} />}
-            {create && <p className="muted">{t(type === 'spa' ? 'oauth.typeSpaHint' : 'oauth.typeWebHint')}</p>}
+            {create && <p className="muted">{t(type === 'spa' ? 'oauth.typeSpaHint' : 'oauth.typeWebHint')} {t('oauth.typeFixed')} <a href={documentationUrl(locale, type === 'web' ? 'examples/server-web/README' : 'docs/oauth')} target="_blank" rel="noreferrer">{t(type === 'web' ? 'oauth.webExample' : 'oauth.spaExample')}</a></p>}
+            <p className="muted">{t('oauth.callbackSource')}</p>
             <TextField name="redirectUris" label={t('oauth.redirectUris')} type="textarea" value={redirectUris} onValueChange={setRedirectUris} required maxLength={8192} disabled={disabled} supportingText={t('oauth.redirectUrisHint')} {...fieldFeedback('redirectUris')} />
             <TextField name="postLogoutRedirectUris" label={t('oauth.postLogoutRedirectUris')} type="textarea" value={postLogoutRedirectUris} onValueChange={setPostLogoutRedirectUris} required maxLength={8192} disabled={disabled} supportingText={t('oauth.postLogoutRedirectUrisHint', { brand: brand.name })} {...fieldFeedback('postLogoutRedirectUris')} />
             <fieldset className="scope-options" name="scopes" tabIndex={-1} aria-describedby={fieldErrors.scopes ? 'application-scopes-error' : undefined}><legend>{t('oauth.allowedScopes')}</legend><p className="muted">{t('oauth.scopesHint')}</p><p className="muted">{t('oauth.openidRequired')}</p>{['profile', 'email', 'offline_access'].map((scope) => <Checkbox key={scope} label={t(`oauth.scope_${scope}`)} checked={scopes.includes(scope)} disabled={disabled} onCheckedChange={(checked) => setScopes((current) => checked ? [...current, scope] : current.filter((value) => value !== scope))} />)}{fieldErrors.scopes && <p className="field-error" role="alert" id="application-scopes-error">{t(`oauth.validation.${fieldErrors.scopes}`)}</p>}</fieldset>
-            <div className="form-footer">{draft && <Button className="text-button" disabled={disabled} onClick={() => { setDraft(undefined); setFieldErrors({}); setError(undefined); }}>{t('discardDraft')}</Button>}<Button type="submit" busy={busy} disabled={restricted}>{t(create ? 'oauth.createApplication' : 'save')}</Button></div>
+            <div className="form-footer">{!create && <small className="muted" role="status">{t(dirty ? 'unsavedChanges' : 'noChanges')}</small>}{draft && <Button className="text-button" disabled={disabled} onClick={() => { setDraft(undefined); setFieldErrors({}); setError(undefined); }}>{t('discardDraft')}</Button>}<Button type="submit" busy={busy} disabled={restricted || !dirty}>{t(create ? 'oauth.createApplication' : 'save')}</Button></div>
         </form></section>)}
         {application && area === 'admin' && <ApplicationDetails application={application} locale={locale} />}
-        {application && area === 'developer' && <ConnectionDetails application={application} issuer={issuer} />}
+        {application && area === 'developer' && <ConnectionDetails application={application} issuer={issuer} locale={locale} />}
         {!!application?.apiScopes?.length && <section className="card"><div className="card-heading"><h2>{t('access.applicationPermissions')}</h2><p>{t('access.applicationPermissionsDescription')}</p></div><div className="card-body access-items">{application.apiScopes.map((scope) => <code className="break-all" key={scope}>{scope}</code>)}</div></section>}
         {application && !create && <section className="card"><div className="card-heading"><h2>{t(area === 'admin' ? 'oauth.manageApplication' : 'oauth.applicationControls')}</h2><p>{t(area === 'admin' ? 'oauth.manageApplicationDescription' : restricted ? 'oauth.adminSuspendedDescription' : 'oauth.controlsDescription')}</p></div><div className="card-body stack-form">
             {!confirmation && <ErrorNotice code={controlError} />}

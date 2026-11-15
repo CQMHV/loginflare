@@ -1,5 +1,5 @@
 import { testOrigin } from './runtime';
-import { expect, test, switchArea, type Page } from './fixtures';
+import { expect, test, switchArea, type Page, openNavigation } from './fixtures';
 import { hashPassword } from 'better-auth/crypto';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { executeLocal, removeLocalApplications, removeLocalFixtures } from './database';
@@ -134,6 +134,9 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     await expect(page).toHaveURL('/en-us/admin/users');
     await expect(page.locator('tbody tr')).toHaveCount(20);
 
+    await openNavigation(page);
+
+
     await page.getByRole('link', { name: 'Applications', exact: true }).click();
     await expect(page.locator('tbody tr')).toHaveCount(20);
     const secondApplications = await changePage(page, '/api/admin/applications', 'Next');
@@ -158,6 +161,8 @@ test('keeps bounded user, application, and session pages in the URL', async ({ p
     await expect(page.locator('tbody tr')).toContainText(applications[4].name);
 
     await switchArea(page, 'Account center');
+    await openNavigation(page);
+
     await page.getByRole('link', { name: 'Sessions', exact: true }).click();
     await expect(page.locator('.session-row')).toHaveCount(20);
     await expect(page.getByText('This session', { exact: true })).toBeVisible();

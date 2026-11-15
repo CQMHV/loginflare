@@ -45,9 +45,10 @@ export function PageNavigation({ pageInfo, count, cursor, onNavigate }: {
     onNavigate: (cursor: string | null) => void;
 }) {
     const { t } = useTranslation();
-    return <div className="pagination"><small>{t('itemsOnPage', { count })}</small><div>
+    const canNavigate = !!(cursor || pageInfo.previousCursor || pageInfo.nextCursor);
+    return <div className="pagination"><small>{t('itemsOnPage', { count })}</small>{canNavigate && <div>
         <Button className="secondary small" disabled={!pageInfo.previousCursor} onClick={() => onNavigate(pageInfo.previousCursor)}>{t('previous')}</Button>
         <Button className="secondary small" disabled={!pageInfo.nextCursor} onClick={() => onNavigate(pageInfo.nextCursor)}>{t('next')}</Button>
         <Button className="text-button small" disabled={!cursor} onClick={() => onNavigate(null)}>{t('returnLatest')}</Button>
-    </div></div>;
+    </div>}</div>;
 }

@@ -44,9 +44,24 @@ export async function installOfflineRoutes(context: BrowserContext) {
 export const test = base.extend({
     context: async ({ context }, use) => { await installOfflineRoutes(context); await use(context); },
 });
+export async function openNavigation(page: Page) {
+    await expect(page.locator('.sidebar')).toBeVisible();
+    const toggle = page.locator('.mobile-navigation button');
+    if (await toggle.isVisible() && await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+}
 export async function switchArea(page: Page, name: string) {
-    await page.locator('.area-selector').getByRole('button').click();
-    await page.getByRole('menuitem', { name, exact: true }).click();
+    const lifecycle = await page.locator('.area-selector md-menu').evaluateHandle((menu) => ({
+        opened: new Promise<void>((resolve) => menu.addEventListener('opened', () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => menu.addEventListener('closed', () => resolve(), { once: true })),
+    }));
+    try {
+        await page.locator('.area-selector').getByRole('button').click();
+        await lifecycle.evaluate((events) => events.opened);
+        const option = page.getByRole('menuitem', { name, exact: true });
+        await option.click();
+        await lifecycle.evaluate((events) => events.closed);
+        await expect(page.locator('.area-selector').getByRole('button')).toHaveAttribute('aria-description', name);
+    } finally { await lifecycle.dispose(); }
 }
 
 /** Install both listeners before interaction and wait for the actual animation

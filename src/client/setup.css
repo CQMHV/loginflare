@@ -9,4 +9,6 @@
 .setup-card input { min-width: 0; padding: 12px; border: 1px solid var(--md-sys-color-outline); border-radius: 8px; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font: inherit; }
 .setup-card button { min-height: 44px; justify-self: start; padding: 8px 20px; border: 0; border-radius: 24px; background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); font: inherit; cursor: pointer; }
 .setup-card button:disabled { opacity: .5; cursor: default; }
-.setup-notice { padding: 12px; border-radius: 8px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); overflow-wrap: anywhere; }
+.setup-notice { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); overflow-wrap: anywhere; }
+.setup-inputs { margin: 0; padding-inline-start: 20px; overflow-wrap: anywhere; }
+.setup-inputs li + li { margin-top: 8px; }

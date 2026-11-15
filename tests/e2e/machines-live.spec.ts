@@ -35,7 +35,7 @@ test('persists machine credentials and roles through the real console and authen
         let dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByLabel('Role name', { exact: true }).fill(roleName);
         await dialog.getByRole('checkbox', { name: 'Read users (management:users:read)', exact: true }).check();
-        await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Create service role', exact: true }).click();
         await expect(dialog).toHaveCount(0);
         const roles = await context.request.get(`/api/admin/machines/roles?${new URLSearchParams({ lookupField: 'name', lookupValue: roleName })}`);
         expect(roles.status(), await roles.text()).toBe(200); roleId = (await roles.json()).items[0].id;
@@ -44,7 +44,7 @@ test('persists machine credentials and roles through the real console and authen
         await page.getByRole('button', { name: 'Create service application', exact: true }).click();
         dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByLabel('Application name', { exact: true }).fill(applicationName);
-        await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Create service application', exact: true }).click();
         await expect(dialog.getByLabel('Client secret', { exact: true })).toBeVisible();
         clientId = await dialog.getByLabel('Client ID', { exact: true }).inputValue();
         clientSecret = await dialog.getByLabel('Client secret', { exact: true }).inputValue();

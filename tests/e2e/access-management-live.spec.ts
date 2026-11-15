@@ -32,7 +32,7 @@ test('persists API resources, application access and user roles through the real
         let dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByLabel('Resource name', { exact: true }).fill(resourceName);
         await dialog.getByLabel('API identifier', { exact: true }).fill(identifier);
-        await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Create API resource', exact: true }).click();
         await expect(dialog).toHaveCount(0);
         await page.getByRole('link', { name: resourceName, exact: true }).click();
         await expect(page).toHaveURL((url) => url.pathname === '/en-us/admin/access/resources/detail' && !!url.searchParams.get('id'));
@@ -41,7 +41,7 @@ test('persists API resources, application access and user roles through the real
         dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByLabel('Permission name', { exact: true }).fill(permissionName);
         await dialog.getByLabel('Permission scope', { exact: true }).fill(scope);
-        await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Create permission', exact: true }).click();
         await expect(dialog).toHaveCount(0);
         await page.getByRole('button', { name: 'Allow application', exact: true }).click();
         dialog = page.locator('md-dialog.form-dialog');
@@ -57,7 +57,7 @@ test('persists API resources, application access and user roles through the real
         dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByLabel('Role name', { exact: true }).fill(roleName);
         await dialog.getByRole('checkbox', { name: `${permissionName} (${scope})`, exact: true }).check();
-        await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Create role', exact: true }).click();
         await expect(page.getByText(roleName, { exact: true })).toBeVisible();
         const roles = await context.request.get(`/api/admin/access/roles?${new URLSearchParams({ lookupField: 'name', lookupValue: roleName })}`);
         expect(roles.status()).toBe(200); roleId = (await roles.json()).items[0].id;

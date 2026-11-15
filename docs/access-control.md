@@ -4,6 +4,10 @@
 
 Loginflare issues resource-bound access tokens for business APIs using the existing authorization-code and refresh-token flows. Administrators manage API resources and permissions, group permissions into roles, assign those roles to users, and explicitly allow applications to request a resource. The user's consent is a separate requirement. A resource link or consent never creates a role assignment.
 
+For account sign-in only, follow [application integration](oauth.md). API resources and roles are optional.
+
+Choose the caller first: the configuration and authorization-code examples below describe **Web / SPA applications with a signed-in user**. **Backend services and scripts without user sign-in** use service applications and service roles. Follow the [service access steps](management-api.md) to select the business API identifier and `client_credentials` parameters; business calls need no Management API permissions. Both callers require the API to validate tokens and current permissions.
+
 ## Configure an API
 
 For an Orders API:
@@ -12,7 +16,7 @@ For an Orders API:
 2. Add permission scopes `orders:read` and `orders:write`, with readable display names.
 3. Open **Administration → Roles → User roles** and create a role such as `Order reader` containing `orders:read`.
 4. Open the intended user's administrator details and assign that user role.
-5. In the API resource's application section, add the client ID of each application allowed to request it.
+5. In the API resource's application section, add the client ID of each application allowed to request it. Copy the ID from its details under **Administration → Applications**; create new sign-in applications in the Developer center first.
 6. For live token introspection, create a separate server Web application for the API, store its client secret only on the API server, and link that application to the same resource. Its registered callbacks remain exact HTTPS URLs, even if this client is used only for introspection.
 
 An identifier is an exact HTTPS URI without a query, fragment, or embedded credentials. It is the audience contract, not a URL Loginflare downloads. Changing identity requires creating a resource with another identifier; editing a display name keeps the existing audience. Permission scopes are stable identifiers and are distinct from editable display names and descriptions. The identity scopes `openid`, `profile`, `email`, and `offline_access` remain reserved.

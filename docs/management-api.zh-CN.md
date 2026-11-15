@@ -17,6 +17,17 @@ Loginflare 将机器身份与用户、浏览器会话分开。管理员创建服
 
 人类管理员使用 `/api/admin/machines` 管理服务应用、角色分配、密钥轮换及令牌撤销，创建或编辑服务角色并查看权限。这些接口沿用当前标签页账号和管理员验证。公开管理 API 及普通开发者登录应用不能创建或修改机器权限。
 
+## 先选择要调用的 API
+
+| 调用目标 | 服务角色中的权限 | 令牌请求的 `resource` |
+| --- | --- | --- |
+| 你的业务 API，例如订单服务 | API 资源详情中创建的业务权限，例如 `orders:read` | 对应 API 资源的精确标识，例如 `https://api.example.com` |
+| Loginflare 管理 API | 此任务所需的 `management:*` 权限 | `urn:loginflare:management` |
+
+调用业务 API 不需要分配管理权限。先在资源详情创建业务权限，在服务角色中选择权限并为服务应用分配角色。然后使用服务应用的凭据请求令牌；例如 `grant_type=client_credentials`、`resource=https://api.example.com`、`scope=orders:read`。认证方式与下文相同，每次只请求一个 API。不能用管理 API 标识替代业务资源标识，也不能把两个 API 的 scope 混在同一次请求中。
+
+业务 API 仍需验证精确 audience、签名及当前权限；配置与验证步骤见[API 访问控制](access-control.zh-CN.md)。服务密钥只保存在服务后端。
+
 ## 获取管理令牌
 
 向已配置 issuer 的原生令牌接口发送表单，使用 `client_secret_basic`：

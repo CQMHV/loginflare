@@ -1,5 +1,5 @@
 import { testOrigin } from './runtime';
-import { expect, test } from './fixtures';
+import { expect, test, openNavigation } from './fixtures';
 import { randomUUID } from 'node:crypto';
 import { removeLocalFixtures } from './database';
 import { snapshotEmails, waitForCode, waitForMail } from './mailbox';
@@ -58,6 +58,8 @@ test('manages email addresses and recovers the same account through a secondary 
     await signIn(username, password);
     await expect(page).toHaveURL('/en-us/account');
     const original = await (await page.request.get('/api/auth/get-session')).json();
+    await openNavigation(page);
+
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await expect(page).toHaveURL('/en-us/account/emails');
     await expect(page.getByRole('button', { name: `Remove email: ${primary}`, exact: true })).toHaveCount(0);
@@ -120,6 +122,8 @@ test('manages email addresses and recovers the same account through a secondary 
     await signIn(secondary, recovered);
     await expect(page).toHaveURL('/en-us/account');
     expect((await (await page.request.get('/api/auth/get-session')).json()).user.id).toBe(original.user.id);
+    await openNavigation(page);
+
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await page.getByRole('button', { name: `Remove email: ${primary}`, exact: true }).click();
     await expect(emailDialog.getByRole('button', { name: 'Remove email', exact: true })).toHaveCount(0);

@@ -5,11 +5,14 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { localizedPath, type Locale } from '../shared/locales';
 import { ApiError, fetchJson } from './api';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, FormDialog, Select, TextField } from './material';
+import { EmptyList, SearchReset } from './list-feedback';
 import { ErrorNotice, useFeedback } from './feedback';
 import { ResourceFeedback, useDataActions, useResource } from './data';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
+import { sameSelection, useFieldErrorFocus } from './form-state';
 import { useClearSecrets } from './page-state';
 import { RoleNavigation } from './RoleNavigation';
+import { documentationUrl } from './documentation';
 
 const base = '/api/admin/access';
 interface ApiResource { id: string; name: string; identifier: string; description: string; disabled: boolean; accessTokenTtl: number | null; createdAt: string }
@@ -25,9 +28,13 @@ interface AuditEvent {
 
 function useAccessWrite() {
     const { t } = useTranslation(), actions = useDataActions(), feedback = useFeedback();
-    const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [fields, setFields] = useState<Record<string, string>>({});
+    const [busy, setBusy] = useState(false), [error, setError] = useState<string>(), [fields, updateFields] = useState<Record<string, string>>({});
+    const [attempt, setAttempt] = useState(0);
     const capture = useClearSecrets(() => { setBusy(false); setError(undefined); setFields({}); });
-    function clear() { setError(undefined); setFields({}); }
+    const formRef = useFieldErrorFocus(fields, attempt);
+    function setFields(next: Record<string, string>) { updateFields(next); if (Object.keys(next).length) setAttempt((value) => value + 1); }
+    function clear() { setError(undefined); updateFields({}); }
+    function clearField(name: string) { setError(undefined); updateFields((current) => { const next = { ...current }; delete next[name]; return next; }); }
     async function run(path: string, body: unknown, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', done: () => void) {
         if (busy) return;
         const current = capture(); setBusy(true); clear();
@@ -44,7 +51,7 @@ function useAccessWrite() {
         } finally { if (current()) setBusy(false); }
     }
     function field(name: string) { const value = fields[name]; return value ? t(`errors.${value}`, { defaultValue: t('access.invalidField') }) : undefined; }
-    return { busy, error, clear, run, field, fields, setFields };
+    return { busy, error, clear, run, field, fields, setFields, formRef, clearField };
 }
 
 function useListState(defaultField: string) {
@@ -54,24 +61,24 @@ function useListState(defaultField: string) {
     useEffect(() => { const search = new URLSearchParams(location.search); setField(search.get('lookupField') ?? defaultField); setValue(search.get('lookupValue') ?? ''); }, [location.search, defaultField]);
     function navigatePage(nextCursor: string | null) { const next = listParameters(location.search); if (nextCursor) next.set('cursor', nextCursor); else next.delete('cursor'); setParameters(next); }
     function search() { setParameters(value.trim() ? { lookupField: field, lookupValue: value.trim() } : {}); }
-    return { location, cursor, query, field, setField, value, setValue, navigatePage, search };
+    return { location, cursor, query, field, setField, value, setValue, navigatePage, search, reset: () => setParameters({}) };
 }
 
 function SearchBar({ state, fields, label, nameLabel }: { state: ReturnType<typeof useListState>; fields: string[]; label: string; nameLabel?: string }) {
     const { t } = useTranslation();
     return <form className="search-bar" onSubmit={(event) => { event.preventDefault(); state.search(); }}>
         <div className="search-field"><Select label={t('lookupField')} value={state.field} options={fields.map((value) => ({ value, label: value === 'name' ? nameLabel ?? t('access.resourceName') : t(`access.${value}`) }))} onChange={state.setField} /></div>
-        <div className="search-input"><TextField label={label} value={state.value} onValueChange={state.setValue} maxLength={254} /></div><Button className="secondary" type="submit">{t('search')}</Button>
+        <div className="search-input"><TextField label={label} value={state.value} onValueChange={state.setValue} supportingText={t('lookupHints.' + state.field, { defaultValue: t('exactLookupHint') })} maxLength={254} /></div><Button className="secondary" type="submit">{t('search')}</Button><SearchReset onReset={state.reset} />
     </form>;
 }
 
-function SelectionList({ kind, selected, onChange, disabled }: { kind: 'permissions' | 'roles'; selected: string[]; onChange: (ids: string[]) => void; disabled: boolean }) {
+function SelectionList({ kind, selected, onChange, disabled, locale }: { kind: 'permissions' | 'roles'; selected: string[]; onChange: (ids: string[]) => void; disabled: boolean; locale: Locale }) {
     const { t } = useTranslation(), [cursor, setCursor] = useState<string | null>(null);
     const query = useResource<CursorPage<Permission | Role>>('access', `${base}/${kind}?${new URLSearchParams({ limit: '20', ...(cursor ? { cursor } : {}) })}`, `picker:${kind}:${cursor ?? ''}`);
     return <fieldset className="access-selection" disabled={disabled}><legend>{t(kind === 'permissions' ? 'access.choosePermissions' : 'access.chooseRoles')}</legend>
         <ResourceFeedback query={query} />
         {query.data && <><div className="access-selection-items">{query.data.items.map((item) => <Checkbox key={item.id} label={'scope' in item ? `${item.name} (${item.scope})` : item.name} checked={selected.includes(item.id)} disabled={disabled} onCheckedChange={(checked) => onChange(checked ? [...selected, item.id] : selected.filter((id) => id !== item.id))} />)}
-            {!query.data.items.length && <p className="muted">{t('access.noChoices')}</p>}</div>
+            {!query.data.items.length && <p className="muted">{!cursor && !query.data.pageInfo.nextCursor && !query.data.pageInfo.previousCursor ? <>{t(kind === 'permissions' ? 'access.noPermissionsYet' : 'access.noRolesYet')} <Link to={localizedPath(locale, kind === 'permissions' ? 'admin/access/resources' : 'admin/access/roles')} target="_blank" rel="noreferrer">{t(kind === 'permissions' ? 'access.openResources' : 'access.openRoles')}</Link></> : t('access.noChoices')}</p>}</div>
             <small className="muted">{t('access.selectedCount', { count: selected.length })}</small>
             <PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={cursor} onNavigate={setCursor} />
         </>}
@@ -82,6 +89,7 @@ function ResourceDialog({ value, onClose }: { value: ApiResource | null; onClose
     const { t } = useTranslation(), mutation = useAccessWrite();
     const [name, setName] = useState(value?.name ?? ''), [identifier, setIdentifier] = useState(value?.identifier ?? ''), [description, setDescription] = useState(value?.description ?? '');
     const [ttl, setTtl] = useState(String(value?.accessTokenTtl ?? 300)), [disabled, setDisabled] = useState(value?.disabled ?? false);
+    const unchanged = !!value && name.trim() === value.name && description.trim() === value.description && Number(ttl) === (value.accessTokenTtl ?? 300) && disabled === value.disabled;
     function submit() {
         const fields: Record<string, string> = {};
         if (!name.trim()) fields.name = 'ACCESS_NAME_REQUIRED';
@@ -90,14 +98,14 @@ function ResourceDialog({ value, onClose }: { value: ApiResource | null; onClose
         mutation.clear(); mutation.setFields(fields); if (Object.keys(fields).length) return;
         void mutation.run(`${base}/resources${value ? `/${value.id}` : ''}`, { name: name.trim(), description: description.trim(), accessTokenTtl: Number(ttl), ...(value ? { disabled } : { identifier }) }, value ? 'PATCH' : 'POST', onClose);
     }
-    return <FormDialog title={t(value ? 'access.editResource' : 'access.createResource')} cancelLabel={t('cancel')} confirmLabel={t('save')} onCancel={onClose} onSubmit={submit} busy={mutation.busy}>
-        <ErrorNotice code={mutation.error} />
-        <TextField label={t('access.resourceName')} value={name} onValueChange={setName} maxLength={100} required error={!!mutation.fields.name} errorText={mutation.field('name')} disabled={mutation.busy} />
-        <TextField label={t('access.identifier')} value={identifier} onValueChange={setIdentifier} maxLength={2048} required readOnly={!!value} error={!!mutation.fields.identifier} errorText={mutation.fields.identifier === 'ACCESS_IDENTIFIER_INVALID' ? t('access.invalidIdentifier') : mutation.field('identifier')} disabled={mutation.busy} />
-        <TextField label={t('access.description')} type="textarea" value={description} onValueChange={setDescription} maxLength={1000} error={!!mutation.fields.description} errorText={mutation.field('description')} disabled={mutation.busy} />
-        <TextField label={t('access.tokenLifetime')} value={ttl} onValueChange={setTtl} inputMode="numeric" maxLength={4} required error={!!mutation.fields.accessTokenTtl} errorText={mutation.fields.accessTokenTtl ? t('access.invalidLifetime') : undefined} disabled={mutation.busy} />
+    return <FormDialog title={t(value ? 'access.editResource' : 'access.createResource')} cancelLabel={t('cancel')} confirmLabel={t(value ? 'save' : 'access.createResource')} onCancel={onClose} onSubmit={submit} busy={mutation.busy} confirmDisabled={unchanged}>
+        <div ref={mutation.formRef} className="stack-form"><ErrorNotice code={mutation.error} />
+        <TextField name="name" label={t('access.resourceName')} value={name} onValueChange={(value) => { setName(value); mutation.clearField('name'); }} maxLength={100} required error={!!mutation.fields.name} errorText={mutation.field('name')} disabled={mutation.busy} />
+        <TextField name="identifier" label={t('access.identifier')} value={identifier} onValueChange={(value) => { setIdentifier(value); mutation.clearField('identifier'); }} maxLength={2048} required readOnly={!!value} error={!!mutation.fields.identifier} errorText={mutation.fields.identifier === 'ACCESS_IDENTIFIER_INVALID' ? t('access.invalidIdentifier') : mutation.field('identifier')} disabled={mutation.busy} />
+        <TextField name="description" label={t('access.description')} type="textarea" value={description} onValueChange={(value) => { setDescription(value); mutation.clearField('description'); }} maxLength={1000} error={!!mutation.fields.description} errorText={mutation.field('description')} disabled={mutation.busy} />
+        <TextField name="accessTokenTtl" label={t('access.tokenLifetime')} value={ttl} onValueChange={(value) => { setTtl(value); mutation.clearField('accessTokenTtl'); }} inputMode="numeric" maxLength={4} required error={!!mutation.fields.accessTokenTtl} errorText={mutation.fields.accessTokenTtl ? t('access.invalidLifetime') : undefined} disabled={mutation.busy} />
         {value && <Checkbox label={t('access.enabled')} checked={!disabled} onCheckedChange={(checked) => setDisabled(!checked)} disabled={mutation.busy} />}
-    </FormDialog>;
+    {unchanged && <small className="muted" role="status">{t('noChanges')}</small>}</div></FormDialog>;
 }
 
 export function ApiResourcesPage({ locale }: { locale: Locale }) {
@@ -109,12 +117,13 @@ export function ApiResourcesPage({ locale }: { locale: Locale }) {
             <h2 id="access-guide-title">{t('access.guideTitle')}</h2>
             <p>{t('access.signInOnly')} <Link to={localizedPath(locale, 'developer/applications')}>{t('access.openDeveloper')}</Link></p>
             <ol><li>{t('access.guideResource')}</li><li>{t('access.guideRole')}</li><li>{t('access.guideEnforcement')}</li></ol>
+            <p><a href={documentationUrl(locale, 'docs/access-control')} target="_blank" rel="noreferrer">{t('access.guideLink')}</a></p>
         </section>
         <section className="card user-table-card"><SearchBar state={state} fields={['name', 'identifier']} label={t('access.searchResources')} />
             {query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
             {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.resourceName')}</th><th>{t('access.identifier')}</th><th>{t('status')}</th><th><span className="sr-only">{t('access.details')}</span></th></tr></thead>
                 <tbody>{query.data.items.map((item) => <tr key={item.id}><td><Link to={listPath(localizedPath(locale, 'admin/access/resources/detail'), state.location.search, { id: item.id })}>{item.name}</Link></td><td><code className="break-all">{item.identifier}</code></td><td>{t(item.disabled ? 'access.disabled' : 'access.enabled')}</td><td><ButtonLink variant="text" to={listPath(localizedPath(locale, 'admin/access/resources/detail'), state.location.search, { id: item.id })} aria-label={`${t('access.details')}: ${item.name}`}>{t('access.details')}</ButtonLink></td></tr>)}</tbody></table>
-                {!query.data.items.length && <p className="empty-state">{t('access.emptyResources')}</p>}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
+                {!query.data.items.length && <EmptyList message={t('access.emptyResources')} />}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
         </section>{editing && <ResourceDialog value={null} onClose={() => setEditing(false)} />}
     </>;
 }
@@ -122,6 +131,7 @@ export function ApiResourcesPage({ locale }: { locale: Locale }) {
 function PermissionDialog({ resourceId, value, onClose }: { resourceId: string; value: Permission | null; onClose: () => void }) {
     const { t } = useTranslation(), mutation = useAccessWrite();
     const [name, setName] = useState(value?.name ?? ''), [scope, setScope] = useState(value?.scope ?? ''), [description, setDescription] = useState(value?.description ?? '');
+    const unchanged = !!value && name.trim() === value.name && description.trim() === value.description;
     function submit() {
         const fields: Record<string, string> = {};
         if (!name.trim()) fields.name = 'ACCESS_NAME_REQUIRED';
@@ -129,22 +139,22 @@ function PermissionDialog({ resourceId, value, onClose }: { resourceId: string; 
         mutation.clear(); mutation.setFields(fields); if (Object.keys(fields).length) return;
         void mutation.run(value ? `${base}/permissions/${value.id}` : `${base}/resources/${resourceId}/permissions`, { name: name.trim(), description: description.trim(), ...(!value ? { scope } : {}) }, value ? 'PATCH' : 'POST', onClose);
     }
-    return <FormDialog title={t(value ? 'access.editPermission' : 'access.createPermission')} cancelLabel={t('cancel')} confirmLabel={t('save')} onCancel={onClose} onSubmit={submit} busy={mutation.busy}>
-        <ErrorNotice code={mutation.error} />
-        <TextField label={t('access.permissionName')} value={name} onValueChange={setName} maxLength={100} required error={!!mutation.fields.name} errorText={mutation.field('name')} disabled={mutation.busy} />
-        <TextField label={t('access.scope')} value={scope} onValueChange={setScope} maxLength={100} required readOnly={!!value} error={!!mutation.fields.scope} errorText={mutation.fields.scope === 'ACCESS_SCOPE_INVALID' ? t('access.invalidScope') : mutation.field('scope')} disabled={mutation.busy} />
-        <TextField label={t('access.description')} type="textarea" value={description} onValueChange={setDescription} maxLength={1000} error={!!mutation.fields.description} errorText={mutation.field('description')} disabled={mutation.busy} />
-    </FormDialog>;
+    return <FormDialog title={t(value ? 'access.editPermission' : 'access.createPermission')} cancelLabel={t('cancel')} confirmLabel={t(value ? 'save' : 'access.createPermission')} onCancel={onClose} onSubmit={submit} busy={mutation.busy} confirmDisabled={unchanged}>
+        <div ref={mutation.formRef} className="stack-form"><ErrorNotice code={mutation.error} />
+        <TextField name="name" label={t('access.permissionName')} value={name} onValueChange={(value) => { setName(value); mutation.clearField('name'); }} maxLength={100} required error={!!mutation.fields.name} errorText={mutation.field('name')} disabled={mutation.busy} />
+        <TextField name="scope" label={t('access.scope')} value={scope} onValueChange={(value) => { setScope(value); mutation.clearField('scope'); }} maxLength={100} required readOnly={!!value} error={!!mutation.fields.scope} errorText={mutation.fields.scope === 'ACCESS_SCOPE_INVALID' ? t('access.invalidScope') : mutation.field('scope')} disabled={mutation.busy} />
+        <TextField name="description" label={t('access.description')} type="textarea" value={description} onValueChange={(value) => { setDescription(value); mutation.clearField('description'); }} maxLength={1000} error={!!mutation.fields.description} errorText={mutation.field('description')} disabled={mutation.busy} />
+    <>{unchanged && <small className="muted" role="status">{t('noChanges')}</small>}</></div></FormDialog>;
 }
 
-function ResourceApplications({ resourceId }: { resourceId: string }) {
+function ResourceApplications({ resourceId, locale }: { resourceId: string; locale: Locale }) {
     const { t } = useTranslation(), [cursor, setCursor] = useState<string | null>(null), mutation = useAccessWrite();
     const query = useResource<CursorPage<AllowedApplication>>('access', `${base}/resources/${resourceId}/applications?${new URLSearchParams({ limit: '20', ...(cursor ? { cursor } : {}) })}`, `resource-applications:${resourceId}:${cursor ?? ''}`);
     const [adding, setAdding] = useState(false), [clientId, setClientId] = useState(''), [removing, setRemoving] = useState<AllowedApplication>();
     return <section className="card"><div className="card-heading access-heading"><div><h2>{t('access.applications')}</h2><p>{t('access.applicationsDescription')}</p></div><Button className="secondary" onClick={() => { mutation.clear(); setClientId(''); setAdding(true); }}>{t('access.linkApplication')}</Button></div>
         <div className="card-body"><ResourceFeedback query={query} />{query.data && <><div className="access-items">{query.data.items.map((item) => <div className="access-item" key={item.clientId}><div><strong>{item.name}</strong><code className="break-all">{item.clientId}</code></div><Button className="text-button danger" onClick={() => { mutation.clear(); setRemoving(item); }} aria-label={`${t('access.unlinkApplication')}: ${item.name}`}>{t('access.remove')}</Button></div>)}</div>
             {!query.data.items.length && <p className="empty-state">{t('access.noApplications')}</p>}<PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={cursor} onNavigate={setCursor} /></>}</div>
-        {adding && <FormDialog title={t('access.linkApplication')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={mutation.busy} onCancel={() => setAdding(false)} onSubmit={() => { void mutation.run(`${base}/resources/${resourceId}/applications`, { clientId: clientId.trim() }, 'POST', () => setAdding(false)); }}><ErrorNotice code={mutation.error} /><TextField label={t('access.clientId')} value={clientId} onValueChange={setClientId} required maxLength={254} error={!!mutation.fields.clientId} errorText={mutation.field('clientId')} disabled={mutation.busy} /></FormDialog>}
+        {adding && <FormDialog title={t('access.linkApplication')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={mutation.busy} onCancel={() => setAdding(false)} onSubmit={() => { void mutation.run(`${base}/resources/${resourceId}/applications`, { clientId: clientId.trim() }, 'POST', () => setAdding(false)); }}><ErrorNotice code={mutation.error} /><TextField label={t('access.clientId')} value={clientId} onValueChange={setClientId} supportingText={t('access.clientIdHint')} required maxLength={254} error={!!mutation.fields.clientId} errorText={mutation.field('clientId')} disabled={mutation.busy} /><Link to={localizedPath(locale, 'admin/applications')} target="_blank" rel="noreferrer">{t('access.openApplications')}</Link></FormDialog>}
         {removing && <ConfirmationDialog title={t('access.unlinkApplication')} description={t('access.unlinkApplicationConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={mutation.busy} error={<ErrorNotice code={mutation.error} />} onCancel={() => setRemoving(undefined)} onConfirm={() => { void mutation.run(`${base}/resources/${resourceId}/applications/${encodeURIComponent(removing.clientId)}`, undefined, 'DELETE', () => setRemoving(undefined)); }} />}
     </section>;
 }
@@ -158,7 +168,7 @@ export function ApiResourceDetailPage({ locale }: { locale: Locale }) {
         <div className="page-heading"><div><h1>{resource?.name ?? t('access.resourceDetails')}</h1><p className="break-all">{resource?.identifier}</p></div>{resource && <div className="action-row"><Button className="secondary" onClick={() => setEditing(true)}>{t('access.edit')}</Button><Button className="text-button danger" onClick={() => { mutation.clear(); setRemoving('resource'); }}>{t('access.delete')}</Button></div>}</div><ResourceFeedback query={query} />
         {resource && <><section className="card"><div className="card-body access-resource-summary"><p>{resource.description}</p><span className="badge">{t(resource.disabled ? 'access.disabled' : 'access.enabled')}</span><span>{t('access.tokenLifetime')}: {resource.accessTokenTtl ?? 300}</span></div></section>
             <section className="card"><div className="card-heading access-heading"><div><h2>{t('access.permissions')}</h2><p>{t('access.permissionsDescription')}</p></div><Button className="secondary" onClick={() => setPermission(null)}>{t('access.createPermission')}</Button></div><div className="card-body"><div className="access-items">{resource.permissions.map((item) => <div className="access-item" key={item.id}><div><strong>{item.name}</strong><code className="break-all">{item.scope}</code>{item.description && <p className="muted">{item.description}</p>}</div><div className="action-row"><Button className="text-button" onClick={() => setPermission(item)} aria-label={`${t('access.editPermission')}: ${item.name}`}>{t('access.edit')}</Button><Button className="text-button danger" onClick={() => { mutation.clear(); setRemoving(item); }} aria-label={`${t('access.deletePermission')}: ${item.name}`}>{t('access.delete')}</Button></div></div>)}</div>{!resource.permissions.length && <p className="empty-state">{t('access.emptyPermissions')}</p>}</div></section>
-            <ResourceApplications resourceId={id} />
+            <ResourceApplications resourceId={id} locale={locale} />
         </>}
         {editing && resource && <ResourceDialog value={resource} onClose={() => setEditing(false)} />}
         {permission !== undefined && <PermissionDialog resourceId={id} value={permission} onClose={() => setPermission(undefined)} />}
@@ -166,18 +176,19 @@ export function ApiResourceDetailPage({ locale }: { locale: Locale }) {
     </>;
 }
 
-function RoleDialog({ id, onClose }: { id?: string; onClose: () => void }) {
+function RoleDialog({ id, onClose, locale }: { id?: string; onClose: () => void; locale: Locale }) {
     const { t } = useTranslation(), mutation = useAccessWrite(), query = useResource<RoleDetail>('access', `${base}/roles/${id ?? ''}`, `role:${id ?? ''}`, !!id);
     const [name, setName] = useState(''), [description, setDescription] = useState(''), [permissionIds, setPermissionIds] = useState<string[]>([]), [initialized, setInitialized] = useState(!id);
     useEffect(() => { if (query.data && !initialized) { setName(query.data.name); setDescription(query.data.description); setPermissionIds(query.data.permissionIds); setInitialized(true); } }, [query.data, initialized]);
-    return <FormDialog title={t(id ? 'access.editRole' : 'access.createRole')} cancelLabel={t('cancel')} confirmLabel={t('save')} onCancel={onClose} onSubmit={() => { void mutation.run(`${base}/roles${id ? `/${id}` : ''}`, { name: name.trim(), description: description.trim(), permissionIds }, id ? 'PATCH' : 'POST', onClose); }} busy={mutation.busy} confirmDisabled={!initialized}>
-        {id && !initialized && <ResourceFeedback query={query} />}<ErrorNotice code={mutation.error} />
-        {initialized && <><TextField label={t('access.roleName')} value={name} onValueChange={setName} maxLength={100} required error={!!mutation.fields.name} errorText={mutation.field('name')} disabled={mutation.busy} />
-            <TextField label={t('access.description')} type="textarea" value={description} onValueChange={setDescription} maxLength={1000} error={!!mutation.fields.description} errorText={mutation.field('description')} disabled={mutation.busy} />
+    const unchanged = !!id && !!query.data && name.trim() === query.data.name && description.trim() === query.data.description && sameSelection(permissionIds, query.data.permissionIds);
+    return <FormDialog title={t(id ? 'access.editRole' : 'access.createRole')} cancelLabel={t('cancel')} confirmLabel={t(id ? 'save' : 'access.createRole')} onCancel={onClose} onSubmit={() => { void mutation.run(`${base}/roles${id ? `/${id}` : ''}`, { name: name.trim(), description: description.trim(), permissionIds }, id ? 'PATCH' : 'POST', onClose); }} busy={mutation.busy} confirmDisabled={!initialized || unchanged}>
+        <div ref={mutation.formRef} className="stack-form">{id && !initialized && <ResourceFeedback query={query} />}<ErrorNotice code={mutation.error} />
+        {initialized && <><TextField name="name" label={t('access.roleName')} value={name} onValueChange={(value) => { setName(value); mutation.clearField('name'); }} maxLength={100} required error={!!mutation.fields.name} errorText={mutation.field('name')} disabled={mutation.busy} />
+            <TextField name="description" label={t('access.description')} type="textarea" value={description} onValueChange={(value) => { setDescription(value); mutation.clearField('description'); }} maxLength={1000} error={!!mutation.fields.description} errorText={mutation.field('description')} disabled={mutation.busy} />
             <ErrorNotice message={mutation.field('permissionIds')} />
-            <SelectionList kind="permissions" selected={permissionIds} onChange={setPermissionIds} disabled={mutation.busy} />
+            <SelectionList kind="permissions" selected={permissionIds} onChange={(ids) => { setPermissionIds(ids); mutation.clearField('permissionIds'); }} disabled={mutation.busy} locale={locale} />
         </>}
-    </FormDialog>;
+    <>{unchanged && <small className="muted" role="status">{t('noChanges')}</small>}</></div></FormDialog>;
 }
 
 export function BusinessRolesPage({ locale }: { locale: Locale }) {
@@ -185,20 +196,21 @@ export function BusinessRolesPage({ locale }: { locale: Locale }) {
     const [editing, setEditing] = useState<string | null>(), [removing, setRemoving] = useState<Role>();
     return <><div className="page-heading"><div><h1>{t('access.roles')}</h1><p>{t('access.rolesDescription')}</p></div><Button onClick={() => setEditing(null)}>{t('access.createRole')}</Button></div>
         <RoleNavigation locale={locale} />
+        <p className="muted">{t('access.rolesSetup')} <Link to={localizedPath(locale, 'admin/access/resources')}>{t('access.openResources')}</Link></p>
         <section className="card user-table-card"><SearchBar state={state} fields={['name']} label={t('access.searchRoles')} nameLabel={t('access.roleName')} />{query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
-            {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.roleName')}</th><th>{t('access.description')}</th><th><span className="sr-only">{t('access.edit')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.description}</td><td><div className="action-row"><Button className="text-button" aria-label={`${t('access.editRole')}: ${item.name}`} onClick={() => setEditing(item.id)}>{t('access.edit')}</Button><Button className="text-button danger" aria-label={`${t('access.deleteRole')}: ${item.name}`} onClick={() => { mutation.clear(); setRemoving(item); }}>{t('access.delete')}</Button></div></td></tr>)}</tbody></table>{!query.data.items.length && <p className="empty-state">{t('access.emptyRoles')}</p>}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
-        </section>{editing !== undefined && <RoleDialog id={editing ?? undefined} onClose={() => setEditing(undefined)} />}
+            {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.roleName')}</th><th>{t('access.description')}</th><th><span className="sr-only">{t('access.edit')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.description}</td><td><div className="action-row"><Button className="text-button" aria-label={`${t('access.editRole')}: ${item.name}`} onClick={() => setEditing(item.id)}>{t('access.edit')}</Button><Button className="text-button danger" aria-label={`${t('access.deleteRole')}: ${item.name}`} onClick={() => { mutation.clear(); setRemoving(item); }}>{t('access.delete')}</Button></div></td></tr>)}</tbody></table>{!query.data.items.length && <EmptyList message={t('access.emptyRoles')} />}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
+        </section>{editing !== undefined && <RoleDialog id={editing ?? undefined} onClose={() => setEditing(undefined)} locale={locale} />}
         {removing && <ConfirmationDialog title={t('access.deleteRole')} description={t('access.deleteRoleConfirm')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={mutation.busy} error={<ErrorNotice code={mutation.error} />} onCancel={() => setRemoving(undefined)} onConfirm={() => { void mutation.run(`${base}/roles/${removing.id}`, undefined, 'DELETE', () => setRemoving(undefined)); }} />}
     </>;
 }
 
-export function UserBusinessRoles({ userId }: { userId: string }) {
+export function UserBusinessRoles({ userId, locale }: { userId: string; locale: Locale }) {
     const brand = useBranding();
     const { t } = useTranslation(), query = useResource<{ roles: Role[] }>('access', `${base}/users/${encodeURIComponent(userId)}/roles`, `user-roles:${userId}`);
     const [editing, setEditing] = useState(false), [roleIds, setRoleIds] = useState<string[]>([]), mutation = useAccessWrite();
     return <section className="card"><div className="card-heading access-heading"><div><h2>{t('access.userRoles')}</h2><p>{t('access.userRolesDescription', { brand: brand.name })}</p></div>{query.data && <Button className="secondary" onClick={() => { setRoleIds(query.data?.roles.map((item) => item.id) ?? []); mutation.clear(); setEditing(true); }}>{t('access.manageUserRoles')}</Button>}</div>
         <div className="card-body"><ResourceFeedback query={query} />{query.data && (query.data.roles.length ? <div className="access-role-badges">{query.data.roles.map((role) => <span className="badge" key={role.id}>{role.name}</span>)}</div> : <p className="muted">{t('access.noUserRoles')}</p>)}</div>
-        {editing && <FormDialog title={t('access.manageUserRoles')} cancelLabel={t('cancel')} confirmLabel={t('save')} busy={mutation.busy} onCancel={() => setEditing(false)} onSubmit={() => { void mutation.run(`${base}/users/${encodeURIComponent(userId)}/roles`, { roleIds }, 'PUT', () => setEditing(false)); }}><ErrorNotice code={mutation.error} message={mutation.field('roleIds')} /><SelectionList kind="roles" selected={roleIds} onChange={setRoleIds} disabled={mutation.busy} /></FormDialog>}
+        {editing && <FormDialog title={t('access.manageUserRoles')} cancelLabel={t('cancel')} confirmLabel={t('save')} busy={mutation.busy} onCancel={() => setEditing(false)} onSubmit={() => { void mutation.run(`${base}/users/${encodeURIComponent(userId)}/roles`, { roleIds }, 'PUT', () => setEditing(false)); }}><ErrorNotice code={mutation.error} message={mutation.field('roleIds')} /><SelectionList kind="roles" selected={roleIds} onChange={setRoleIds} disabled={mutation.busy} locale={locale} /></FormDialog>}
     </section>;
 }
 
@@ -215,7 +227,7 @@ export function AuditLogsPage({ locale }: { locale: Locale }) {
     const query = useResource<CursorPage<AuditEvent>>('audit', `/api/admin/audit-logs?${state.query}`, `events:${state.query}`);
     return <><div className="page-heading"><div><h1>{t('access.audit')}</h1><p>{t('access.auditDescription')}</p></div></div>
         <section className="card user-table-card"><SearchBar state={state} fields={['event', 'outcome', 'actorUserId', 'actorClientId', 'targetUserId', 'clientId']} label={t('access.searchAudit')} />{query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
-            {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.timestamp')}</th><th>{t('access.event')}</th><th>{t('access.outcome')}</th><th>{t('access.actor')}</th><th><span className="sr-only">{t('access.details')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{new Date(item.createdAt).toLocaleString(locale)}</td><td>{t(`access.events.${item.event.replaceAll('.', '_')}`, { defaultValue: item.event })}</td><td>{t(`access.${item.outcome}`, { defaultValue: item.outcome })}</td><td>{item.actorClientId && <small className="machine-actor-label">{t('access.actorClientId')}</small>}<code className="break-all">{item.actorClientId || item.actorUserId || '—'}</code></td><td><Button className="text-button" aria-label={`${t('access.details')}: ${item.event}`} onClick={() => setDetail(item.id)}>{t('access.details')}</Button></td></tr>)}</tbody></table>{!query.data.items.length && <p className="empty-state">{t('access.noEvents')}</p>}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
+            {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.timestamp')}</th><th>{t('access.event')}</th><th>{t('access.outcome')}</th><th>{t('access.actor')}</th><th><span className="sr-only">{t('access.details')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{new Date(item.createdAt).toLocaleString(locale)}</td><td>{t(`access.events.${item.event.replaceAll('.', '_')}`, { defaultValue: item.event })}{t(`access.events.${item.event.replaceAll('.', '_')}`, { defaultValue: item.event }) !== item.event && <code className="audit-event-code">{item.event}</code>}</td><td>{t(`access.${item.outcome}`, { defaultValue: item.outcome })}</td><td>{item.actorClientId || item.actorUserId ? <><small className={item.actorClientId ? 'machine-actor-label' : undefined}>{t(item.actorClientId ? 'access.actorClientId' : 'access.actorUserId')}</small><Link to={`${localizedPath(locale, item.actorClientId ? 'admin/machines/applications/detail' : 'admin/users/detail')}?${new URLSearchParams(item.actorClientId ? { clientId: item.actorClientId } : { id: item.actorUserId! })}`}><code className="break-all">{item.actorClientId || item.actorUserId}</code></Link></> : t('access.unattributedActor')}</td><td><Button className="text-button" aria-label={`${t('access.details')}: ${item.event}`} onClick={() => setDetail(item.id)}>{t('access.details')}</Button></td></tr>)}</tbody></table>{!query.data.items.length && <EmptyList message={t('access.noEvents')} />}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
         </section>{detail && <AuditDetailDialog id={detail} locale={locale} onClose={() => setDetail(undefined)} />}
     </>;
 }

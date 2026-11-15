@@ -6,6 +6,23 @@ Google、GitHub、Microsoft、Discord、X、Telegram 和通用 OIDC/OAuth 连接
 
 Loginflare 使用 `@better-auth/oauth-provider` 和 Better Auth 1.7.13，让独立 Web 应用使用已有账号登录。协议行为由上游提供；Loginflare 通过正式扩展接口和 D1 约束增加应用管理、本地化同意页面及账号安全策略。
 
+## 接入第一个应用
+
+只想让用户登录时，先完成这条路径即可，无需配置 API 资源、角色或管理 API。
+
+1. 用已验证邮箱的账号登录，进入**开发者中心 → 我的应用 → 创建应用**。管理后台的“应用”页也有开发者中心入口；普通用户无需管理员资格即可创建自己的登录应用。
+2. 选择**有后端的网站（Web）**或**浏览器前端（SPA）**：登录由后端处理且能保管密钥时选 Web，直接在浏览器中处理时选 SPA。类型创建后不能修改。
+3. 从你的应用配置中复制完整登录、退出回调地址，每行一个，必须与应用实际发送的地址精确一致。这是应用接收回跳的地址，不是 Loginflare 的地址。可先使用下表中的现有示例。
+4. 创建后将详情中的 issuer 和客户端 ID 填入应用配置。Web 的密钥只显示一次，只保存在后端；SPA 没有客户端密钥，不要向 `VITE_` 变量填密钥。
+5. 按[标准客户端示例](#标准客户端示例)启动对应应用，从应用发起登录并同意授权，确认回到应用能显示账号资料，再测试退出。遇到回调错误，先核对两端的协议、域名、端口和路径。
+
+| 现有示例 | 创建类型 | 登录回调 | 退出回调 |
+| --- | --- | --- | --- |
+| [Hono / Workers Web](../examples/server-web/README.zh-CN.md) | 有后端的网站（Web） | `https://web.localhost:5181/callback` | `https://web.localhost:5181/logout-callback` |
+| [React SPA](#标准客户端示例) | 浏览器前端（SPA） | `https://spa.localhost:5182/callback` | `https://spa.localhost:5182/logout-callback` |
+
+这些本地地址仅用于示例，使用下文的开发证书步骤。接入自己的应用时，替换为该应用处理的真实 HTTPS 地址；HTTP、通配符、片段及直接使用 `localhost` 或回环 IP 的地址仍不支持。
+
 ## 接入约定
 
 Issuer 为 `${AUTH_URL}/api/auth`，例如 `https://identity.example.com/api/auth`。先确定公开 Origin，再注册应用；部署后保持 issuer 稳定。客户端应通过发现文档获得各接口地址。
@@ -145,7 +162,7 @@ Loginflare 登录页允许使用主邮箱或用户名和同一密码登录，两
 | 服务端 Web | `https://web.localhost:5181` | `/callback` | `/logout-callback` |
 | SPA | `https://spa.localhost:5182` | `/callback` | `/logout-callback` |
 
-1. 启动 Loginflare，以管理员登录，创建服务端 Web 应用，配置 `https://web.localhost:5181/callback` 和 `https://web.localhost:5181/logout-callback`。再创建 SPA，使用对应的 `https://spa.localhost:5182` 地址。示例允许全部四个范围。
+1. 启动 Loginflare，用邮箱已验证的账号登录，在开发者中心创建 Web 或 SPA 应用，登记上表对应的精确回调和退出回调地址。可先只运行其中一个示例；示例允许全部四个身份范围，无需创建业务角色。
 2. 将各示例的 `.env.example` 复制为 `.env`，填入应用标识与 Web 应用仅显示一次的密钥。`.env` 已被 Git 忽略。不能将密钥放入 `VITE_` 变量。默认 issuer 为 `http://localhost:5173/api/auth`。
 3. 使用下面的命令生成本地证书。需要已安装 OpenSSL，脚本也会寻找 Git for Windows 随附的版本；必要时用 `LOGINFLARE_OPENSSL` 指定已安装的可执行文件。脚本只写入被忽略的 `work/example-tls/key.pem`、`cert.pem`，不更改系统信任或 DNS。
 

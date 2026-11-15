@@ -4,6 +4,23 @@
 
 Loginflare uses `@better-auth/oauth-provider` and Better Auth 1.7.13 to let independent Web applications use its accounts. OAuth/OIDC protocol behavior comes from the provider. Loginflare adds application administration, localized consent, and account security policy through supported hooks and D1 constraints.
 
+## Connect your first application
+
+For account sign-in, complete this path first. API resources, roles and the Management API are optional.
+
+1. Sign in with an email-verified account and open **Developer center → My applications → Create application**. The administration Applications page also links to the Developer center; ordinary users can create their own sign-in applications.
+2. Choose **Website with a backend (Web)** when a backend handles sign-in and can keep a secret, or **Browser frontend (SPA)** when sign-in runs directly in the browser. The type cannot be changed after creation.
+3. Copy the full sign-in and sign-out callback URLs from your application's configuration, one per line. They must match the URLs your application sends exactly. These addresses belong to your application, not Loginflare. You can start with an existing example below.
+4. Configure your application with the issuer and client ID from its details. A Web secret is displayed once and belongs only on the backend. SPA clients have no secret; never put one in a `VITE_` variable.
+5. Run the matching [standard-client example](#standard-client-examples), start sign-in from the application, approve access and check that account details appear after the return. Test signing out too. For redirect errors, compare the scheme, hostname, port and path on both sides.
+
+| Existing example | Application type | Sign-in callback | Sign-out callback |
+| --- | --- | --- | --- |
+| [Hono / Workers Web](../examples/server-web/README.md) | Website with a backend (Web) | `https://web.localhost:5181/callback` | `https://web.localhost:5181/logout-callback` |
+| [React SPA](#standard-client-examples) | Browser frontend (SPA) | `https://spa.localhost:5182/callback` | `https://spa.localhost:5182/logout-callback` |
+
+These local addresses are for the examples and use the development certificates described below. For your own application, use its actual HTTPS callback handlers. HTTP, wildcards, fragments, bare `localhost` and loopback IP addresses remain unsupported.
+
 ## Client contract
 
 Google, GitHub, Microsoft, Discord, X, Telegram and generic OIDC/OAuth connections are configured once by the Loginflare administrator. Applications keep this same client contract and receive a stable Loginflare user ID as `sub`, regardless of the sign-in method. Loginflare completes local email verification and MFA before resuming authorization. See [Third-party sign-in](social.md) for account linking, email conflicts and recovery behavior.
@@ -145,7 +162,7 @@ The examples are independent applications under this repository, not additional 
 | Server Web | `https://web.localhost:5181` | `/callback` | `/logout-callback` |
 | SPA | `https://spa.localhost:5182` | `/callback` | `/logout-callback` |
 
-1. Start Loginflare, sign in as an administrator, and create a Server Web application with `https://web.localhost:5181/callback` and `https://web.localhost:5181/logout-callback`. Create a SPA application using the equivalent `https://spa.localhost:5182` URLs. Allow all four scopes for the examples.
+1. Start Loginflare and sign in with an email-verified account. In the Developer center, create a Web or SPA application with the matching exact sign-in and sign-out callbacks above. You can run just one example first. The examples allow all four identity scopes and need no business roles.
 2. Copy each example's `.env.example` to `.env`. Fill in the application IDs and the Web application's once-shown client secret. `.env` files are ignored by Git. Never put a client secret in a `VITE_` variable. The issuer defaults to `http://localhost:5173/api/auth`.
 3. Generate local certificates with the command below. OpenSSL must be installed; the script also detects the copy bundled with Git for Windows. If necessary, set `LOGINFLARE_OPENSSL` to an installed executable. It writes only `work/example-tls/key.pem` and `cert.pem`, which are ignored, and does not modify system trust or DNS.
 

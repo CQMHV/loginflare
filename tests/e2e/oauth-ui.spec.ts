@@ -1,5 +1,5 @@
 import { testOrigin } from './runtime';
-import { expect, test, switchArea, installOfflineRoutes } from './fixtures';
+import { expect, test, switchArea, installOfflineRoutes, openNavigation } from './fixtures';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { removeLocalApplications, removeLocalFixtures } from './database';
@@ -79,7 +79,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
     await page.getByLabel('Application name', { exact: true }).fill(`${applicationName}-edited`);
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Application updated.');
+    await expect(page.getByRole('status').filter({ hasText: 'Application updated.' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
     const rotatedResponse = page.waitForResponse((result) => result.url().endsWith('/rotate-secret') && result.request().method() === 'POST');
@@ -97,6 +97,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     await page.getByRole('button', { name: 'Enable application', exact: true }).click();
     await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
     await switchArea(page, 'Administration');
+    await openNavigation(page);
     await page.getByRole('navigation', { name: 'Administration navigation', exact: true }).getByRole('link', { name: 'Applications', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Application management', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Create application', exact: true })).toHaveCount(0);

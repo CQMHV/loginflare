@@ -21,6 +21,20 @@ Default bucket names derive from the full Worker name. Names that would exceed R
 2. Open the Worker’s `workers.dev` URL to see progress. The Worker connects the login hostname, configures `noreply@notify.<zone>`, and creates a Turnstile widget. If a DNS conflict is reported, resolve the named record in Cloudflare. Setup resumes from that step.
 3. Open the login hostname and select **Send setup link**. Open the email link, choose a username and password, and sign in. The link expires in 20 minutes and can be used once. Registration and OAuth authorization open after the administrator is created.
 
+### When setup needs attention
+
+The installation page shows the current step, recovery guidance and a diagnostic code. Keep it open to check progress automatically. After a configuration correction, setup checks existing resources before continuing. Check the three secrets above under the Worker's **Settings → Variables and Secrets**; do not enter the token in a web form, build variables or Git.
+
+| Page guidance | Next step |
+| --- | --- |
+| Access denied or wrong token type | Check `CF_SETUP_TOKEN` expiry, use the User API Token described below, and verify the selected account, zone and permissions. |
+| DNS or hostname assignment conflict | Check the named record and Worker custom-domain assignment before changing them. Do not overwrite unrelated services. |
+| Sending-domain verification or rate limiting | Keep the page open for automatic progress checks. For persistent failures, check Email Sending and the Worker's installation logs. |
+| Cloudflare result could not be confirmed | A previous write may have succeeded. Keep the instance and resources while setup reconciles them; do not create replacements, delete resources or clear the database to retry. |
+| Instance keys, private storage or database do not match | Follow the recovery instructions below to check the original D1, R2 and instance configuration. Regenerating keys or clearing data does not recover an existing instance. |
+
+For other failures, use the diagnostic code to check the Worker's installation logs. If administrator email delivery fails, correct the email configuration and request the link again; an existing valid invitation remains valid.
+
 ### One-time token
 
 In **My Profile → API Tokens**, create a custom **User API Token** with a short expiry that leaves time for DNS verification. Restrict it to the selected Cloudflare account and login zone:

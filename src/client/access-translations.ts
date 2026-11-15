@@ -1,4 +1,10 @@
 export const accessEn = {
+    unattributedActor: 'No account recorded',
+    guideLink: 'API access control guide', openResources: 'Open API resources', openRoles: 'Open user roles', openApplications: 'View sign-in applications',
+    noPermissionsYet: 'No API permissions have been created. Open API resources, register your API and add permissions in its details. You can save an empty role and assign permissions later.',
+    noRolesYet: 'No user roles have been created. Create a user role before assigning it to a user.',
+    rolesSetup: 'To give a role permissions, first add them in API resource details. Then create the role and assign it from the user’s details.',
+    clientIdHint: 'Copy the client ID from the sign-in application’s details under Applications. If it has not been created, create it in the Developer center first.',
     resources: 'API resources', resourcesDescription: 'Register your backend APIs and define the permissions needed to access them. Registering a resource does not create an API.',
     guideTitle: 'When do you need API access control?', signInOnly: 'For sign-in only, connect your app in the Developer center. API resources and roles are optional.', openDeveloper: 'Open Developer center',
     guideResource: 'Register an API, such as an orders service, and define operations such as reading orders (orders:read).',
@@ -48,6 +54,12 @@ export const accessEn = {
 };
 
 export const accessZh: typeof accessEn = {
+    unattributedActor: '未记录操作账号',
+    guideLink: 'API 访问控制说明', openResources: '打开 API 资源', openRoles: '打开用户角色', openApplications: '查看登录应用',
+    noPermissionsYet: '尚未创建 API 权限。请打开 API 资源，登记你的 API，并在其详情中添加权限。也可以先保存空角色，稍后再分配权限。',
+    noRolesYet: '尚未创建用户角色，请先创建角色，再分配给用户。',
+    rolesSetup: '先在 API 资源详情中添加权限，再创建角色，并从用户详情分配给用户。',
+    clientIdHint: '从“应用”中的登录应用详情复制客户端 ID；尚未创建的登录应用，请先在开发者中心创建。',
     resources: 'API 资源', resourcesDescription: '登记需要权限保护的后端 API，并定义访问权限。登记资源不会创建 API。',
     guideTitle: '什么时候需要 API 访问控制？', signInOnly: '如果只需要统一登录，在“开发者中心”接入应用即可，无需配置 API 资源或角色。', openDeveloper: '前往开发者中心',
     guideResource: '登记已有 API，例如订单服务，再定义“查看订单”（orders:read）等操作权限。',

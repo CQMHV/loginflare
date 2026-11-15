@@ -2,7 +2,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { createLocalJWKSet, jwtVerify } from 'jose';
 import type { BrowserContext, Page } from '@playwright/test';
-import { expect, test, installOfflineRoutes, switchArea } from './fixtures';
+import { expect, test, installOfflineRoutes, switchArea, openNavigation } from './fixtures';
 import { executeLocal, removeLocalApplications, removeLocalFixtures } from './database';
 import { testOrigin } from './runtime';
 
@@ -39,11 +39,14 @@ async function signin(page: Page, email: string, chinese = false) {
 async function createApplication(page: Page, type: 'web' | 'spa', chinese = false) {
     const name = `ui-oauth-${randomUUID()}`;
     await page.getByRole('link', { name: chinese ? '创建应用' : 'Create application', exact: true }).click();
+    await expect(page.getByRole('link', { name: chinese ? 'Web 示例与配置步骤' : 'Web example and setup', exact: true })).toHaveAttribute('href', `https://github.com/CQMHV/loginflare/blob/main/examples/server-web/README${chinese ? '.zh-CN' : ''}.md`);
+    await expect(page.getByText(chinese ? /这些地址由你自己的应用接收/ : /These are addresses handled by your own application/)).toBeVisible();
     await page.getByLabel(chinese ? '应用名称' : 'Application name', { exact: true }).fill(name);
     if (type === 'spa') {
         await page.getByRole('combobox', { name: chinese ? '应用类型' : 'Application type', exact: true }).click();
-        await page.getByRole('option', { name: chinese ? '单页应用' : 'Single-page application', exact: true }).click();
+        await page.getByRole('option', { name: chinese ? '浏览器前端（SPA）' : 'Browser frontend (SPA)', exact: true }).click();
     }
+    await expect(page.getByRole('link', { name: chinese ? type === 'web' ? 'Web 示例与配置步骤' : 'SPA 示例与配置步骤' : type === 'web' ? 'Web example and setup' : 'SPA example and setup', exact: true })).toHaveAttribute('href', `https://github.com/CQMHV/loginflare/blob/main/${type === 'web' ? 'examples/server-web/README' : 'docs/oauth'}${chinese ? '.zh-CN' : ''}.md`);
     await page.getByLabel(chinese ? '登录回调 URI' : 'Sign-in redirect URIs', { exact: true }).fill(callback);
     await page.getByLabel(chinese ? '退出回调 URI' : 'Sign-out redirect URIs', { exact: true }).fill(logout);
     const createdResponse = page.waitForResponse((response) => response.url().endsWith('/api/developer/applications') && response.request().method() === 'POST');
@@ -77,6 +80,7 @@ test('a verified ordinary developer manages a Web client and completes real OIDC
     await expect(page.getByRole('heading', { name: 'My applications', exact: true })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Administration navigation', exact: true })).toHaveCount(0);
     await workspace(page, true);
+    await expect(page.getByRole('link', { name: 'Application sign-in guide', exact: true })).toHaveAttribute('href', 'https://github.com/CQMHV/loginflare/blob/main/docs/oauth.md');
     await page.screenshot({ path: test.info().outputPath('developer-workspace-empty.png'), fullPage: true });
     const created = await createApplication(page, 'web');
     const secretDialog = page.locator('md-dialog.form-dialog');
@@ -94,17 +98,22 @@ test('a verified ordinary developer manages a Web client and completes real OIDC
     expect(widths.card).toBeLessThan(widths.grid * 0.75);
     await page.screenshot({ path: test.info().outputPath('developer-workspace-cards.png'), fullPage: true });
     await card.click();
+    await expect(page.locator('.connection-steps')).toContainText('Start sign-in from your application');
+    await expect(page.getByRole('link', { name: 'Web example and setup', exact: true })).toHaveAttribute('href', 'https://github.com/CQMHV/loginflare/blob/main/examples/server-web/README.md');
     await expect(page.getByLabel('Client ID', { exact: true })).toHaveValue(created.application.clientId);
     await expect(page.getByLabel('Issuer', { exact: true })).toHaveValue(created.issuer);
     await expect(page.getByLabel('Discovery URL', { exact: true })).toHaveValue(`${created.issuer}/.well-known/openid-configuration`);
+    await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+    await expect(page.getByRole('status').filter({ hasText: 'No unsaved changes' })).toBeVisible();
     await page.reload();
     await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
     const detail = await signedRequest(context, 'get', `/api/developer/applications/${created.application.clientId}`);
     expect(detail.status()).toBe(200); expect(await detail.json()).not.toHaveProperty('clientSecret');
 
     await page.getByLabel('Application name', { exact: true }).fill(`${created.name}-edited`);
+    await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Application updated.');
+    await expect(page.getByRole('status').filter({ hasText: 'Application updated.' })).toBeVisible();
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
     const rotatedResponse = page.waitForResponse((response) => response.url().endsWith('/rotate-secret') && response.request().method() === 'POST');
     await page.locator('md-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
@@ -154,6 +163,7 @@ test('isolates developer applications and prevents an owner from lifting adminis
     await switchArea(page, '开发者中心');
     await expect(page.getByRole('heading', { name: '我的应用', exact: true })).toBeVisible();
     await workspace(page, true, true);
+    await expect(page.getByRole('link', { name: '应用登录接入说明', exact: true })).toHaveAttribute('href', 'https://github.com/CQMHV/loginflare/blob/main/docs/oauth.zh-CN.md');
     const created = await createApplication(page, 'spa', true);
     expect(created.clientSecret).toBeUndefined();
     await expect(page.getByLabel('客户端密钥', { exact: true })).toHaveCount(0);
@@ -166,6 +176,8 @@ test('isolates developer applications and prevents an owner from lifting adminis
     await page.screenshot({ path: test.info().outputPath('developer-workspace-zh-cn-mobile.png'), fullPage: true });
     await card.click();
     await expect(page.getByRole('button', { name: '轮换客户端密钥', exact: true })).toHaveCount(0);
+    await expect(page.locator('.connection-steps')).toContainText('从你的应用发起登录');
+    await expect(page.getByRole('link', { name: 'SPA 示例与配置步骤', exact: true })).toHaveAttribute('href', 'https://github.com/CQMHV/loginflare/blob/main/docs/oauth.zh-CN.md');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('developer-spa-zh-cn-mobile.png'), fullPage: true });
     const second = await browser.newContext({ baseURL: testOrigin });
@@ -189,6 +201,7 @@ test('isolates developer applications and prevents an owner from lifting adminis
 
         const manager = await admin.newPage(); await signin(manager, administrator.email);
         await switchArea(manager, 'Administration');
+        await openNavigation(manager);
         await manager.getByRole('navigation', { name: 'Administration navigation', exact: true }).getByRole('link', { name: 'Applications', exact: true }).click();
         await expect(manager.getByRole('heading', { name: 'Application management', exact: true })).toBeVisible();
         await expect(manager.getByRole('link', { name: 'Create application', exact: true })).toHaveCount(0);
@@ -233,7 +246,7 @@ for (const chinese of [false, true]) {
         const name = `Callback validation ${randomUUID()}`;
         await page.getByLabel(chinese ? '应用名称' : 'Application name', { exact: true }).fill(name);
         await page.getByRole('combobox', { name: chinese ? '应用类型' : 'Application type', exact: true }).click();
-        await page.getByRole('option', { name: chinese ? '单页应用' : 'Single-page application', exact: true }).click();
+        await page.getByRole('option', { name: chinese ? '浏览器前端（SPA）' : 'Browser frontend (SPA)', exact: true }).click();
         const redirect = page.getByLabel(chinese ? '登录回调 URI' : 'Sign-in redirect URIs', { exact: true });
         const signout = page.getByLabel(chinese ? '退出回调 URI' : 'Sign-out redirect URIs', { exact: true });
         await signout.fill(logout);

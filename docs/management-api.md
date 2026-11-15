@@ -17,6 +17,17 @@ Service roles are distinct from user roles and Loginflare's console `admin` role
 
 The human administrator-only controls are under `/api/admin/machines`: application creation/detail/editing, role assignment, secret rotation and token revocation; service role creation/editing/deletion; and permission discovery. These use the current selected browser account with normal administrator checks. Neither the public Management API nor developer-owned login applications can create or edit machine authority.
 
+## Choose the target API first
+
+| Target | Permissions in the service role | Token request `resource` |
+| --- | --- | --- |
+| Your business API, such as an orders service | Business permissions created in API resource details, such as `orders:read` | That API's exact identifier, such as `https://api.example.com` |
+| Loginflare Management API | Only the required `management:*` permissions | `urn:loginflare:management` |
+
+Business API calls need no management permissions. Add business permissions in the resource details, select them in a service role and assign the role to the service application. Then request a token with its credentials, for example `grant_type=client_credentials`, `resource=https://api.example.com`, `scope=orders:read`. Authentication is the same as below. Each request targets one API; do not substitute the Management API identifier or mix scopes for two APIs in one request.
+
+Your business API must still validate the exact audience, signature and current permissions. See [API access control](access-control.md) for configuration and validation. Keep the service secret only on its backend.
+
 ## Obtain a management token
 
 Use the configured issuer's native token endpoint with `client_secret_basic` authentication and form-encoded parameters:

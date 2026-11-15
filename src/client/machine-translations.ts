@@ -1,4 +1,11 @@
 export const machinesEn = {
+    rolesSetup: 'New service applications have no permissions. Create a service role with only the required permissions, then assign it in the application details.', openRoles: 'Open service roles',
+    noRoleChoices: 'No service roles have been created. Create one first, then return here to assign it.',
+    noBusinessPermissions: 'No business API permissions have been created. Add them in API resource details. A service that only calls the Management API can choose management permissions below.',
+    connectionRoles: 'Assign service roles first. Store this application’s client ID and saved secret only on the service backend.',
+    connectionResource: 'For a business API, use its API identifier as resource and request only scopes assigned to this service. Each token request targets one API.',
+    managementResourceHint: 'Only for calls to this account platform’s Management API, with corresponding management permissions. It is not a general business API identifier.',
+    businessGuide: 'Business API token guide', managementGuide: 'Management API guide and example',
     applications: 'Service applications', applicationsDescription: 'Connect backend services and scripts that call APIs without a user signing in. Create an application, save its credentials, then assign service roles.', createApplication: 'Create service application',
     applicationName: 'Application name', editApplication: 'Edit service application', applicationDetails: 'Service application details', backToApplications: 'Back to service applications', emptyApplications: 'No service applications.',
     searchApplications: 'Find a service application', clientId: 'Client ID', enabled: 'Enabled', disabled: 'Disabled', edit: 'Edit', details: 'Details',
@@ -26,6 +33,13 @@ export const machinesEn = {
 };
 
 export const machinesZh: typeof machinesEn = {
+    rolesSetup: '新建服务应用没有任何权限。先创建只包含所需权限的服务角色，再从应用详情分配角色。', openRoles: '打开服务角色',
+    noRoleChoices: '尚未创建服务角色，请先创建，再回到此处分配。',
+    noBusinessPermissions: '尚未创建业务 API 权限，请在 API 资源详情中添加。只调用管理 API 的服务，可以选择下方的管理权限。',
+    connectionRoles: '先分配服务角色，再将此应用的客户端 ID 和已保存的密钥配置在服务后端，不能放入浏览器。',
+    connectionResource: '调用业务 API 时，将对应资源的 API 标识作为 resource，只请求已分配给此服务的 scope。每次令牌请求只面向一个 API。',
+    managementResourceHint: '仅用于调用本账号平台的管理 API，并且需要相应管理权限；不能作为通用的业务 API 标识。',
+    businessGuide: '业务 API 令牌说明', managementGuide: '管理 API 说明与示例',
     applications: '服务应用', applicationsDescription: '接入无需用户登录、直接调用 API 的后台服务或脚本。创建应用并保存凭据后，为它分配服务角色。', createApplication: '创建服务应用',
     applicationName: '应用名称', editApplication: '编辑服务应用', applicationDetails: '服务应用详情', backToApplications: '返回服务应用', emptyApplications: '暂无服务应用。',
     searchApplications: '查找服务应用', clientId: '客户端 ID', enabled: '已启用', disabled: '已停用', edit: '编辑', details: '详情',

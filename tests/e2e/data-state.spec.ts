@@ -1,4 +1,4 @@
-import { expect, test, switchArea, type Page } from './fixtures';
+import { expect, test, switchArea, type Page, openNavigation } from './fixtures';
 import { testOrigin } from './runtime';
 import type { BrowserContext } from '@playwright/test';
 import type { Identity } from '../../src/client/api';
@@ -142,7 +142,8 @@ for (const [path, endpoint] of [
         await expect(page.locator('.page-heading')).toBeVisible();
         release();
         await expect(loading).toHaveCount(0);
-        await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeVisible();
+        await expect(page.locator('.pagination small')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Next', exact: true })).toHaveCount(0);
     });
 }
 
@@ -291,7 +292,7 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
         if (role === 'admin') {
             await expect(area).toHaveAccessibleName('Switch area: Account center');
             const triggerBounds = (await area.boundingBox())!;
-            const navigationBounds = (await page.getByRole('navigation', { name: 'Account navigation', exact: true }).boundingBox())!;
+            const navigationBounds = (await (width > 760 ? page.getByRole('navigation', { name: 'Account navigation', exact: true }) : page.locator('.mobile-navigation')).boundingBox())!;
             expect(triggerBounds.y).toBeGreaterThanOrEqual(navigationBounds.y + navigationBounds.height);
             if (width > 760) expect(triggerBounds.y + triggerBounds.height).toBeGreaterThan(812 - 64);
             await area.press('ArrowDown');
@@ -309,7 +310,7 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
             expect(bounds!.x).toBeGreaterThanOrEqual(0);
             expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
             expect(bounds!.y).toBeGreaterThanOrEqual(0);
-            expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(triggerBounds.y);
+            expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(width > 760 ? triggerBounds.y : 812);
             expect(await page.locator('.sidebar').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
             await page.keyboard.press('Enter');
             await expect(page).toHaveURL('/en-us/admin/users');
@@ -317,11 +318,20 @@ for (const [role, width] of [['admin', 1280], ['admin', 800], ['admin', 375], ['
             await expect(page.getByRole('navigation', { name: 'Account navigation', exact: true })).toHaveCount(0);
         } else {
             await expect(area).toHaveAccessibleName('Switch area: Account center');
-            await area.click();
-            await expect(page.getByRole('menuitem', { name: 'Developer center', exact: true })).toBeVisible();
-            await expect(page.getByRole('menuitem', { name: 'Administration', exact: true })).toHaveCount(0);
-            await page.keyboard.press('Escape');
+            const lifecycle = await page.locator('.area-selector md-menu').evaluateHandle((menu) => ({
+                opened: new Promise<void>((resolve) => menu.addEventListener('opened', () => resolve(), { once: true })),
+                closed: new Promise<void>((resolve) => menu.addEventListener('closed', () => resolve(), { once: true })),
+            }));
+            try {
+                await area.click();
+                await lifecycle.evaluate((events) => events.opened);
+                await expect(page.getByRole('menuitem', { name: 'Developer center', exact: true })).toBeVisible();
+                await expect(page.getByRole('menuitem', { name: 'Administration', exact: true })).toHaveCount(0);
+                await page.keyboard.press('Escape');
+                await lifecycle.evaluate((events) => events.closed);
+            } finally { await lifecycle.dispose(); }
         }
+        await openNavigation(page);
         await expect(page.getByRole('navigation', { name: role === 'admin' ? 'Administration navigation' : 'Account navigation', exact: true })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         expect(await page.locator('.sidebar').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
@@ -378,18 +388,23 @@ test('reuses account and administration reads, preserves drafts and scroll, and 
     await page.clock.install();
     await page.goto('/en-us/account/emails');
     await expect(page.getByText('alpha-v1@loginflare.test', { exact: true })).toBeVisible();
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Profile', exact: true }).click();
     expect(server.count(page, '/api/auth/get-session')).toBe(1);
     await page.getByLabel('Display name', { exact: true }).fill('Unsaved profile');
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await expect(page.getByText('alpha-v1@loginflare.test', { exact: true })).toBeVisible();
     expect(server.count(page, '/api/auth/emails')).toBe(1);
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Profile', exact: true }).click();
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Unsaved profile');
     server.state.actor!.user.name = 'Updated on server';
     const beforeProfileReturn = server.count(page, '/api/auth/get-session');
     await page.clock.fastForward(16_000);
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Profile', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'Updated on server');
     expect(server.count(page, '/api/auth/get-session')).toBe(beforeProfileReturn + 1);
@@ -412,6 +427,7 @@ test('reuses account and administration reads, preserves drafts and scroll, and 
     expect(server.count(page, '/api/admin/users')).toBe(1);
 
     await switchArea(page, 'Developer center');
+    await openNavigation(page);
     await page.getByRole('link', { name: 'My applications', exact: true }).click();
     await page.getByRole('link', { name: 'Cache application', exact: true }).click();
     await page.getByLabel('Application name', { exact: true }).fill('Unsaved application');
@@ -420,7 +436,7 @@ test('reuses account and administration reads, preserves drafts and scroll, and 
     await expect(page.getByLabel('Application name', { exact: true })).toHaveValue('Unsaved application');
     expect(server.count(page, `/api/developer/applications/${server.clientId}`)).toBe(1);
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Application updated');
+    await expect(page.getByRole('status').filter({ hasText: 'Application updated' })).toBeVisible();
     await page.getByRole('link', { name: 'Back to applications', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Unsaved application', exact: true })).toBeVisible();
     expect(server.count(page, '/api/developer/applications')).toBe(2);
@@ -488,6 +504,7 @@ test('clears private data across tabs and ignores a late response from the previ
     await expect(page).toHaveURL('/en-us/account');
     let release!: () => void;
     server.state.emailGate = new Promise<void>((resolve) => { release = resolve; });
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await expect.poll(() => server.count(page, '/api/auth/emails')).toBe(2);
     await page.getByRole('button', { name: 'Account menu', exact: true }).click();
@@ -500,6 +517,7 @@ test('clears private data across tabs and ignores a late response from the previ
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).toHaveURL('/en-us/account');
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await expect(page.getByText('beta-v1@loginflare.test', { exact: true })).toBeVisible();
     release();
@@ -516,6 +534,7 @@ test('ignores delayed operation feedback after leaving its page', async ({ page,
     server.state.writeGate = new Promise<void>((resolve) => { release = resolve; });
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect.poll(() => server.count(page, '/api/auth/update-user', 'POST')).toBe(1);
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Sessions', exact: true }).click();
     await expect(page).toHaveURL('/en-us/account/sessions');
     const response = page.waitForResponse((result) => result.url().endsWith('/api/auth/update-user'));
@@ -568,6 +587,7 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     release(); server.state.writeGate = undefined;
     await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toHaveAttribute('aria-description', 'First revision');
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Second revision');
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Security', exact: true }).click();
     await page.getByRole('button', { name: 'Change password', exact: true }).click();
     const passwordDialog = page.locator('md-dialog.form-dialog');
@@ -579,11 +599,13 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     await expect(passwordDialog.getByLabel('Current password', { exact: true })).toHaveValue('');
     await passwordDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(passwordDialog).toHaveCount(0);
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Profile', exact: true }).click();
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Second revision');
     await page.reload();
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('First revision');
     await switchArea(page, 'Developer center');
+    await openNavigation(page);
     await page.getByRole('link', { name: 'My applications', exact: true }).click();
     await page.getByRole('link', { name: 'Cache application', exact: true }).click();
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
@@ -608,8 +630,10 @@ test('removes administration state after permissions are revoked without retryin
     await expect(page.getByRole('link', { name: 'Cache application', exact: true })).toBeVisible();
     server.state.actor!.user.role = 'user'; server.state.forbiddenApplications = true;
     await page.clock.fastForward(61_000);
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Users', exact: true }).click();
     await expect(page.locator('tbody tr')).toHaveCount(20);
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Applications', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Access restricted', exact: true })).toBeVisible();
     expect(server.count(page, '/api/admin/applications')).toBe(2);
@@ -671,7 +695,9 @@ test('honors Retry-After across remounts and visibility changes even without cac
     await page.goto('/en-us/account/emails');
     await expect(page.getByRole('alert')).toBeVisible();
     expect(server.count(page, '/api/auth/emails')).toBe(1);
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Profile', exact: true }).click();
+    await openNavigation(page);
     await page.getByRole('link', { name: 'Email addresses', exact: true }).click();
     await expect(page.getByRole('alert')).toBeVisible();
     await visibility(page, false); await visibility(page, true);

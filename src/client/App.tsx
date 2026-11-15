@@ -7,6 +7,7 @@ import { Link, Navigate, Outlet, Route, Routes, useLocation, useMatch, useNaviga
 import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
 import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
+import { EmptyList, SearchReset } from './list-feedback';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, List, ListItem, MenuButton, NavigationLink, Progress, Select, TextField } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
 import { ApplicationEditor, ApplicationsPage } from './Applications';
@@ -50,6 +51,7 @@ function useApp() {
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
     const paths: Record<string, React.ReactNode> = {
         arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
+        menu: <path d="M4 6h16M4 12h16M4 18h16" />,
         back: <path d="m14 6-6 6 6 6" />,
         profile: <><circle cx="12" cy="8" r="3.5" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></>,
         shield: <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></>,
@@ -593,6 +595,32 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
     const feedback = useFeedback();
     const dataActions = useDataActions();
     const captureSignOut = useClearSecrets(() => setBusy(false));
+    const { pathname } = useLocation();
+    const [navigationOpen, setNavigationOpen] = useState(false);
+    const navigationRef = useRef<HTMLElement>(null), navigationToggle = useRef<HTMLButtonElement>(null), mainRef = useRef<HTMLElement>(null);
+    useEffect(() => {
+        const narrow = window.matchMedia('(max-width: 760px)');
+        const preserveFocus = () => {
+            const active = document.activeElement;
+            if (narrow.matches && active instanceof HTMLElement && navigationRef.current?.contains(active)) {
+                setNavigationOpen(true);
+                active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            } else if (!narrow.matches && active === navigationToggle.current) {
+                const navigation = navigationRef.current;
+                (navigation?.querySelector<HTMLAnchorElement>('a[aria-current="page"]') ?? navigation?.querySelector<HTMLAnchorElement>('a[href]'))?.focus();
+            }
+        };
+        narrow.addEventListener('change', preserveFocus);
+        return () => narrow.removeEventListener('change', preserveFocus);
+    }, []);
+    useEffect(() => {
+        setNavigationOpen(false);
+        if (window.matchMedia('(max-width: 760px)').matches && navigationRef.current?.contains(document.activeElement)) {
+            const heading = mainRef.current?.querySelector('h1');
+            heading?.setAttribute('tabindex', '-1');
+            heading?.focus({ preventScroll: true });
+        }
+    }, [pathname]);
 
     async function signOut() {
         const current = captureSignOut();
@@ -614,12 +642,13 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
     return <div className="app-shell" data-area={area}>
         <aside className="sidebar">
             <Brand destination={home} />
-            <nav aria-label={navigationLabel}>{navigation}</nav>
+            <div className="mobile-navigation"><button ref={navigationToggle} className="navigation-toggle" type="button" aria-expanded={navigationOpen} aria-controls={`${area}-navigation`} onClick={() => setNavigationOpen(!navigationOpen)}><Icon name="menu" />{t('navigationMenu')}<span aria-hidden="true">{navigationOpen ? '−' : '+'}</span></button></div>
+            <nav ref={navigationRef} id={`${area}-navigation`} className={navigationOpen ? 'navigation-open' : undefined} aria-label={navigationLabel} onKeyDown={(event) => { if (event.key === 'Escape' && navigationOpen) { event.stopPropagation(); setNavigationOpen(false); navigationToggle.current?.focus(); } }}>{navigation}</nav>
             <AreaSwitcher area={area} title={title} />
         </aside>
         <div className="app-content">
             <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><LanguageSwitcher compact /><ThemeSwitcher /><AccountMenu busy={busy} onSignOut={() => { void signOut(); }} /></div></header>
-            <main className="page-content"><ConnectionNotice /><Outlet /></main>
+            <main ref={mainRef} className="page-content"><ConnectionNotice /><Outlet /></main>
             <footer className="app-footer">{brand.name} <span>·</span> {t('openSource')}</footer>
         </div>
     </div>;
@@ -846,9 +875,9 @@ function UsersPage() {
         setParameters(next);
     }
     const userPath = (id: string) => listPath(localizedPath(locale, 'admin/users/detail'), location.search, { id });
-    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')} />{userQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'email', label: t('email') }, { value: 'username', label: t('username') }, { value: 'id', label: t('accountId') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('searchUsers')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('exactLookupHint')} /></div><Button className="secondary" type="submit">{t('search')}</Button></form>
+    return <><PageHeading title={t('usersTitle')} description={t('usersDescription')} />{userQuery.error && <CursorRecovery cursor={cursor} onReset={() => navigatePage(null)} />}<section className="card user-table-card"><form className="search-bar" onSubmit={(event) => { event.preventDefault(); const value = query.trim(); setSearchDraft(undefined); setParameters(value ? { lookupField: field, lookupValue: value } : {}); }}><div className="search-field"><Select label={t('lookupField')} value={field} options={[{ value: 'email', label: t('email') }, { value: 'username', label: t('username') }, { value: 'id', label: t('accountId') }]} onChange={setField} /></div><div className="search-input"><TextField label={t('searchUsers')} value={query} onValueChange={setQuery} maxLength={254} supportingText={t('lookupHints.' + field, { defaultValue: t('exactLookupHint') })} /></div><Button className="secondary" type="submit">{t('search')}</Button><SearchReset onReset={() => { setSearchDraft(undefined); setParameters({}); }} /></form>
         <ResourceFeedback query={userQuery} />
-        {data && <><div className="table-scroll"><table><thead><tr><th>{t('user')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.items.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><Avatar name={user.name} image={user.image} className="table-avatar" /><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><ButtonLink variant="icon" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></ButtonLink></td></tr>)}</tbody></table>{data.items.length === 0 && <p className="empty-state">{t('usersEmpty')}</p>}</div><PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
+        {data && <><div className="table-scroll"><table><thead><tr><th>{t('userColumn')}</th><th>{t('status')}</th><th>{t('role')}</th><th>{t('joined')}</th><th><span className="sr-only">{t('userDetails')}</span></th></tr></thead><tbody>{data.items.map((user) => <tr key={user.id}><td><Link className="table-user" to={userPath(user.id)}><Avatar name={user.name} image={user.image} className="table-avatar" /><span><strong>{user.name}</strong><small>{user.email}</small></span></Link></td><td><UserStatus user={user} /></td><td><span className="role-label">{t(user.role === 'admin' ? 'admin' : 'user')}</span></td><td className="muted">{formatDate(user.createdAt, locale)}</td><td><ButtonLink variant="icon" to={userPath(user.id)} aria-label={`${t('userDetails')}: ${user.email}`}><Icon name="arrow" size={18} /></ButtonLink></td></tr>)}</tbody></table>{data.items.length === 0 && <EmptyList message={t('usersEmpty')} />}</div><PageNavigation pageInfo={data.pageInfo} count={data.items.length} cursor={cursor} onNavigate={navigatePage} /></>}
     </section></>;
 }
 
@@ -879,7 +908,7 @@ function UserDetailPage() {
     return <>{confirmation && <ConfirmationDialog title={t(confirmation === 'ban-user' ? 'suspend' : 'revokeAll')} description={t(confirmation === 'ban-user' ? 'confirmSuspend' : 'confirmRevoke')} cancelLabel={t('cancel')} confirmLabel={t('confirm')} busy={busy} error={<ErrorNotice code={error} />} onCancel={() => { setConfirmation(undefined); setError(undefined); }} onConfirm={() => { void action(confirmation, true); }} />}<ButtonLink variant="text" className="detail-back" to={listPath(localizedPath(locale, 'admin/users'), location.search)}><Icon name="back" size={15} />{t('backToUsers')}</ButtonLink><PageHeading title={t('userDetails')} description={user?.email ?? ''}>{user && <Avatar name={user.name} image={user.image} className="profile-avatar" />}</PageHeading><ResourceFeedback query={userQuery} />{user && <>
         <section className="card"><div className="card-body user-detail-grid"><div><small>{t('name')}</small><strong>{user.name}</strong></div><div><small>{t('email')}</small><strong>{user.email}</strong></div><div><small>{t('status')}</small><UserStatus user={user} /></div><div><small>{t('role')}</small><strong>{t(user.role === 'admin' ? 'admin' : 'user')}</strong></div><div><small>{t('joined')}</small><strong>{formatDate(user.createdAt, locale)}</strong></div><div><small>{t('emailVerification')}</small><strong>{t(user.emailVerified ? 'verified' : 'unverified')}</strong></div><div className="full-width"><small>{t('accountId')}</small><code>{user.id}</code></div>{user.banReason && <div className="full-width"><small>{t('reason')}</small><strong>{user.banReason}</strong></div>}</div></section>
         <section className="card"><div className="card-heading"><h2>{t('manageUser')}</h2><p>{t('manageUserDescription')}</p></div><div className="card-body">{user.role === 'admin' ? <p className="muted">{t('adminProtected')}</p> : <div className="stack-form">{!confirmation && <ErrorNotice code={error} />}{!user.banned && <TextField label={t('reason')} type="textarea" value={reason} maxLength={500} placeholder={t('reasonPlaceholder')} onValueChange={setReason} />}<div className="action-row"><Button className={user.banned ? 'primary' : 'danger-button'} busy={busy} onClick={() => { void action(user.banned ? 'unban-user' : 'ban-user'); }}>{t(user.banned ? 'restore' : 'suspend')}</Button><Button className="secondary" busy={busy} onClick={() => { void action('revoke-user-sessions'); }}>{t('revokeAll')}</Button></div></div>}</div></section>
-        <UserBusinessRoles userId={user.id} />
+        <UserBusinessRoles userId={user.id} locale={locale} />
     </>}</>;
 }
 

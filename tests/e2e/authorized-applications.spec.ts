@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import type { BrowserContext, Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, openNavigation } from './fixtures';
 import { executeLocal, removeLocalApplications, removeLocalFixtures } from './database';
 import { testOrigin } from './runtime';
 
@@ -70,6 +70,7 @@ for (const chinese of [false, true]) {
         const userId = await login(page, chinese), app = await createApplication(context);
         const label = chinese ? '已授权应用' : 'Authorized applications', revokeLabel = chinese ? '撤销授权' : 'Revoke access';
         const empty = chinese ? '暂无已授权应用' : 'No authorized applications yet.';
+        await openNavigation(page);
         await page.getByRole('navigation', { name: chinese ? '账号导航' : 'Account navigation', exact: true }).getByRole('link', { name: label, exact: true }).click();
         await expect(page).toHaveURL(`/${locale}/account/applications`);
         await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible();

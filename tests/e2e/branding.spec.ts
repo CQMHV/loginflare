@@ -59,7 +59,7 @@ test('publishes independent logo, name and Material color schemes across pages, 
     await expect(peer.getByText(`Add ${name} sign-in to your applications.`, { exact: true })).toBeVisible();
     await expect(peer.getByText(`Let people sign in to your website or application with their ${name} account.`, { exact: true })).toBeVisible();
     await peer.goto('/en-us/developer/applications/new');
-    await expect(peer.getByText(`One exact URI per line for returning after signing out of ${name}.`, { exact: true })).toBeVisible();
+    await expect(peer.getByLabel('Sign-out redirect URIs', { exact: true })).toHaveAccessibleDescription(new RegExp(`after signing out of ${name}, for example`));
     await peer.goto('/zh-cn/developer/applications');
     await expect(peer.getByText(`为你的应用接入 ${name} 登录。`, { exact: true })).toBeVisible();
     await expect(peer.getByText(`让用户使用 ${name} 账号登录你的网站或应用。`, { exact: true })).toBeVisible();
