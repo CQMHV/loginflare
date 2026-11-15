@@ -4,7 +4,7 @@
 
 独立定时 Worker 通过现有管理 API 将白名单审计字段复制到自身 D1 归档，复用[管理客户端](../management-worker/src/client.ts)，仅请求 `management:audit:read`，每次调用取得短期令牌，不开放 HTTP 触发或归档读取接口。原管理示例仍用于读取最新一页；本示例补充持久化续读与去重。
 
-创建专用机器应用与角色，只授予审计读取权限。配置 `AUTH_ISSUER`、`MACHINE_CLIENT_ID`，将 `.dev.vars.example` 复制为 `.dev.vars` 并填入 `MACHINE_CLIENT_SECRET`。用 `pnpm exec wrangler d1 migrations apply DB --local --config examples/audit-export/wrangler.jsonc` 应用本地迁移；运行 `pnpm example:audit-export`，调用其本地 `/__scheduled` 入口。隔离测试实例应使用独立数据库和状态目录。示例对 Loginflare 只读，写入仅发生在示例自身归档中。
+创建专用服务应用与角色，只授予审计读取权限。配置 `AUTH_ISSUER`、`MACHINE_CLIENT_ID`，将 `.dev.vars.example` 复制为 `.dev.vars` 并填入 `MACHINE_CLIENT_SECRET`。用 `pnpm exec wrangler d1 migrations apply DB --local --config examples/audit-export/wrangler.jsonc` 应用本地迁移；运行 `pnpm example:audit-export`，调用其本地 `/__scheduled` 入口。隔离测试实例应使用独立数据库和状态目录。示例对 Loginflare 只读，写入仅发生在示例自身归档中。
 
 部署前创建独立 D1，填入 ID，用本示例配置应用自身迁移，将机器密钥存为 Worker secret，审查每五分钟 Cron 后自行部署配置。不要将 Loginflare 数据库用作归档库。`pnpm check` 包含测试、binding 生成和部署 dry-run，不会部署。
 

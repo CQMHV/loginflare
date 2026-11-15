@@ -9,6 +9,7 @@ import { ErrorNotice, useFeedback } from './feedback';
 import { ResourceFeedback, useDataActions, useResource } from './data';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
 import { useClearSecrets } from './page-state';
+import { RoleNavigation } from './RoleNavigation';
 
 const base = '/api/admin/access';
 interface ApiResource { id: string; name: string; identifier: string; description: string; disabled: boolean; accessTokenTtl: number | null; createdAt: string }
@@ -104,6 +105,11 @@ export function ApiResourcesPage({ locale }: { locale: Locale }) {
     const query = useResource<CursorPage<ApiResource>>('access', `${base}/resources?${state.query}`, `resources:${state.query}`);
     const [editing, setEditing] = useState(false);
     return <><div className="page-heading"><div><h1>{t('access.resources')}</h1><p>{t('access.resourcesDescription')}</p></div><Button onClick={() => setEditing(true)}>{t('access.createResource')}</Button></div>
+        <section className="card access-guide" aria-labelledby="access-guide-title">
+            <h2 id="access-guide-title">{t('access.guideTitle')}</h2>
+            <p>{t('access.signInOnly')} <Link to={localizedPath(locale, 'developer/applications')}>{t('access.openDeveloper')}</Link></p>
+            <ol><li>{t('access.guideResource')}</li><li>{t('access.guideRole')}</li><li>{t('access.guideEnforcement')}</li></ol>
+        </section>
         <section className="card user-table-card"><SearchBar state={state} fields={['name', 'identifier']} label={t('access.searchResources')} />
             {query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
             {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.resourceName')}</th><th>{t('access.identifier')}</th><th>{t('status')}</th><th><span className="sr-only">{t('access.details')}</span></th></tr></thead>
@@ -174,10 +180,11 @@ function RoleDialog({ id, onClose }: { id?: string; onClose: () => void }) {
     </FormDialog>;
 }
 
-export function BusinessRolesPage() {
+export function BusinessRolesPage({ locale }: { locale: Locale }) {
     const { t } = useTranslation(), state = useListState('name'), query = useResource<CursorPage<Role>>('access', `${base}/roles?${state.query}`, `roles:${state.query}`), mutation = useAccessWrite();
     const [editing, setEditing] = useState<string | null>(), [removing, setRemoving] = useState<Role>();
     return <><div className="page-heading"><div><h1>{t('access.roles')}</h1><p>{t('access.rolesDescription')}</p></div><Button onClick={() => setEditing(null)}>{t('access.createRole')}</Button></div>
+        <RoleNavigation locale={locale} />
         <section className="card user-table-card"><SearchBar state={state} fields={['name']} label={t('access.searchRoles')} nameLabel={t('access.roleName')} />{query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
             {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('access.roleName')}</th><th>{t('access.description')}</th><th><span className="sr-only">{t('access.edit')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.description}</td><td><div className="action-row"><Button className="text-button" aria-label={`${t('access.editRole')}: ${item.name}`} onClick={() => setEditing(item.id)}>{t('access.edit')}</Button><Button className="text-button danger" aria-label={`${t('access.deleteRole')}: ${item.name}`} onClick={() => { mutation.clear(); setRemoving(item); }}>{t('access.delete')}</Button></div></td></tr>)}</tbody></table>{!query.data.items.length && <p className="empty-state">{t('access.emptyRoles')}</p>}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
         </section>{editing !== undefined && <RoleDialog id={editing ?? undefined} onClose={() => setEditing(undefined)} />}

@@ -31,7 +31,7 @@ test('persists machine credentials and roles through the real console and authen
         await expect(page).toHaveURL('/en-us/account');
 
         await page.goto('/en-us/admin/machines/roles');
-        await page.getByRole('button', { name: 'Create machine role', exact: true }).click();
+        await page.getByRole('button', { name: 'Create service role', exact: true }).click();
         let dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByLabel('Role name', { exact: true }).fill(roleName);
         await dialog.getByRole('checkbox', { name: 'Read users (management:users:read)', exact: true }).check();
@@ -41,7 +41,7 @@ test('persists machine credentials and roles through the real console and authen
         expect(roles.status(), await roles.text()).toBe(200); roleId = (await roles.json()).items[0].id;
 
         await page.goto('/en-us/admin/machines/applications');
-        await page.getByRole('button', { name: 'Create machine application', exact: true }).click();
+        await page.getByRole('button', { name: 'Create service application', exact: true }).click();
         dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByLabel('Application name', { exact: true }).fill(applicationName);
         await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -54,7 +54,7 @@ test('persists machine credentials and roles through the real console and authen
         await expect(page).toHaveURL((url) => url.pathname === '/en-us/admin/machines/applications/detail' && url.searchParams.get('clientId') === clientId);
         await expect(page.getByLabel('Token endpoint', { exact: true })).toHaveValue(`${testOrigin}/api/auth/oauth2/token`);
         await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
-        await page.getByRole('button', { name: 'Assign machine roles', exact: true }).click();
+        await page.getByRole('button', { name: 'Assign service roles', exact: true }).click();
         dialog = page.locator('md-dialog.form-dialog');
         await dialog.getByRole('checkbox', { name: roleName, exact: true }).check();
         await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -84,16 +84,16 @@ test('persists machine credentials and roles through the real console and authen
         await expect(page.locator('md-dialog')).toHaveCount(0);
         expect((await users(rotatedToken)).status()).toBe(401);
         const current = await issue(); expect(current.status(), await current.text()).toBe(200);
-        await page.getByRole('button', { name: 'Disable machine application', exact: true }).click();
+        await page.getByRole('button', { name: 'Disable service application', exact: true }).click();
         await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
-        await expect(page.getByRole('button', { name: 'Enable machine application', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Enable service application', exact: true })).toBeVisible();
         expect((await issue()).status()).toBeGreaterThanOrEqual(400);
 
         await page.goto(`/en-us/admin/audit-logs?${new URLSearchParams({ lookupField: 'actorClientId', lookupValue: clientId })}`);
         await expect(page.locator('.machine-actor-label').first()).toBeVisible();
         await page.getByRole('button', { name: 'Details: machine.token_issued', exact: true }).first().click();
         dialog = page.locator('md-dialog.form-dialog');
-        await expect(dialog.getByText('Machine actor', { exact: true })).toBeVisible();
+        await expect(dialog.getByText('Service identity', { exact: true })).toBeVisible();
         await expect(dialog.getByText(clientId, { exact: true }).first()).toBeVisible();
         await expect(dialog.getByText(clientSecret, { exact: true })).toHaveCount(0);
     } finally {

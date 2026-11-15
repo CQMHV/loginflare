@@ -3,7 +3,7 @@ import {
     type FormEvent, type PropsWithChildren,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router-dom';
 import { defaultLocale, isLocale, localizedPath, localeToPath, pathToLocale, type Locale } from '../shared/locales';
 import { ApiError, captchaRequest, errorCode, fetchJson, request, type Identity, type Session, type User } from './api';
 import i18n from './i18n';
@@ -640,18 +640,31 @@ function AccountLayout() {
 function AdminLayout() {
     const { locale } = useApp();
     const { t } = useTranslation();
+    const machineRoles = useMatch(localizedPath(locale, 'admin/machines/roles'));
+    const rolePath = machineRoles ? 'admin/machines/roles' : 'admin/access/roles';
     return <AppFrame area="admin" title={t('adminConsole')} home={localizedPath(locale, 'admin/users')} navigationLabel={t('adminNavigation')}
         navigation={<>
-            <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/access/resources')}><Icon name="globe" />{t('access.resources')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/access/roles')}><Icon name="shield" />{t('access.roles')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/machines/applications')}><Icon name="sessions" />{t('machines.applications')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/machines/roles')}><Icon name="shield" />{t('machines.roles')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/audit-logs')}><Icon name="sessions" />{t('access.audit')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/webhooks')}><Icon name="globe" />{t('webhooks.title')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
-            <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink></>} />;
+            <div className="navigation-group" role="group" aria-labelledby="admin-accounts">
+                <h2 id="admin-accounts">{t('administration.accounts')}</h2>
+                <NavigationLink to={localizedPath(locale, 'admin/users')}><Icon name="users" />{t('users')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'admin/social-connections')}><Icon name="globe" />{t('social.title')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'admin/branding')}><ToolbarIcon name="settings" />{t('branding.title')}</NavigationLink>
+            </div>
+            <div className="navigation-group" role="group" aria-labelledby="admin-applications">
+                <h2 id="admin-applications">{t('administration.applications')}</h2>
+                <NavigationLink to={localizedPath(locale, 'admin/applications')}><Icon name="globe" />{t('oauth.applications')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'admin/machines/applications')}><Icon name="sessions" />{t('machines.applications')}</NavigationLink>
+            </div>
+            <div className="navigation-group" role="group" aria-labelledby="admin-access">
+                <h2 id="admin-access">{t('administration.access')}</h2>
+                <NavigationLink to={localizedPath(locale, 'admin/access/resources')}><Icon name="globe" />{t('access.resources')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, rolePath)}><Icon name="shield" />{t('administration.roles')}</NavigationLink>
+            </div>
+            <div className="navigation-group" role="group" aria-labelledby="admin-operations">
+                <h2 id="admin-operations">{t('administration.operations')}</h2>
+                <NavigationLink to={localizedPath(locale, 'admin/audit-logs')}><Icon name="sessions" />{t('access.audit')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'admin/webhooks')}><Icon name="globe" />{t('webhooks.title')}</NavigationLink>
+            </div></>} />;
 }
 
 function DeveloperLayout() {
@@ -919,10 +932,10 @@ function LocaleRoutes() {
                         <Route path="admin/social-connections" element={<SocialConnectionsPage />} />
                         <Route path="admin/access/resources" element={<ApiResourcesPage locale={locale} />} />
                         <Route path="admin/access/resources/detail" element={<ApiResourceDetailPage key={new URLSearchParams(search).get('id') ?? ''} locale={locale} />} />
-                        <Route path="admin/access/roles" element={<BusinessRolesPage />} />
+                        <Route path="admin/access/roles" element={<BusinessRolesPage locale={locale} />} />
                         <Route path="admin/machines/applications" element={<MachineApplicationsPage locale={locale} />} />
                         <Route path="admin/machines/applications/detail" element={<MachineApplicationDetailPage key={new URLSearchParams(search).get('clientId') ?? ''} locale={locale} />} />
-                        <Route path="admin/machines/roles" element={<MachineRolesPage />} />
+                        <Route path="admin/machines/roles" element={<MachineRolesPage locale={locale} />} />
                         <Route path="admin/audit-logs" element={<AuditLogsPage locale={locale} />} />
                         <Route path="admin/webhooks" element={<WebhooksPage locale={locale} />} />
                         <Route path="admin/webhooks/deliveries" element={<WebhookDeliveriesPage locale={locale} />} />

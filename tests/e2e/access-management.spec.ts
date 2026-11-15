@@ -33,6 +33,7 @@ async function accessFixture(context: BrowserContext, administrator = true) {
         else if (path === '/api/oauth/consent') json = { client: { clientId: 'example-client', name: 'Example application' }, scopes: ['openid', ...resources.flatMap((item) => item.permissions.map((permission) => permission.scope))], resource: resources[0], permissions: resources.flatMap((item) => item.permissions) };
         else if (path === '/api/admin/audit-logs') json = page([event]);
         else if (path.startsWith('/api/admin/audit-logs/')) json = event;
+        else if (path === '/api/admin/machines/roles') json = page([]);
         else if (path.startsWith('/api/admin/access/')) {
             const subpath = path.slice('/api/admin/access'.length), parts = subpath.split('/').filter(Boolean);
             if (method !== 'GET') writes.push({ path, method, body });
@@ -79,17 +80,95 @@ async function accessFixture(context: BrowserContext, administrator = true) {
 }
 
 for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
-    test(`manages API resources, permissions, business roles and audit details in ${language}`, async ({ page, context }) => {
+    test(`explains access control and switches role types using grouped navigation in ${language}`, async ({ page, context }) => {
+        const state = await accessFixture(context), zh = language === 'zh-cn';
+        const labels = zh ? {
+            navigation: '管理导航', groups: ['账号与登录', '应用接入', '访问控制', '运维与集成'], roles: '角色', types: '角色类型',
+            user: '用户角色', service: '服务角色', guide: '什么时候需要 API 访问控制？',
+            signIn: '如果只需要统一登录，在“开发者中心”接入应用即可，无需配置 API 资源或角色。', developer: '前往开发者中心', notFound: '找不到此页面',
+        } : {
+            navigation: 'Administration navigation', groups: ['Accounts & sign-in', 'Application integration', 'Access control', 'Operations & integrations'], roles: 'Roles', types: 'Role types',
+            user: 'User roles', service: 'Service roles', guide: 'When do you need API access control?',
+            signIn: 'For sign-in only, connect your app in the Developer center. API resources and roles are optional.', developer: 'Open Developer center', notFound: 'This page isn’t here',
+        };
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`/${language}/admin/access/resources`);
+        const navigation = page.getByRole('navigation', { name: labels.navigation, exact: true });
+        await expect(navigation.getByRole('group')).toHaveCount(4);
+        for (const name of labels.groups) await expect(navigation.getByRole('group', { name, exact: true })).toBeVisible();
+        await expect(navigation.getByRole('link')).toHaveCount(9);
+        const guide = page.getByRole('region', { name: labels.guide, exact: true });
+        await expect(guide).toContainText(labels.signIn);
+        await expect(guide.getByRole('link', { name: labels.developer, exact: true })).toHaveAttribute('href', `/${language}/developer/applications`);
+        await expect(guide.getByRole('listitem')).toHaveCount(3);
+        await page.screenshot({ path: test.info().outputPath(`access-guide-${language}.png`), fullPage: true });
+        const roles = navigation.getByRole('link', { name: labels.roles, exact: true });
+        await roles.click();
+        await expect(page).toHaveURL(`/${language}/admin/access/roles`);
+        await expect(roles).toHaveAttribute('aria-current', 'page');
+        const types = page.getByRole('navigation', { name: labels.types, exact: true });
+        await expect(types.getByRole('link')).toHaveCount(2);
+        const user = types.getByRole('link', { name: labels.user, exact: true }), service = types.getByRole('link', { name: labels.service, exact: true });
+        await expect(user).toHaveAttribute('aria-current', 'page');
+        await user.focus();
+        await page.keyboard.press('Tab');
+        await expect(service).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(page).toHaveURL(`/${language}/admin/machines/roles`);
+        await expect(page.getByRole('heading', { name: labels.service, exact: true })).toBeVisible();
+        await expect(service).toHaveAttribute('aria-current', 'page');
+        await expect(user).not.toHaveAttribute('aria-current');
+        await expect(roles).toHaveAttribute('aria-current', 'page');
+        await expect(navigation.getByRole('link', { name: labels.service, exact: true })).toHaveCount(0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await page.screenshot({ path: test.info().outputPath(`service-roles-${language}.png`), fullPage: true });
+        await user.click();
+        await expect(page).toHaveURL(`/${language}/admin/access/roles`);
+        await expect(page.getByRole('heading', { name: labels.user, exact: true })).toBeVisible();
+        await expect(user).toHaveAttribute('aria-current', 'page');
+        await page.screenshot({ path: test.info().outputPath(`user-roles-${language}.png`), fullPage: true });
+        for (const path of ['admin/machines/roles/', 'admin/Machines/Roles', 'admin/machines/roles//']) {
+            await page.goto(`/${language}/admin/machines/roles`);
+            // Exercise client routing; the server only serves canonical page paths.
+            await page.evaluate((pathname) => {
+                window.history.pushState(window.history.state, '', pathname);
+                window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+            }, `/${language}/${path}`);
+            await expect(page).toHaveURL(`/${language}/${path}`);
+            if (path === 'admin/Machines/Roles') {
+                await expect(page.getByRole('heading', { name: labels.notFound, exact: true })).toBeVisible();
+                await expect(navigation).toHaveCount(0);
+                continue;
+            }
+            await expect(page.getByRole('heading', { name: labels.service, exact: true })).toBeVisible();
+            await expect(roles).toHaveAttribute('aria-current', 'page');
+            await expect(roles).toHaveAttribute('href', `/${language}/admin/machines/roles`);
+            await expect(service).toHaveAttribute('aria-current', 'page');
+            await roles.click();
+            await expect(page).toHaveURL(`/${language}/admin/machines/roles`);
+            await expect(page.getByRole('heading', { name: labels.service, exact: true })).toBeVisible();
+        }
+        await user.click();
+        await expect(page).toHaveURL(`/${language}/admin/access/roles`);
+        await expect(roles).toHaveAttribute('aria-current', 'page');
+        await expect(roles).toHaveAttribute('href', `/${language}/admin/access/roles`);
+        for (const path of ['admin/Machines/Roles', 'admin/machines/roles//']) {
+            expect((await context.request.get(`/${language}/${path}`)).status()).toBe(404);
+        }
+        expect(state.writes).toEqual([]);
+    });
+
+    test(`manages API resources, permissions, user roles and audit details in ${language}`, async ({ page, context }) => {
         const state = await accessFixture(context), zh = language === 'zh-cn';
         await page.setViewportSize({ width, height: 900 });
         const labels = zh ? {
             createResource: '创建 API 资源', resourceName: '资源名称', identifier: 'API 标识', ttl: '访问令牌有效期（秒）', save: '保存修改', details: '详情',
-            createPermission: '创建权限', permissionName: '权限名称', scope: '权限范围', createRole: '创建角色', roleName: '角色名称', roleNav: '业务角色',
-            link: '允许应用访问', clientId: '客户端 ID', confirm: '确认', cancel: '取消', manageRoles: '管理业务角色', auditNav: '审计日志', eventDetail: '事件详情', close: '关闭',
+            createPermission: '创建权限', permissionName: '权限名称', scope: '权限范围', createRole: '创建角色', roleName: '角色名称', roleNav: '用户角色',
+            link: '允许应用访问', clientId: '客户端 ID', confirm: '确认', cancel: '取消', manageRoles: '管理用户角色', auditNav: '审计日志', eventDetail: '事件详情', close: '关闭',
         } : {
             createResource: 'Create API resource', resourceName: 'Resource name', identifier: 'API identifier', ttl: 'Access token lifetime (seconds)', save: 'Save changes', details: 'Details',
-            createPermission: 'Create permission', permissionName: 'Permission name', scope: 'Permission scope', createRole: 'Create role', roleName: 'Role name', roleNav: 'Business roles',
-            link: 'Allow application', clientId: 'Client ID', confirm: 'Confirm', cancel: 'Cancel', manageRoles: 'Manage business roles', auditNav: 'Audit logs', eventDetail: 'Event details', close: 'Close',
+            createPermission: 'Create permission', permissionName: 'Permission name', scope: 'Permission scope', createRole: 'Create role', roleName: 'Role name', roleNav: 'User roles',
+            link: 'Allow application', clientId: 'Client ID', confirm: 'Confirm', cancel: 'Cancel', manageRoles: 'Manage user roles', auditNav: 'Audit logs', eventDetail: 'Event details', close: 'Close',
         };
         await page.goto(`/${language}/admin/access/resources`);
         await page.getByRole('button', { name: labels.createResource, exact: true }).click();
@@ -168,7 +247,7 @@ test('keeps business permission and role deletion behind confirmation dialogs', 
     await page.getByRole('button', { name: 'Delete role: Reader', exact: true }).click();
     expect(state.writes).toHaveLength(0);
     await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect(page.getByText('No business roles.', { exact: true })).toBeVisible();
+    await expect(page.getByText('No user roles.', { exact: true })).toBeVisible();
     expect(state.roles).toHaveLength(0);
 });
 

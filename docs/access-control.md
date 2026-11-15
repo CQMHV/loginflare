@@ -10,16 +10,16 @@ For an Orders API:
 
 1. Open **Administration → API resources** and create `Orders API` with identifier `https://api.example.com`.
 2. Add permission scopes `orders:read` and `orders:write`, with readable display names.
-3. Create a business role such as `Order reader` containing `orders:read`.
-4. Open the intended user's administrator details and assign that business role.
+3. Open **Administration → Roles → User roles** and create a role such as `Order reader` containing `orders:read`.
+4. Open the intended user's administrator details and assign that user role.
 5. In the API resource's application section, add the client ID of each application allowed to request it.
 6. For live token introspection, create a separate server Web application for the API, store its client secret only on the API server, and link that application to the same resource. Its registered callbacks remain exact HTTPS URLs, even if this client is used only for introspection.
 
 An identifier is an exact HTTPS URI without a query, fragment, or embedded credentials. It is the audience contract, not a URL Loginflare downloads. Changing identity requires creating a resource with another identifier; editing a display name keeps the existing audience. Permission scopes are stable identifiers and are distinct from editable display names and descriptions. The identity scopes `openid`, `profile`, `email`, and `offline_access` remain reserved.
 
-Business roles are independent of Loginflare's built-in `admin` and `user` administration roles. A business role named `Administrator` does not allow entry to the Loginflare console. A Loginflare administrator needs a business permission assignment to use a protected business API as a user.
+User roles are independent of Loginflare's built-in `admin` and `user` administration roles. A user role named `Administrator` does not allow entry to the Loginflare console. A Loginflare administrator needs a business permission assignment to use a protected business API as a user.
 
-For service-to-service access, administrators assign business permission IDs to separate machine roles and give those roles to machine applications. Machine roles maintain their own resource links and scope ceiling; they do not reuse a user's role or browser session. The token's subject identifies the machine rather than a person. See [machine identities](management-api.md) for client credentials and lifecycle rules. Human authorization-code flows below retain their existing consent and MFA checks.
+For service-to-service access, administrators assign business permission IDs to separate service roles and give those roles to service applications. Service roles maintain their own resource links and scope ceiling; they do not reuse a user's role or browser session. The token's subject identifies the machine rather than a person. See [machine identities](management-api.md) for client credentials and lifecycle rules. Human authorization-code flows below retain their existing consent and MFA checks.
 
 ## Request a resource token
 
@@ -91,11 +91,11 @@ These same-origin JSON operations require an active, verified Loginflare adminis
 | Unlink an application | `DELETE /resources/:id/applications/:clientId` |
 | List/create roles | `GET/POST /roles` |
 | Read/update/delete a role | `GET/PATCH/DELETE /roles/:id` |
-| Read/replace a user's business roles | `GET/PUT /users/:userId/roles` |
+| Read/replace a user's roles | `GET/PUT /users/:userId/roles` |
 
-Paginated lists use the project's bounded, signed cursor contract. Submitted permission IDs and role IDs are validated by the server; a request cannot assign non-existent permissions or promote a user to console administrator. Deletion removes related assignments and must be confirmed in the console. User consent and an application's allowed resource are managed separately from business roles.
+Paginated lists use the project's bounded, signed cursor contract. Submitted permission IDs and role IDs are validated by the server; a request cannot assign non-existent permissions or promote a user to console administrator. Deletion removes related assignments and must be confirmed in the console. User consent and an application's allowed resource are managed separately from user roles.
 
-Resource access tokens default to a 300-second lifetime, configurable from 60 to 3600 seconds. Each resource and role can contain up to 100 permissions, a user can hold up to 100 business roles, and an instance can register up to 1000 business permissions.
+Resource access tokens default to a 300-second lifetime, configurable from 60 to 3600 seconds. Each resource and role can contain up to 100 permissions, a user can hold up to 100 user roles, and an instance can register up to 1000 business permissions.
 
 ## Audit logs
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { RoleNavigation } from './RoleNavigation';
 import { useBranding } from './branding';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
@@ -161,10 +162,11 @@ function MachineRoleDialog({ id, onClose }: { id?: string; onClose: () => void }
     </FormDialog>;
 }
 
-export function MachineRolesPage() {
+export function MachineRolesPage({ locale }: { locale: Locale }) {
     const { t } = useTranslation(), state = useMachineList('name'), query = useResource<CursorPage<MachineRole>>('machines', `${base}/roles?${state.query}`, `roles:${state.query}`), mutation = useMachineWrite();
     const [editing, setEditing] = useState<string | null>(), [removing, setRemoving] = useState<MachineRole>();
     return <><div className="page-heading"><div><h1>{t('machines.roles')}</h1><p>{t('machines.rolesDescription')}</p></div><Button onClick={() => setEditing(null)}>{t('machines.createRole')}</Button></div>
+        <RoleNavigation locale={locale} />
         <section className="card user-table-card"><MachineSearch state={state} />{query.error && <CursorRecovery cursor={state.cursor} onReset={() => state.navigatePage(null)} />}<ResourceFeedback query={query} />
             {query.data && <><div className="table-scroll"><table><thead><tr><th>{t('machines.roleName')}</th><th>{t('machines.description')}</th><th><span className="sr-only">{t('machines.editRole')}</span></th></tr></thead><tbody>{query.data.items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.description}</td><td><div className="action-row"><Button className="text-button" aria-label={`${t('machines.editRole')}: ${item.name}`} onClick={() => setEditing(item.id)}>{t('machines.edit')}</Button><Button className="text-button danger" aria-label={`${t('machines.deleteRole')}: ${item.name}`} onClick={() => { mutation.clear(); setRemoving(item); }}>{t('access.delete')}</Button></div></td></tr>)}</tbody></table>{!query.data.items.length && <p className="empty-state">{t('machines.emptyRoles')}</p>}</div><PageNavigation pageInfo={query.data.pageInfo} count={query.data.items.length} cursor={state.cursor} onNavigate={state.navigatePage} /></>}
         </section>{editing !== undefined && <MachineRoleDialog id={editing ?? undefined} onClose={() => setEditing(undefined)} />}

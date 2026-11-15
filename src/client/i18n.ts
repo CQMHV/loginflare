@@ -14,6 +14,7 @@ import { passkeysEn, passkeysZh, passkeyErrorsEn, passkeyErrorsZh } from './pass
 import { webhooksEn, webhooksZh, webhookErrorsEn, webhookErrorsZh } from './webhook-translations';
 
 const enUS = {
+    administration: { accounts: 'Accounts & sign-in', applications: 'Application integration', access: 'Access control', operations: 'Operations & integrations', roles: 'Roles', roleTypes: 'Role types' },
     webhooks: webhooksEn,
     passkeys: passkeysEn,
     deletion: deletionEn,
@@ -278,6 +279,7 @@ const enUS = {
 };
 
 const zhCN: typeof enUS = {
+    administration: { accounts: '账号与登录', applications: '应用接入', access: '访问控制', operations: '运维与集成', roles: '角色', roleTypes: '角色类型' },
     webhooks: webhooksZh,
     passkeys: passkeysZh,
     deletion: deletionZh,

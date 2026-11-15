@@ -2,20 +2,20 @@
 
 [English](management-api.md) · [API 访问控制](access-control.zh-CN.md) · [OAuth 接入](oauth.zh-CN.md)
 
-Loginflare 将机器身份与用户、浏览器会话分开。管理员创建机器应用和机器角色，分配所需权限，将客户端 ID 与一次性密钥交给自动化服务。服务通过 `client_credentials` 获取短期 OAuth 访问令牌，不需要冒充管理员登录或使用浏览器 Cookie。
+Loginflare 将机器身份与用户、浏览器会话分开。管理员创建服务应用和服务角色，分配所需权限，将客户端 ID 与一次性密钥交给自动化服务。服务通过 `client_credentials` 获取短期 OAuth 访问令牌，不需要冒充管理员登录或使用浏览器 Cookie。
 
 版本化接口为 `/api/management/v1`。公开的 `GET /api/management/v1/openapi.json` 提供 OpenAPI 3.1 文档，包含输入字段、响应结构、接口 scope、分页和错误；文档不包含实例数据或凭据。其他管理接口要求当前有效且 audience 精确匹配的机器访问令牌。
 
 ## 创建最小权限机器身份
 
-1. 在「管理后台 → 机器角色」创建角色，仅选择任务需要的权限。例如定时检查审计日志只需 `management:audit:read`。
-2. 在「管理后台 → 机器应用」创建应用，将一次性客户端密钥保存到自动化服务的私有配置。
-3. 为机器应用分配角色。新建应用没有默认管理权限。
+1. 在「管理后台 → 角色 → 服务角色」创建角色，仅选择任务需要的权限。例如定时检查审计日志只需 `management:audit:read`。
+2. 在「管理后台 → 服务应用」创建应用，将一次性客户端密钥保存到自动化服务的私有配置。
+3. 为服务应用分配角色。新建应用没有默认管理权限。
 4. 在服务端配置 issuer、客户端 ID 与密钥。不能把机器密钥交给 SPA、浏览器脚本或无法保密的客户端。
 
-机器角色与用户业务角色、本站 `admin` 管理员角色相互独立，可以包含管理 scope 和已登记的业务 API 权限。角色变更维护服务端控制的客户端授权上限及允许资源；机器不能通过修改令牌请求扩大权限。每个令牌请求一个资源，其他业务 API 的令牌不能用于管理 API。
+服务角色与用户角色、本站 `admin` 管理员角色相互独立，可以包含管理 scope 和已登记的业务 API 权限。角色变更维护服务端控制的客户端授权上限及允许资源；机器不能通过修改令牌请求扩大权限。每个令牌请求一个资源，其他业务 API 的令牌不能用于管理 API。
 
-人类管理员使用 `/api/admin/machines` 管理机器应用、角色分配、密钥轮换及令牌撤销，创建或编辑机器角色并查看权限。这些接口沿用当前标签页账号和管理员验证。公开管理 API 及普通开发者登录应用不能创建或修改机器权限。
+人类管理员使用 `/api/admin/machines` 管理服务应用、角色分配、密钥轮换及令牌撤销，创建或编辑服务角色并查看权限。这些接口沿用当前标签页账号和管理员验证。公开管理 API 及普通开发者登录应用不能创建或修改机器权限。
 
 ## 获取管理令牌
 
@@ -49,13 +49,13 @@ scope=management:audit:read
 | `management:applications:write` | `POST /applications`、`PATCH /applications/:clientId`、`POST /applications/:clientId/rotate-secret` |
 | `management:resources:read` | 读取资源、权限列表和允许的应用关联 |
 | `management:resources:write` | 创建、修改、删除业务资源及权限，关联或解除允许访问的登录应用 |
-| `management:roles:read` | `GET /roles`、`GET /roles/:id`，读取用户业务角色 |
-| `management:roles:write` | 创建、修改、删除用户业务角色 |
+| `management:roles:read` | `GET /roles`、`GET /roles/:id`，读取用户角色 |
+| `management:roles:write` | 创建、修改、删除用户角色 |
 | `management:role-assignments:read` | `GET /users/:userId/roles` |
 | `management:role-assignments:write` | `PUT /users/:userId/roles`，请求体 `{ "roleIds": [...] }` |
 | `management:audit:read` | `GET /audit-logs`、`GET /audit-logs/:id` |
 
-资源、权限、业务角色及用户角色路径沿用[访问控制接口](access-control.zh-CN.md#管理接口)的字段规则，改用版本化前缀。角色分配替换用户完整的业务角色集合，空数组表示移除这些分配，不改变用户的本站管理员权限或机器角色。
+资源、权限、用户角色及角色分配路径沿用[访问控制接口](access-control.zh-CN.md#管理接口)的字段规则，改用版本化前缀。角色分配替换用户完整的用户角色集合，空数组表示移除这些分配，不改变用户的本站管理员权限或服务角色。
 
 机器用户管理不能修改密码、MFA、主邮箱、验证标记或本站角色，也不能修改管理员账号、停用管理员或撤销管理员会话。首版不提供通过机器创建用户或删除账号的接口。
 
@@ -98,10 +98,10 @@ scope=management:audit:read
 
 [examples/management-worker](../examples/management-worker/README.md)在每次可信调用内获取令牌，读取最新一页有界审计数据。默认 Cron 任务只请求 `management:audit:read`，公开 fetch 处理器只提供只读健康响应，没有操作触发入口，仅记录数量摘要。
 
-导出的客户端还提供登录应用创建和用户业务角色替换，供可信的自动开通代码调用。示例使用生成的绑定类型、有界响应、超时和手动重定向处理，不在全局缓存令牌或未完成请求，不自动重试写操作。Web 应用密钥返回可信调用者另行私密保存，不写入日志，也不会被默认定时任务创建后丢弃。
+导出的客户端还提供登录应用创建和用户角色替换，供可信的自动开通代码调用。示例使用生成的绑定类型、有界响应、超时和手动重定向处理，不在全局缓存令牌或未完成请求，不自动重试写操作。Web 应用密钥返回可信调用者另行私密保存，不写入日志，也不会被默认定时任务创建后丢弃。
 
 ## 部署
 
-切换版本前应用 `0021_machines.sql` 与 `0022_machine_audit.sql`，新增机器角色、权限映射、代次检查、受保护的管理资源及独立审计操作者。已有用户和登录应用不会自动转换为机器。主 Worker 无须新增绑定或密钥；每个自动化服务使用自己的机器密钥，与 Loginflare 服务端密钥分别管理。
+切换版本前应用 `0021_machines.sql` 与 `0022_machine_audit.sql`，新增服务角色、权限映射、代次检查、受保护的管理资源及独立审计操作者。已有用户和登录应用不会自动转换为机器。主 Worker 无须新增绑定或密钥；每个自动化服务使用自己的机器密钥，与 Loginflare 服务端密钥分别管理。
 
 在隔离环境验证最小权限读写、普通用户令牌拒绝、系统资源保护、代次撤销、并发变更、审计归属和 OpenAPI。自动测试及示例构建不部署服务，也不操作真实账号。

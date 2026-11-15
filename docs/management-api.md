@@ -2,20 +2,20 @@
 
 [简体中文](management-api.zh-CN.md) · [API access control](access-control.md) · [OAuth integration](oauth.md)
 
-Loginflare separates machine identities from people and browser sessions. An administrator creates a machine application and machine roles, assigns the required permissions, and gives the automation its client ID and one-time secret. The automation obtains a short-lived OAuth access token with `client_credentials`; it does not sign in as an administrator or reuse a browser cookie.
+Loginflare separates machine identities from people and browser sessions. An administrator creates a service application and service roles, assigns the required permissions, and gives the automation its client ID and one-time secret. The automation obtains a short-lived OAuth access token with `client_credentials`; it does not sign in as an administrator or reuse a browser cookie.
 
 The versioned API is `/api/management/v1`. Its public contract is `GET /api/management/v1/openapi.json`, an OpenAPI 3.1 document with request fields, response schemas, endpoint scopes, pagination and errors. The document contains no instance data or credentials. Other management endpoints require a current machine access token with the exact management audience.
 
 ## Create a least-privilege machine
 
-1. Open **Administration → Machine roles** and create a role with only the required permissions. For the scheduled example, choose `management:audit:read`.
-2. Open **Administration → Machine applications**, create an application and save its one-time client secret in the automation's private configuration.
-3. Assign the role to that machine application. A new application has no permissions until assigned.
+1. Open **Administration → Roles → Service roles** and create a role with only the required permissions. For the scheduled example, choose `management:audit:read`.
+2. Open **Administration → Service applications**, create an application and save its one-time client secret in the automation's private configuration.
+3. Assign the role to that service application. A new application has no permissions until assigned.
 4. Configure the issuer, client ID and secret on the server. A SPA, browser script or mobile client cannot keep a machine secret.
 
-Machine roles are distinct from user business roles and Loginflare's console `admin` role. They can contain management scopes and registered business API permissions. Role changes maintain the server-owned client-credentials ceiling and allowed resources. An application cannot broaden its ceiling by changing the token request. The same machine must request one resource per token; a business resource token cannot authorize a call to the Management API.
+Service roles are distinct from user roles and Loginflare's console `admin` role. They can contain management scopes and registered business API permissions. Role changes maintain the server-owned client-credentials ceiling and allowed resources. An application cannot broaden its ceiling by changing the token request. The same machine must request one resource per token; a business resource token cannot authorize a call to the Management API.
 
-The human administrator-only controls are under `/api/admin/machines`: application creation/detail/editing, role assignment, secret rotation and token revocation; machine role creation/editing/deletion; and permission discovery. These use the current selected browser account with normal administrator checks. Neither the public Management API nor developer-owned login applications can create or edit machine authority.
+The human administrator-only controls are under `/api/admin/machines`: application creation/detail/editing, role assignment, secret rotation and token revocation; service role creation/editing/deletion; and permission discovery. These use the current selected browser account with normal administrator checks. Neither the public Management API nor developer-owned login applications can create or edit machine authority.
 
 ## Obtain a management token
 
@@ -49,13 +49,13 @@ All paths in this table are relative to `/api/management/v1`:
 | `management:applications:write` | `POST /applications`, `PATCH /applications/:clientId`, `POST /applications/:clientId/rotate-secret` |
 | `management:resources:read` | Read resources, resource permissions, permission lists and allowed-application lists |
 | `management:resources:write` | Create/update/delete business resources and permissions; link/unlink allowed login applications |
-| `management:roles:read` | `GET /roles`, `GET /roles/:id` for user business roles |
-| `management:roles:write` | Create/update/delete user business roles |
+| `management:roles:read` | `GET /roles`, `GET /roles/:id` for user roles |
+| `management:roles:write` | Create/update/delete user roles |
 | `management:role-assignments:read` | `GET /users/:userId/roles` |
 | `management:role-assignments:write` | `PUT /users/:userId/roles` with `{ "roleIds": [...] }` |
 | `management:audit:read` | `GET /audit-logs`, `GET /audit-logs/:id` |
 
-Resource, permission, business role and user-role paths use the same field rules as [access management](access-control.md#administrator-http-surface), under the versioned prefix. A role assignment replaces the complete user business-role set; an empty array removes those assignments. It never changes the user's console role or machine roles.
+Resource, permission, user role and role assignment endpoints use the same field rules as [access management](access-control.md#administrator-http-surface), under the versioned prefix. A role assignment replaces the complete set of user roles; an empty array removes those assignments. It never changes the user's console role or service roles.
 
 Machine user management cannot change passwords, MFA, primary email, verification flags or console roles. Administrator accounts are protected from machine profile/suspension changes and session revocation. There is no machine user-creation or account-deletion endpoint in this version.
 
@@ -98,10 +98,10 @@ Do not retry an uncertain write automatically. A timeout or lost response may fo
 
 [examples/management-worker](../examples/management-worker/README.md) obtains a token inside each trusted invocation and reads the latest bounded audit page. Its default Cron task requests only `management:audit:read`; its public fetch handler exposes a read-only health response and has no operation trigger. Only summary counts are logged.
 
-The exported client also implements login-application creation and user business-role replacement for trusted provisioning code. It uses generated bindings, bounded response bodies, timeouts and manual redirect handling. It stores no token or in-flight request globally and never automatically retries a write. Web application secrets are returned to the trusted caller for private storage, rather than written to logs or discarded by the scheduled task.
+The exported client also implements login-application creation and replacement of user role assignments for trusted provisioning code. It uses generated bindings, bounded response bodies, timeouts and manual redirect handling. It stores no token or in-flight request globally and never automatically retries a write. Web application secrets are returned to the trusted caller for private storage, rather than written to logs or discarded by the scheduled task.
 
 ## Deployment
 
-Apply `0021_machines.sql` and `0022_machine_audit.sql` before switching to this build. They add machine roles, permission projections, generation checks, the protected management resource and distinct audit actors. Existing user accounts and login clients remain separate; they are not automatically converted into machines. The main Worker needs no new binding or secret. Each automation has its own machine secret, managed separately from Loginflare's server secret.
+Apply `0021_machines.sql` and `0022_machine_audit.sql` before switching to this build. They add service roles, permission projections, generation checks, the protected management resource and distinct audit actors. Existing user accounts and login clients remain separate; they are not automatically converted into machines. The main Worker needs no new binding or secret. Each automation has its own machine secret, managed separately from Loginflare's server secret.
 
 Validate least-privilege reads/writes, ordinary-user token rejection, reserved-resource protection, generation revocation, concurrent changes, audit attribution and OpenAPI in an isolated environment. Automatic tests and example builds do not deploy services or change real accounts.

@@ -4,11 +4,11 @@
 
 This independent Worker demonstrates machine-to-machine access to `/api/management/v1`. Its default Cron job obtains a native `client_credentials` token for `urn:loginflare:management`, requesting only `management:audit:read`, then reads at most 100 current audit events and logs only the count and whether another page exists. It does not export the entire history or promise exactly-once processing.
 
-The public Worker handler provides GET `/health`. Other paths return 404 and cannot trigger an automation or expose its credentials. The default task performs no management writes. The trusted `connectManagement` client also supports creating Web/SPA login applications and replacing user business-role assignments; choose their additional scopes only in a job that needs them.
+The public Worker handler provides GET `/health`. Other paths return 404 and cannot trigger an automation or expose its credentials. The default task performs no management writes. The trusted `connectManagement` client also supports creating Web/SPA login applications and replacing user role assignments; choose their additional scopes only in a job that needs them.
 
 ## Configure and run locally
 
-Create a machine role with `management:audit:read`, create a machine application, save its once-shown secret, and assign the role. From the repository root:
+Create a service role with `management:audit:read`, create a service application, save its once-shown secret, and assign the role. From the repository root:
 
 ```powershell
 Copy-Item examples/management-worker/.dev.vars.example examples/management-worker/.dev.vars
@@ -23,14 +23,14 @@ In another terminal, a local scheduled test can be invoked with `Invoke-WebReque
 | Setting | Purpose |
 | --- | --- |
 | `AUTH_ISSUER` | Exact Loginflare issuer ending in `/api/auth`; HTTPS, or loopback HTTP for local development |
-| `MACHINE_CLIENT_ID` | Administrator-created machine application ID |
+| `MACHINE_CLIENT_ID` | Administrator-created service application ID |
 | `MACHINE_CLIENT_SECRET` | Machine client secret; ignored local file or deployed Worker secret |
 
-For deployment, configure the non-secret values in this example's `wrangler.jsonc` and put the secret into the selected Worker's secret storage with the operator's Cloudflare tooling. Its Cron is every fifteen minutes. Nothing in this repository deploys this Worker or creates a machine application automatically. The generated binding file is ignored; its generator module-isolates this independent Worker's types from the main application.
+For deployment, configure the non-secret values in this example's `wrangler.jsonc` and put the secret into the selected Worker's secret storage with the operator's Cloudflare tooling. Its Cron is every fifteen minutes. Nothing in this repository deploys this Worker or creates a service application automatically. The generated binding file is ignored; its generator module-isolates this independent Worker's types from the main application.
 
 ## Trusted provisioning code
 
-Import the client inside a trusted scheduled or queue invocation. The following creates a SPA, which has no client secret, then replaces a known user's business-role set:
+Import the client inside a trusted scheduled or queue invocation. The following creates a SPA, which has no client secret, then replaces a known user's role assignments:
 
 ```ts
 import { connectManagement } from './client';
@@ -49,7 +49,7 @@ const application = await management.createLoginApplication({
 await management.replaceUserRoles(targetUserId, desiredBusinessRoleIds);
 ```
 
-Those two requests are not one transaction. `replaceUserRoles` replaces all business roles for that user; it does not append or change console administrator privileges. Permission discovery, role lookup or reading existing applications needs the corresponding read scopes in the token and machine role.
+Those two requests are not one transaction. `replaceUserRoles` replaces all user roles for that user; it does not append or change console administrator privileges. Permission discovery, role lookup or reading existing applications needs the corresponding read scopes in the token and service role.
 
 For `type: 'web'`, `createLoginApplication` returns the one-time `clientSecret` to its trusted caller. Store it privately before continuing; do not log the result or create a Web application in the default polling task. The example deliberately has no automatic write retries. A `ManagementApiError` with `writeMayHaveCompleted: true` means a timeout, response loss or invalid successful response could follow an actual committed change. Inspect state before retrying, especially for creation or secret rotation.
 

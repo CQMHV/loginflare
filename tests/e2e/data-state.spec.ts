@@ -41,6 +41,7 @@ async function mockAccount(context: BrowserContext) {
         else if (url.pathname === '/api/browser/auth-flows' && req.method() === 'POST') result = { flowId: '00000000-0000-4000-8000-000000000001' };
         else if (url.pathname.startsWith('/api/browser/auth-flows/') && req.method() === 'DELETE') result = { status: true };
         else if (url.pathname === '/api/auth/get-session') result = structuredClone(state.actor);
+        else if (url.pathname === '/api/auth/passkey/list-user-passkeys') result = [];
         else if (url.pathname === '/api/auth/social/security') result = { hasPassword: true, identities: [], providers: [] };
         else if (url.pathname === '/api/social/providers') result = { providers: [] };
         else if (url.pathname === '/api/config') result = { turnstileSiteKey: '1x00000000000000000000AA' };
@@ -157,6 +158,7 @@ test('keeps security settings hidden after an initial read failure and recovers 
     await expect(page.locator('.page-content .card')).toHaveCount(0);
     failing = false;
     await page.getByRole('button', { name: 'Try again', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Passkeys', exact: true }).getByText('No passkeys registered.', { exact: true })).toBeVisible();
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Change password', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Set up authenticator', exact: true })).toBeEnabled();
@@ -351,7 +353,7 @@ for (const width of [1280, 375]) test(`keeps account and administration layout s
     ]) {
         await page.goto(path);
         await expect(page.locator(ready).first()).toBeVisible();
-        if (name === 'user') await expect(page.getByText('No business roles assigned.', { exact: true })).toBeVisible();
+        if (name === 'user') await expect(page.getByText('No user roles assigned.', { exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: /^(Refresh data|刷新数据)$/ })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
         const positions = () => page.locator('.page-content > .page-heading, .page-content > .card, .developer-applications-grid, .authorized-application-list').evaluateAll((elements) =>
