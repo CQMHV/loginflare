@@ -134,18 +134,27 @@ test.describe('touch sorting', () => {
         await page.goto('/zh-cn/admin/social-connections');
         const source = handle(page, 'google preview', true);
         await expect(source).toBeVisible();
+        // Keep the gesture inside the viewport so page auto-scroll cannot move its target.
+        await source.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }));
         const start = (await source.boundingBox())!, target = (await cards(page).nth(1).boundingBox())!;
         const session = await context.newCDPSession(page);
         const point = { x: start.x + start.width / 2, y: start.y + start.height / 2, id: 1 };
+        const targetY = target.y + target.height / 2, viewportHeight = await page.evaluate(() => window.innerHeight);
+        expect(point.y).toBeGreaterThan(0);
+        expect(point.y).toBeLessThan(viewportHeight);
+        expect(targetY).toBeGreaterThan(0);
+        expect(targetY).toBeLessThan(viewportHeight);
         try {
             await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
             await expect(source).toHaveAttribute('aria-pressed', 'true');
             for (let index = 1; index <= 15; index++) {
-                await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, y: point.y + (target.y + target.height / 2 - point.y) * index / 15 }] });
+                await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, y: point.y + (targetY - point.y) * index / 15 }] });
             }
             await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
             await expect.poll(() => visibleOrder(page)).toEqual([original[1]!, original[0]!, original[2]!]);
             await expect.poll(() => state.writes.length).toBe(1);
+            expect(state.writes[0]).toEqual({ order: [original[1]!, original[0]!, original[2]!], previousOrder: original });
+            expect(state.otherWrites).toHaveLength(0);
             expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
             await page.screenshot({ path: test.info().outputPath('touch-connection-order-zh-cn.png') });
         } finally { await session.detach(); }
