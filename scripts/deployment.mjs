@@ -24,6 +24,7 @@ export function validateDeploymentConfiguration(configuration) {
         if (configuration.r2_buckets?.filter((binding) => binding.binding === name).length !== 1) throw new Error(`Missing or duplicate ${name} binding.`);
     }
     if (!configuration.send_email?.some((binding) => binding.name === 'EMAIL')) throw new Error('Missing EMAIL binding.');
+    if (configuration.ratelimits?.filter((binding) => binding.name === 'REQUEST_LIMITER' && binding.simple?.limit > 0 && binding.simple?.period === 60).length !== 1) throw new Error('Missing or invalid REQUEST_LIMITER binding.');
     return configuration;
 }
 

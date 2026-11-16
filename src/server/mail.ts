@@ -2,6 +2,7 @@ import type { Env } from './config.ts';
 import { isLocale, localeToPath, type Locale } from '../shared/locales.ts';
 import { readBranding } from './branding-settings';
 import { renderMail } from './mail-template';
+import { requireMailBudget, reserveMail } from './mail-budget';
 
 type MailUser = { email: string; name: string; locale?: unknown; id?: string };
 const copy = {
@@ -14,6 +15,8 @@ const copy = {
 } satisfies Record<Locale, { verify: string[] }>;
 
 export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: string): Promise<void> {
+    // This anonymous endpoint keeps its normal opaque success response on suppression.
+    if (!(await reserveMail(env.DB, user.email)).allowed) return;
     const brand = await readBranding(env.DB);
     const locale = isLocale(user.locale) ? user.locale : 'en-US';
     const path = localeToPath[locale];
@@ -45,6 +48,7 @@ export async function sendAccountMail(env: Env, user: MailUser, sourceUrl: strin
 }
 
 export async function sendInstallationMail(env: Env, email: string, token: string, locale: Locale): Promise<void> {
+    await requireMailBudget(env.DB, email);
     const brand = await readBranding(env.DB);
     const link = new URL(`/${localeToPath[locale]}/setup`, env.AUTH_URL);
     link.hash = token;
@@ -60,7 +64,9 @@ export async function sendInstallationMail(env: Env, email: string, token: strin
     });
 }
 
-export async function sendEmailCode(env: Env, user: MailUser, code: string, purpose: 'verify' | 'recovery' | 'social'): Promise<void> {
+export async function sendEmailCode(env: Env, user: MailUser, code: string, purpose: 'verify' | 'recovery' | 'social', prepare: () => Promise<void>): Promise<void> {
+    await requireMailBudget(env.DB, user.email);
+    await prepare();
     const brand = await readBranding(env.DB);
     const locale = isLocale(user.locale) ? user.locale : 'en-US';
     const chinese = locale === 'zh-CN';

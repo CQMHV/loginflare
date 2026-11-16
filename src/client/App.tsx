@@ -1,5 +1,5 @@
 import {
-    createContext, Fragment, useContext, useEffect, useRef, useState,
+    createContext, Fragment, lazy, Suspense, useContext, useEffect, useRef, useState,
     type FormEvent, type PropsWithChildren,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,35 +10,45 @@ import i18n from './i18n';
 import { EmptyList, SearchReset } from './list-feedback';
 import { Button, ButtonLink, Checkbox, ConfirmationDialog, Divider, List, ListItem, MenuButton, NavigationLink, Progress, Select, TextField } from './material';
 import { setThemePreference, useTheme, type ThemePreference } from './theme';
-import { ApplicationEditor, ApplicationsPage } from './Applications';
-import { AuthorizedApplicationsPage } from './AuthorizedApplications';
-import { EmailsPage } from './Emails';
 import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
 import { CursorRecovery, listParameters, listPath, pageParameters, PageNavigation, type CursorPage } from './pagination';
 import { resolveLocale, savePreference } from './locale';
 import { ConnectionNotice, DataScope, ResourceFeedback, useConfiguration, useDataActions, useIdentity, useResource } from './data';
 import { PageStateProvider, useClearSecrets, usePageDraft } from './page-state';
+import { PageBoundary } from './PageBoundary';
 import { Avatar, AvatarEditor } from './Avatar';
 import { ToolbarIcon } from './ToolbarIcon';
 import { BrandingUpdates, useBranding } from './branding';
-import { BrandingSettings } from './BrandingSettings';
-import { MfaSettings } from './MfaSettings';
 import { SocialButtons, SocialCompletion, SocialSettings } from './Social';
 import { SecurityDialog, useSecurity } from './security';
-import { SocialConnectionsPage } from './SocialConnections';
 import { ErrorNotice, useFeedback } from './feedback';
 import { BrowserAccountChooser, BrowserAccountMenu, useBrowserAccounts } from './BrowserAccounts';
 import { cancelBrowserFlow, completeBrowserLogin, ensureBrowserFlow, startBrowserFlow } from './browser-account-actions';
 import { browserContextEvent, browserContextVersion, browserFlowId, browserFlowTargetAccount, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
-import { ApiResourcesPage, ApiResourceDetailPage, BusinessRolesPage, UserBusinessRoles, AuditLogsPage } from './AccessManagement';
-import { MachineApplicationsPage, MachineApplicationDetailPage, MachineRolesPage } from './Machines';
-import { AccountDeletion, AccountDeletionReceipt } from './AccountDeletion';
 import { authenticatePasskey, browserSupportsWebAuthn, cancelPasskey, Passkeys, passkeyError } from './Passkeys';
-import { WebhooksPage, WebhookDeliveriesPage } from './Webhooks';
+const ApplicationsPage = lazy(() => import('./Applications').then((module) => ({ default: module.ApplicationsPage })));
+const ApplicationEditor = lazy(() => import('./Applications').then((module) => ({ default: module.ApplicationEditor })));
+const AuthorizedApplicationsPage = lazy(() => import('./AuthorizedApplications').then((module) => ({ default: module.AuthorizedApplicationsPage })));
+const EmailsPage = lazy(() => import('./Emails').then((module) => ({ default: module.EmailsPage })));
+const BrandingSettings = lazy(() => import('./BrandingSettings').then((module) => ({ default: module.BrandingSettings })));
+const MfaSettings = lazy(() => import('./MfaSettings').then((module) => ({ default: module.MfaSettings })));
+const SocialConnectionsPage = lazy(() => import('./SocialConnections').then((module) => ({ default: module.SocialConnectionsPage })));
+const ApiResourcesPage = lazy(() => import('./AccessManagement').then((module) => ({ default: module.ApiResourcesPage })));
+const ApiResourceDetailPage = lazy(() => import('./AccessManagement').then((module) => ({ default: module.ApiResourceDetailPage })));
+const BusinessRolesPage = lazy(() => import('./AccessManagement').then((module) => ({ default: module.BusinessRolesPage })));
+const UserBusinessRoles = lazy(() => import('./AccessManagement').then((module) => ({ default: module.UserBusinessRoles })));
+const AuditLogsPage = lazy(() => import('./AccessManagement').then((module) => ({ default: module.AuditLogsPage })));
+const MachineApplicationsPage = lazy(() => import('./Machines').then((module) => ({ default: module.MachineApplicationsPage })));
+const MachineApplicationDetailPage = lazy(() => import('./Machines').then((module) => ({ default: module.MachineApplicationDetailPage })));
+const MachineRolesPage = lazy(() => import('./Machines').then((module) => ({ default: module.MachineRolesPage })));
+const AccountDeletion = lazy(() => import('./AccountDeletion').then((module) => ({ default: module.AccountDeletion })));
+const AccountDeletionReceipt = lazy(() => import('./AccountDeletion').then((module) => ({ default: module.AccountDeletionReceipt })));
+const WebhooksPage = lazy(() => import('./Webhooks').then((module) => ({ default: module.WebhooksPage })));
+const WebhookDeliveriesPage = lazy(() => import('./Webhooks').then((module) => ({ default: module.WebhookDeliveriesPage })));
 
 interface AppContextValue {
     identity: Identity | null | undefined;
-    refresh: () => Promise<void>;
+    refresh: ReturnType<typeof useIdentity>['refresh'];
     locale: Locale;
 }
 
@@ -259,7 +269,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     const oauthQuery = oauthSearch(location.search);
     const authPath = (page: string, extra?: Record<string, string>) => withOAuthSearch(localizedPath(locale, page), location.search, extra);
     const callbackURL = `${window.location.origin}${authPath('verified')}`;
-    const browserAccounts = useBrowserAccounts();
+    const browserAccounts = useBrowserAccounts(!busy);
     const selectingInitial = useRef(false);
 
     useEffect(() => {
@@ -312,7 +322,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
             if (!current()) return;
             if (result?.redirect) { await completeBrowserLogin(result, true); return; }
             if (!result?.twoFactorRedirect) await completeBrowserLogin(result);
-            await refresh(); savePreference(locale);
+            await refresh({ cancelRefetch: !!result?.twoFactorRedirect }); savePreference(locale);
             navigate(result?.twoFactorRedirect ? authPath('two-factor') : localizedPath(locale, 'account'), { replace: true });
         } catch (cause) { if (current()) setError(errorCode(passkeyError(cause))); }
         finally { setBusy(false); }
@@ -360,7 +370,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                     if (!secretsCurrent()) return;
                     setPassword('');
                     if (!result.twoFactorRedirect) await completeBrowserLogin(result);
-                    await refresh();
+                    await refresh({ cancelRefetch: !!result.twoFactorRedirect });
                     savePreference(locale);
                     navigate(result.twoFactorRedirect ? flowPath(localizedPath(locale, 'two-factor')) : localizedPath(locale, 'account'), { replace: true });
                     break;
@@ -475,7 +485,7 @@ function TwoFactorPage() {
             if (!current()) return;
             setCode('');
             if (!social) await completeBrowserLogin(result);
-            await refresh();
+            await refresh({ cancelRefetch: social });
             savePreference(locale);
             navigate(social ? flowPath(localizedPath(locale, 'social/complete')) : localizedPath(locale, 'account'), { replace: true });
         } catch (cause) { if (current()) setError(errorCode(cause)); }
@@ -555,7 +565,7 @@ function Protected({ adminOnly = false, developerOnly = false }: { adminOnly?: b
     if (!identity) return <Navigate to={flowPath(localizedPath(locale, 'login'))} replace />;
     if (adminOnly && identity.user.role !== 'admin') return <StatePage forbidden />;
     if (developerOnly && (identity.user.banned || !identity.user.emailVerified)) return <StatePage forbidden />;
-    return <Outlet />;
+    return <Suspense fallback={<Busy />}><Outlet /></Suspense>;
 }
 
 type AppArea = 'account' | 'developer' | 'admin';
@@ -595,7 +605,7 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
     const feedback = useFeedback();
     const dataActions = useDataActions();
     const captureSignOut = useClearSecrets(() => setBusy(false));
-    const { pathname } = useLocation();
+    const { pathname, search } = useLocation();
     const [navigationOpen, setNavigationOpen] = useState(false);
     const navigationRef = useRef<HTMLElement>(null), navigationToggle = useRef<HTMLButtonElement>(null), mainRef = useRef<HTMLElement>(null);
     useEffect(() => {
@@ -648,7 +658,7 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
         </aside>
         <div className="app-content">
             <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><LanguageSwitcher compact /><ThemeSwitcher /><AccountMenu busy={busy} onSignOut={() => { void signOut(); }} /></div></header>
-            <main ref={mainRef} className="page-content"><ConnectionNotice /><Outlet /></main>
+            <main ref={mainRef} className="page-content"><ConnectionNotice /><PageBoundary resetKey={pathname + search}><Suspense fallback={<Busy />}><Outlet /></Suspense></PageBoundary></main>
             <footer className="app-footer">{brand.name} <span>·</span> {t('openSource')}</footer>
         </div>
     </div>;
@@ -1004,6 +1014,6 @@ export default function App() {
     const pageScope = privatePage ? identity ? `${identity.user.id}:${identity.session.id}:${identity.user.role ?? 'user'}` : '' : 'authentication';
     return <AppContext.Provider value={context}><BrandingUpdates /><DataScope identity={identity}><PageStateProvider key={pageScope}>
         {loadError && <div className="global-error"><ErrorNotice code={loadError} /><Button type="button" className="text-button" onClick={() => { void identityQuery.refetch(); }}>{i18n.t('tryAgain')}</Button></div>}
-        {location.pathname === '/' ? (identity === undefined && !loadError ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search: location.search, hash: location.hash }} replace />) : <LocaleRoutes />}
+        {location.pathname === '/' ? (identity === undefined && !loadError ? <Busy /> : <Navigate to={{ pathname: localizedPath(locale, identity ? 'account' : 'login'), search: location.search, hash: location.hash }} replace />) : <PageBoundary resetKey={location.pathname + location.search}><Suspense fallback={<Busy />}><LocaleRoutes /></Suspense></PageBoundary>}
     </PageStateProvider></DataScope></AppContext.Provider>;
 }

@@ -47,6 +47,7 @@ const options = convertV4MiniflareOptions({
     compatibilityDate: '2026-10-26', compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
     d1Databases: { DB: '00000000-0000-4000-8000-000000000001' },
     r2Buckets: { AVATARS: 'isolated-avatars' },
+    ratelimits: { REQUEST_LIMITER: { namespace_id: '1001', simple: { limit: 600, period: 60 } } },
     bindings: {
         APP_ENV: 'development', AUTH_URL: origin, EMAIL_FROM: 'no-reply@loginflare.test',
         TURNSTILE_SITE_KEY: '1x00000000000000000000AA', TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',

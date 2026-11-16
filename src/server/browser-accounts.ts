@@ -60,16 +60,17 @@ async function accountRows(env: Env, headers: Headers): Promise<AccountRow[]> {
         LEFT JOIN "session" s ON s."id" = a."sessionId" WHERE a."browserHash" = ? AND (a."expiresAt" > ? OR s."expiresAt" > ?)
         ORDER BY a."lastUsedAt" DESC, a."id" LIMIT 10`).bind(hash, Date.now(), new Date().toISOString()).all<AccountRow>()).results;
 }
-async function activeRows(env: Env, headers: Headers, includeUnavailable = false) {
+async function activeRows(env: Env, headers: Headers, includeUnavailable = false, rows?: AccountRow[]) {
     const cookies = await parseSigned(headers.get('cookie') ?? '', env.BETTER_AUTH_SECRET);
     const sessionName = names(env).session;
-    return (await accountRows(env, headers)).filter((row) => row.token && (includeUnavailable || (!row.banned && row.emailVerified))
+    return (rows ?? await accountRows(env, headers)).filter((row) => row.token && (includeUnavailable || (!row.banned && row.emailVerified))
         && row.sessionExpiresAt! > new Date().toISOString()
         && cookies[`${sessionName}_multi-${row.token.toLowerCase()}`] === row.token);
 }
 export async function browserAccounts(env: Env, headers: Headers): Promise<BrowserAccountSummary[]> {
-    const active = new Set((await activeRows(env, headers)).map((row) => row.id));
-    return (await accountRows(env, headers)).filter((row) => row.expiresAt > Date.now() || active.has(row.id)).map((row) => ({ id: row.id,
+    const rows = await accountRows(env, headers);
+    const active = new Set((await activeRows(env, headers, false, rows)).map((row) => row.id));
+    return rows.filter((row) => row.expiresAt > Date.now() || active.has(row.id)).map((row) => ({ id: row.id,
         user: { id: row.userId, name: row.name, email: row.email, image: row.image, role: row.role },
         status: active.has(row.id) ? 'active' : 'signed-out', lastUsedAt: row.lastUsedAt }));
 }

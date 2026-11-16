@@ -10,6 +10,7 @@ export default defineConfig({
                 compatibilityFlags: ['nodejs_compat'],
                 d1Databases: ['DB'],
                 r2Buckets: ['AVATARS', 'PRIVATE'],
+                ratelimits: { REQUEST_LIMITER: { namespace_id: '1001', simple: { limit: 600, period: 60 } } },
                 bindings: {
                     APP_ENV: 'development',
                     AUTH_URL: 'http://localhost:5173',

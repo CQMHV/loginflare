@@ -5,20 +5,30 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { localizedPath, type Locale } from '../shared/locales';
 import { ApiError, errorCode, fetchJson, type Identity } from './api';
 import { Avatar } from './Avatar';
-import { Button, ConfirmationDialog, Progress } from './material';
+import { Button, ConfirmationDialog } from './material';
 import { ToolbarIcon } from './ToolbarIcon';
 import { ErrorNotice } from './feedback';
-import { identityKey, ResourceFeedback, useDataActions } from './data';
+import { identityKey, mayAutomaticallyRefresh, ResourceFeedback, useDataActions } from './data';
 import { browserAccountsKey, startBrowserFlow, type BrowserAccountList, type BrowserAccountSummary } from './browser-account-actions';
 import { browserFlowId, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount, selectBrowserFlowAccount } from './browser-context';
 import { oauthSearch, providerRequest, withOAuthSearch } from './oauth';
 
-export function useBrowserAccounts() {
-    return useQuery({ queryKey: browserAccountsKey, queryFn: async ({ signal }) => {
+export function useBrowserAccounts(enabled = true) {
+    const query = useQuery<BrowserAccountList>({ queryKey: browserAccountsKey, enabled: (current) => enabled && mayAutomaticallyRefresh(current), queryFn: async ({ signal }) => {
         const result = await fetchJson<BrowserAccountList>('/api/browser/accounts', undefined, undefined, undefined, signal);
         if (!Array.isArray(result.accounts)) throw new ApiError('UNKNOWN_ERROR', 502);
         return result;
     }, staleTime: 15_000 });
+    const [, updateClock] = useState(0);
+    const retryAt = query.error instanceof ApiError && query.error.status === 429
+        ? query.errorUpdatedAt + Math.max(5000, query.error.retryAfterMs) : 0;
+    useEffect(() => {
+        const delay = retryAt - Date.now();
+        if (!enabled || delay <= 0) return;
+        const timer = setTimeout(() => updateClock((value) => value + 1), delay);
+        return () => clearTimeout(timer);
+    }, [enabled, retryAt]);
+    return { ...query, retryDisabled: Date.now() < retryAt };
 }
 
 function AccountRows({ accounts, current, busy, choose, remove }: { accounts: BrowserAccountSummary[]; current: string; busy: boolean; choose: (account: BrowserAccountSummary) => void; remove: (account: BrowserAccountSummary) => void }) {
@@ -71,7 +81,7 @@ export function BrowserAccountChooser({ locale, refresh }: { locale: Locale; ref
         catch (cause) { setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    return <><h2>{t('browserAccounts.choose')}</h2><p className="section-description">{t('browserAccounts.description')}</p><ErrorNotice code={error} /><ResourceFeedback query={query} />
+    return <><h2>{t('browserAccounts.choose')}</h2><p className="section-description">{t('browserAccounts.description')}</p><ErrorNotice code={error} /><ResourceFeedback query={query} retryDisabled={query.retryDisabled} />
         {query.data && <><AccountRows accounts={query.data.accounts} current={selectedBrowserAccount()} busy={busy} choose={(account) => { void choose(account); }} remove={(account) => { void remove(account); }} />
             {!query.data.accounts.length && <p className="muted">{t('browserAccounts.empty')}</p>}
             <Button className="secondary full browser-add-account" disabled={busy} onClick={() => { void add(); }}><ToolbarIcon slot="icon" name="add" />{t('browserAccounts.useAnother')}</Button>
@@ -81,9 +91,9 @@ export function BrowserAccountChooser({ locale, refresh }: { locale: Locale; ref
 
 export function BrowserAccountMenu({ identity, locale, refresh, signingOut, onSignOut }: { identity: Identity; locale: Locale; refresh: () => Promise<void>; signingOut: boolean; onSignOut: () => void }) {
     const { t } = useTranslation(), navigate = useNavigate(), client = useQueryClient(), actions = useDataActions();
-    const query = useBrowserAccounts();
     const container = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
     const [open, setOpen] = useState(false), [all, setAll] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string>();
+    const query = useBrowserAccounts(open);
     useEffect(() => {
         if (!open) return;
         const outside = (event: PointerEvent) => { if (!container.current?.contains(event.target as Node)) setOpen(false); };
@@ -125,7 +135,8 @@ export function BrowserAccountMenu({ identity, locale, refresh, signingOut, onSi
     return <div className="browser-account-menu" ref={container}>
         <button ref={trigger} type="button" className="avatar-menu-trigger account-menu" aria-label={t('accountMenu')} aria-description={identity.user.name || identity.user.email} aria-expanded={open} aria-haspopup="dialog" disabled={signingOut} onClick={() => { setError(undefined); setOpen(!open); }}><Avatar name={identity.user.name || identity.user.email} image={identity.user.image} className="user-avatar" />{createElement('md-ripple')}{createElement('md-focus-ring')}</button>
         {open && <div className="browser-account-popover" role="dialog" aria-label={t('browserAccounts.choose')}><ErrorNotice code={error} />
-            {query.data ? <AccountRows accounts={query.data.accounts} current={selectedBrowserAccount()} busy={busy} choose={(account) => { void choose(account); }} remove={(account) => { void remove(account); }} /> : <div className="loading-state"><Progress /></div>}
+            <ResourceFeedback query={query} retryDisabled={query.retryDisabled} />
+            {query.data && <AccountRows accounts={query.data.accounts} current={selectedBrowserAccount()} busy={busy} choose={(account) => { void choose(account); }} remove={(account) => { void remove(account); }} />}
             <div className="browser-account-actions"><Button className="text-button" disabled={busy} onClick={() => { setOpen(false); navigate(localizedPath(locale, 'account')); }}>{t('profile')}</Button>
                 <Button className="text-button" disabled={busy} onClick={() => { void add(); }}><ToolbarIcon slot="icon" name="add" />{t('browserAccounts.add')}</Button>
                 <Button className="text-button" disabled={busy} onClick={() => { setOpen(false); onSignOut(); }}>{t('signout')}</Button>

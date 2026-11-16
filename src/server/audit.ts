@@ -1,4 +1,5 @@
 import { Hono, type MiddlewareHandler } from 'hono';
+import { markWebhookWork } from './request-work';
 import { parseSigned } from 'hono/utils/cookie';
 import { createAuthMiddleware, isAPIError } from 'better-auth/api';
 import type { BetterAuthPlugin } from 'better-auth';
@@ -198,6 +199,7 @@ export function auditAuthentication(env: Env): BetterAuthPlugin {
                 reason: failed ? code(nativeError) ?? (response ? `HTTP_${response.status}` : 'AUTHENTICATION_FAILED') : null,
                 targetType: path.startsWith('/admin/') ? 'user' : path.startsWith('/oauth2/') ? 'application' : null,
                 targetId: path.startsWith('/admin/') ? targetUserId : clientId };
+            if (!failed && (['/sign-up/email', '/verify-email', '/update-user', '/emails/verify', '/emails/set-primary', '/admin/ban-user', '/admin/unban-user', '/social/verify-email', '/social/finish'].includes(path) || path === '/callback/:id')) markWebhookWork(env);
             const completedMfaSignIn = path.startsWith('/two-factor/verify-') && !failed && next && !ctx.context.session;
             await env.DB.batch([auditStatement(env, entry, ctx.headers), ...(completedMfaSignIn
                 ? [auditStatement(env, { ...entry, event: 'authentication.sign_in' }, ctx.headers)] : [])]);
@@ -240,6 +242,7 @@ export const observeAudit: MiddlewareHandler<{ Bindings: Env }> = async (c, next
     const originalTarget = await knownTarget(c.env, c.req.raw.headers, selection.targetType, selection.targetId);
     await next();
     const failed = c.res.status >= 400;
+    if (!failed && selection.targetType === 'user') markWebhookWork(c.env);
     const payload = await responseBody(c.res);
     const application = payload?.application && typeof payload.application === 'object' ? payload.application as Record<string, unknown> : null;
     const candidate = text(application?.clientId) ?? text(payload?.clientId) ?? text(payload?.id) ?? (selection.targetType === 'user' ? actorUserId : null);

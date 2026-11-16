@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { markWebhookWork } from './request-work';
 import { symmetricEncrypt } from 'better-auth/crypto';
 import { z } from 'zod';
 import type { Env } from './config';
@@ -33,6 +34,7 @@ webhooks.use('*', async (c, next) => {
     const rate = await databaseRateLimit(c.env.DB).consume(`webhooks:${c.req.method}:${identity.user.id}`, { window: 60, max: c.req.method === 'GET' ? 100 : 10 });
     if (!rate.allowed) { c.header('Retry-After', String(rate.retryAfter)); return c.json({ code: 'TOO_MANY_REQUESTS' }, 429); }
     await next();
+    if (c.req.method !== 'GET' && c.res.status < 400) markWebhookWork(c.env);
 });
 async function target(value: string) {
     let timer: ReturnType<typeof setTimeout> | undefined;

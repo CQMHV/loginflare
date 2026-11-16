@@ -52,6 +52,10 @@ async function mockAccount(context: BrowserContext) {
             else if (req.method() !== 'POST' || req.postDataJSON()?.password !== 'test-only-password') { status = 400; result = { code: 'INVALID_PASSWORD' }; }
             else result = { status: true };
         }
+        else if (url.pathname === '/api/auth/two-factor/disable') {
+            if (state.actor) state.actor.user.twoFactorEnabled = false;
+            result = { status: true };
+        }
         else if (url.pathname === '/api/auth/update-user') {
             const body = req.postDataJSON();
             await state.writeGate;
@@ -91,6 +95,107 @@ async function visibility(page: Page, visible: boolean) {
         Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visible ? 'visible' : 'hidden' });
         document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
     }, visible);
+}
+
+for (const locale of ['en-us', 'zh-cn']) {
+    const zh = locale === 'zh-cn';
+    test(`reads fresh MFA state after a write overtakes a background identity read in ${locale}`, async ({ page, context }) => {
+        const server = await mockAccount(context);
+        server.state.actor!.user.twoFactorEnabled = true;
+        await page.goto(`/${locale}/account/security`);
+        const turnOff = zh ? '关闭双重验证' : 'Turn off two-factor authentication';
+        await page.getByRole('button', { name: turnOff, exact: true }).click();
+        const dialog = page.locator('md-dialog');
+        await dialog.getByRole('textbox').fill('test-only-password');
+        await dialog.getByRole('button', { name: zh ? '验证并继续' : 'Verify and continue', exact: true }).click();
+        await expect(dialog.getByRole('button', { name: turnOff, exact: true })).toBeEnabled();
+        let release!: () => void;
+        server.state.readGate = new Promise<void>((resolve) => { release = resolve; });
+        const before = server.count(page, '/api/auth/get-session');
+        await page.evaluate(() => {
+            const channel = new BroadcastChannel('loginflare-account-data');
+            channel.postMessage({ type: 'accounts' }); channel.close();
+        });
+        await expect.poll(() => server.count(page, '/api/auth/get-session')).toBe(before + 1);
+        const changed = page.waitForResponse((response) => response.url().endsWith('/api/auth/two-factor/disable'));
+        await dialog.getByRole('button', { name: turnOff, exact: true }).click();
+        expect((await changed).status()).toBe(200);
+        expect(server.state.actor!.user.twoFactorEnabled).toBe(false);
+        server.state.readGate = undefined; release();
+        await expect(page.getByText(zh ? '双重验证未开启。' : 'Two-factor authentication is off.', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: zh ? '设置验证器' : 'Set up authenticator', exact: true })).toBeVisible();
+        expect(server.count(page, '/api/auth/get-session')).toBeGreaterThanOrEqual(before + 2);
+    });
+
+    for (const cached of [false, true]) test(`honors account-menu Retry-After with ${cached ? 'cached' : 'no cached'} accounts in ${locale}`, async ({ page, context }) => {
+        const server = await mockAccount(context);
+        let attempts = 0, blocked = !cached;
+        await context.route(`${testOrigin}/api/browser/accounts`, async (route) => {
+            attempts++;
+            if (blocked) await route.fulfill({ status: 429, json: { code: 'TOO_MANY_REQUESTS' }, headers: { 'Retry-After': '60' } });
+            else await route.fulfill({ json: { accounts: [{ id: 'browser-alpha', user: server.state.actor!.user, status: 'active', lastUsedAt: new Date().toISOString() }], maximumAccounts: 5 } });
+        });
+        await page.clock.install();
+        await page.goto(`/${locale}/account`);
+        const trigger = page.getByRole('button', { name: zh ? '账号菜单' : 'Account menu', exact: true });
+        const dialog = page.getByRole('dialog'), retry = dialog.getByRole('button', { name: zh ? '重试' : 'Try again', exact: true });
+        expect(attempts).toBe(0);
+        await trigger.click();
+        if (cached) {
+            await expect(dialog.getByText('Account alpha', { exact: true })).toBeVisible();
+            await trigger.click(); blocked = true;
+            await page.clock.fastForward(16_000);
+            await trigger.click();
+        }
+        await expect(dialog.getByRole('alert')).toBeVisible();
+        await expect(retry).toBeDisabled();
+        await expect(dialog.getByText(zh ? '加载中…' : 'Loading…', { exact: true })).toHaveCount(0);
+        const denied = attempts;
+        for (let i = 0; i < 2; i++) { await trigger.click(); await trigger.click(); }
+        // Keep browser interaction time safely inside the 60-second waiting window.
+        await page.clock.fastForward(30_000);
+        await visibility(page, false); await visibility(page, true);
+        expect(attempts).toBe(denied);
+        await expect(retry).toBeDisabled();
+        blocked = false;
+        await page.clock.fastForward(31_000);
+        if (cached) { await trigger.click(); await trigger.click(); }
+        else { await expect(retry).toBeEnabled(); await retry.click(); }
+        await expect(dialog.getByText('Account alpha', { exact: true })).toBeVisible();
+        await expect(dialog.getByRole('alert')).toHaveCount(0);
+        expect(attempts).toBe(denied + 1);
+    });
+
+    for (const standalone of [false, true]) test(`recovers a failed ${standalone ? 'standalone' : 'account'} page chunk in ${locale}`, async ({ page, context }) => {
+        const server = await mockAccount(context);
+        if (standalone) server.state.actor = null;
+        const chunk = standalone ? /\/assets\/AccountDeletion-[^/]+\.js$/ : /\/assets\/Emails-[^/]+\.js$/;
+        const destination = `/${locale}/${standalone ? 'account-deleted' : 'account/emails'}`;
+        await context.route(chunk, (route) => route.abort('failed'));
+        if (standalone) await page.goto(destination);
+        else {
+            await page.goto(`/${locale}/account`);
+            await openNavigation(page);
+            await page.getByRole('link', { name: zh ? '邮箱管理' : 'Email addresses', exact: true }).click();
+        }
+        const failure = page.getByRole('heading', { name: zh ? '页面未能加载' : 'Unable to load this page', exact: true });
+        await expect(failure).toBeVisible();
+        await expect(page.getByRole('alert')).toBeVisible();
+        if (!standalone) {
+            await expect(page.getByRole('button', { name: zh ? '账号菜单' : 'Account menu', exact: true })).toBeVisible();
+            await openNavigation(page);
+            await page.getByRole('link', { name: zh ? '个人资料' : 'Profile', exact: true }).click();
+            await expect(page.getByRole('heading', { name: zh ? '个人资料' : 'Your profile', exact: true })).toBeVisible();
+            await openNavigation(page);
+            await page.getByRole('link', { name: zh ? '邮箱管理' : 'Email addresses', exact: true }).click();
+            await expect(failure).toBeVisible();
+        }
+        await context.unroute(chunk);
+        await page.getByRole('button', { name: zh ? '重新加载页面' : 'Reload page', exact: true }).click();
+        await expect(page.getByRole('heading', { name: standalone ? zh ? '已提交账号注销' : 'Account deletion requested' : zh ? '邮箱管理' : 'Email addresses', exact: true })).toBeVisible();
+        await expect(failure).toHaveCount(0);
+        await expect(page).toHaveURL(destination);
+    });
 }
 
 for (const [locale, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {

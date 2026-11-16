@@ -6,6 +6,14 @@
 
 生产 `http_request` 结构化日志对正常请求采样 1%，记录所有 5xx。使用请求 ID 排查故障；采样日志不能计算精确登录转化率。认证审计区分未完成 MFA 和已完成登录，正常的认证拒绝不属于服务故障。
 
+`durationMs` 从 Worker 入口计至响应创建，包含安装状态解析与浏览器账号选择；不包含后台 `waitUntil` 投递和响应体传输。它不是浏览器 TTFB，也不是单独的数据库耗时。
+
+必须保留 `REQUEST_LIMITER` Workers 限流绑定：每个边缘提供的来源地址每分钟最多放行 600 次动态请求，IPv6 按 /64 合并，并在安装、认证和 D1 读取之前执行。静态资源和 `/api/health` 的 GET/HEAD 请求除外。Cloudflare 的计数是单个位置上的近似限流，不代表全局配额；原有接口级和账号级额度继续生效。拒绝请求返回 429 和 `Retry-After`，限流绑定故障返回 503。更新环境专用 Wrangler 配置时应保留此绑定。
+
+所有发信入口共享 D1 原子配额：每个规范化收件地址每分钟 3 封、每天 20 封；每个实例每分钟 300 封、每天 10,000 封。固定窗口从首次预留的尝试开始，收件地址键只保存 SHA-256 摘要。投递前先预留额度，服务商故障或结果不明仍计入尝试；额度不足时不替换已有验证码。匿名验证、账号恢复入口在抑制投递时仍返回不泄露账号状态的响应，已认证的验证码操作返回 429 和 `Retry-After`。额度耗尽应与投递故障分别排查；应用配额不能代替服务商限制或运营侧费用控制。
+
+Webhook 扫描在产生事件的用户变更、通知配置变更及明确重试后触发，定时投递继续承担恢复。登录流程记录和其他无关的成功写请求不再启动空投递扫描。
+
 认证 5xx 可通过 `X-Request-ID` 关联 `auth_request_failed.requestId`。固定的 `reason` 区分 `TURNSTILE_UNAVAILABLE`、`DATABASE_ERROR` 和 `AUTH_INTERNAL_ERROR`，不记录原始上游错误或 SQL。Turnstile 网络或 HTTP 故障返回 503 和 `TURNSTILE_UNAVAILABLE`，验证被拒绝仍返回 4xx。MFA 期间移除通行密钥会返回 400 和 `PASSKEY_NOT_AVAILABLE`，包括最终会话插入瞬间的删除竞态；此时应使用可用方式重新登录。
 
 监控 readiness、5xx、延迟、`email_recovery_delivery_failed`、`database_maintenance_failed` 和部署输出；其他邮件错误沿请求失败路径记录。邮件持续失败时检查投递配置，不绕过邮箱验证。清理故障应先检查最早积压任务和执行预算。不要记录请求体、Cookie、令牌、完整 OAuth 地址或邮件链接。

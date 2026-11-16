@@ -275,9 +275,8 @@ export function socialAuthentication(env: Env, selected?: LoadedConnection) {
                 do { crypto.getRandomValues(values); number = values[0]!; } while (number >= 4_294_000_000);
                 const code = String(number % 1_000_000).padStart(6, '0');
                 data.email = ctx.body.email; data.codeHash = await digest(`${flow.id}:${code}`);
-                await save(flow, data, 'code');
-                try { await sendEmailCode(env, { email: data.email, name: data.profile?.name ?? '', locale: data.locale }, code, 'social'); }
-                catch { await env.DB.prepare('DELETE FROM "socialFlow" WHERE "id" = ?').bind(flow.id).run(); fail('EMAIL_DELIVERY_FAILED'); }
+                try { await sendEmailCode(env, { email: data.email, name: data.profile?.name ?? '', locale: data.locale }, code, 'social', async () => { await save(flow, data, 'code'); }); }
+                catch (error) { if (error instanceof APIError) throw error; await env.DB.prepare('DELETE FROM "socialFlow" WHERE "id" = ?').bind(flow.id).run(); fail('EMAIL_DELIVERY_FAILED'); }
                 return ctx.json({ status: true });
             }),
             socialVerifyEmail: createAuthEndpoint('/social/verify-email', { method: 'POST', body: codeInput }, async (ctx) => {

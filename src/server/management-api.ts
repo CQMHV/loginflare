@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono';
+import { markWebhookWork } from './request-work';
 import { createLocalJWKSet, jwtVerify } from 'jose';
 import { z } from 'zod';
 import { createAuth } from './auth';
@@ -85,8 +86,10 @@ managementApi.use('*', async (c, next) => {
 });
 async function body(c: Context<ManagementEnv>) { return c.req.json().catch(() => null); }
 async function mutation(c: Context<ManagementEnv>, statements: D1PreparedStatement[], event: Omit<AuditEvent, 'outcome' | 'actorUserId' | 'actorClientId'>) {
-    return c.env.DB.batch([machineWriteGuard(c.env, c.var.machine!, c.var.managementScope!, event.targetUserId), ...statements,
+    const result = await c.env.DB.batch([machineWriteGuard(c.env, c.var.machine!, c.var.managementScope!, event.targetUserId), ...statements,
         auditStatement(c.env, { ...event, actorClientId: c.var.machine!.clientId, outcome: 'success' }, c.req.raw.headers), finishMachineWrite(c.env)]);
+    if (event.targetType === 'user') markWebhookWork(c.env);
+    return result;
 }
 interface ManagedUser { id: string; name: string; email: string; username: string | null; emailVerified: number; banned: number | null; createdAt: string; role: string }
 const userColumns = '"id", "name", "email", "username", "emailVerified", "banned", "createdAt", "role"';

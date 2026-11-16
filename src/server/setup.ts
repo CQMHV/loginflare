@@ -1,4 +1,5 @@
 import { hashPassword } from 'better-auth/crypto';
+import { isAPIError } from 'better-auth/api';
 import { z } from 'zod';
 import { validateConfig, type Env } from './config';
 import { sendInstallationMail } from './mail';
@@ -288,9 +289,10 @@ async function invite(env: Env, row: Installation, locale: z.infer<typeof locale
     if (!reserved) return; // A live invitation remains valid when other visitors request another.
     try {
         await sendInstallationMail(env, row.adminEmail, token, locale);
-    } catch {
+    } catch (error) {
         await env.DB.prepare(`UPDATE lfInstallation SET invitationHash = NULL, invitationExpiresAt = NULL
             WHERE id = 1 AND invitationHash = ? AND completedAt IS NULL`).bind(proof).run();
+        if (isAPIError(error) && error.statusCode === 429) throw error;
         throw new SetupError('EMAIL_DELIVERY_FAILED', 503);
     }
 }
@@ -345,6 +347,7 @@ export async function handleSetup(request: Request, env: Env, row: Installation 
         return json({ code: 'NOT_FOUND' }, 404);
     } catch (error) {
         if (error instanceof SetupError) return json({ code: error.code, detail: error.detail }, error.status);
+        if (isAPIError(error) && error.statusCode === 429) return json({ code: 'TOO_MANY_REQUESTS' }, 429, { 'Retry-After': String(error.body?.retryAfter ?? 60) });
         return json({ code: 'INSTALLATION_UNAVAILABLE' }, 503);
     }
 }

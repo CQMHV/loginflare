@@ -25,9 +25,9 @@ it.each(['en-US', 'zh-CN'] as const)('uses current branding in every %s email, i
     for (const name of ['Example & <Accounts>', 'Renamed identity service']) {
         await update(client, cookie, await current(client), { name });
         client.messages.length = 0;
-        await sendAccountMail(client.bindings, { email: 'mail@example.test', name: 'Person', locale }, `${origin}/api/auth/verify-email?token=fixture`);
+        await sendAccountMail(client.bindings, { email: `${crypto.randomUUID()}@example.test`, name: 'Person', locale }, `${origin}/api/auth/verify-email?token=fixture`);
         for (const purpose of ['verify', 'recovery', 'social'] as const) {
-            await sendEmailCode(client.bindings, { email: 'mail@example.test', name: 'Person', locale }, '123456', purpose);
+            await sendEmailCode(client.bindings, { email: `${crypto.randomUUID()}@example.test`, name: 'Person', locale }, '123456', purpose, async () => {});
         }
         await sendInstallationMail(client.bindings, 'owner@example.test', 'a'.repeat(64), locale);
         expect(client.messages).toHaveLength(5);

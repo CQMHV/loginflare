@@ -5,6 +5,10 @@ import { resolveTarget, validateDeploymentConfiguration, verifyCheckout } from '
 
 const template = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
 const database = { uuid: '00000000-0000-4000-8000-000000000001', name: 'test-db' };
+test('deployment requires the request limiter instead of silently dropping admission protection', () => {
+    assert.throws(() => validateDeploymentConfiguration({ ...template, ratelimits: [] }), /REQUEST_LIMITER/);
+    assert.equal(validateDeploymentConfiguration(template), template);
+});
 async function target(name, configuration = template, bindings) {
     return resolveTarget(async (path) => {
         if (path.startsWith('/workers/services/')) return bindings ? {} : null;

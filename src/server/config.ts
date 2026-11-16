@@ -11,6 +11,7 @@ export type Env = Omit<Cloudflare.Env, 'APP_ENV' | 'AUTH_URL' | 'EMAIL_FROM' | '
     LOGINFLARE_WORKER_NAME?: string;
     LOGINFLARE_ACCOUNT_ID?: string;
     LOGINFLARE_BUILD_ID?: string;
+    requestWork?: { webhooks: boolean };
 };
 
 export class ConfigurationError extends Error {}

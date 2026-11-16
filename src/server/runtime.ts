@@ -1,5 +1,6 @@
 import { validateConfig, type Env } from './config';
 import { advanceInstallation, handleSetup, instanceEnv, readInstallation, setupPage } from './setup';
+import { admitRequest } from './request-budget';
 
 type BusinessFetch = (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
 const readMethod = (request: Request) => request.method === 'GET' || request.method === 'HEAD';
@@ -61,8 +62,16 @@ async function dispatchInner(request: Request, env: Env, ctx: ExecutionContext, 
 }
 
 export async function dispatch(request: Request, env: Env, ctx: ExecutionContext, business: BusinessFetch): Promise<Response> {
-    const response = await dispatchInner(request, env, ctx, business);
+    let response: Response;
+    try {
+        response = await admitRequest(request, env) ? await dispatchInner(request, env, ctx, business)
+            : new Response(JSON.stringify({ code: 'TOO_MANY_REQUESTS' }), { status: 429, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Retry-After': '60' } });
+    } catch {
+        console.error(JSON.stringify({ event: 'request_dispatch_failed' }));
+        response = json('REQUEST_FAILED', 503);
+    }
     const headers = new Headers(response.headers);
+    if (response.status === 429 && !headers.has('Retry-After')) headers.set('Retry-After', headers.get('X-Retry-After') ?? '60');
     if (!headers.has('Referrer-Policy')) headers.set('Referrer-Policy', 'no-referrer');
     if (!headers.has('X-Content-Type-Options')) headers.set('X-Content-Type-Options', 'nosniff');
     if (!headers.has('X-Frame-Options')) headers.set('X-Frame-Options', 'DENY');

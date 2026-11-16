@@ -197,16 +197,12 @@ app.use('*', (c, next) => {
 });
 
 app.use('/api/*', async (c, next) => {
-    const started = Date.now();
     const requestId = c.req.header(auditRequestHeader)!;
     await next();
     c.header('Cache-Control', 'no-store');
     c.header('X-Request-ID', requestId);
-    if (c.res.status < 400 && (!['GET', 'HEAD'].includes(c.req.method) || c.req.path === '/api/auth/verify-email' || c.req.path.startsWith('/api/auth/callback/'))) {
+    if (c.res.status < 400 && c.env.requestWork?.webhooks) {
         c.executionCtx.waitUntil(deliverWebhooks(c.env).catch(() => { console.error(JSON.stringify({ event: 'webhook_delivery_failed' })); }));
-    }
-    if (c.env.APP_ENV === 'development' || c.res.status >= 500 || crypto.getRandomValues(new Uint32Array(1))[0]! < 0x1_0000_0000 * 0.01) {
-        console.log(JSON.stringify({ event: 'http_request', requestId, method: c.req.method, path: logPath(c.req.path), status: c.res.status, durationMs: Date.now() - started }));
     }
 });
 app.use('/api/*', (c, next) => {
@@ -302,9 +298,10 @@ app.all('/api/auth/*', async (c) => {
     const selected = selectedId ? await connection(c.env, selectedId, !!callbackId || body.purpose === 'test') : null;
     if (selectedId && !selected) return c.json({ code: 'SOCIAL_CONNECTION_NOT_FOUND' }, 404);
     const auth = createAuth(c.env, delivery, (task) => c.executionCtx.waitUntil(task), selected ?? undefined, undefined, [], (await readBranding(c.env.DB)).name);
-    if (privatePaths.has(path) || path.startsWith('/admin/') || path === '/get-session') {
+    // The native get-session endpoint already validates its own session and user.
+    if (privatePaths.has(path) || path.startsWith('/admin/')) {
         const identity = await auth.api.getSession({ headers: c.req.raw.headers, query: { disableRefresh: true } });
-        if (!identity && path !== '/get-session') return c.json({ code: 'UNAUTHORIZED' }, 401);
+        if (!identity) return c.json({ code: 'UNAUTHORIZED' }, 401);
         if (identity) {
             if (identity.user.banned) return c.json({ code: 'USER_BANNED' }, 403);
             if (path.startsWith('/admin/')) {
@@ -321,6 +318,10 @@ app.all('/api/auth/*', async (c) => {
     }
 
     const response = (path === '/sign-out' ? await signOutBrowserAccount(c.env, c.req.raw.headers) : null) ?? await auth.handler(c.req.raw);
+    if (path === '/get-session' && response.ok) {
+        const identity = await response.clone().json<{ user?: { banned?: boolean } } | null>();
+        if (identity?.user?.banned) return c.json({ code: 'USER_BANNED' }, 403);
+    }
     if (delivery.failed) return c.json({ code: 'EMAIL_DELIVERY_FAILED' }, 503);
     if (response.status >= 500) {
         if (delivery.failure === 'PASSKEY_NOT_AVAILABLE' && ['/passkey/verify-authentication', '/two-factor/verify-totp', '/two-factor/verify-backup-code'].includes(path)) {
@@ -363,7 +364,7 @@ app.all('*', async (c) => {
 });
 app.onError((error, c) => {
     if (error instanceof APIError) {
-        if (error.statusCode >= 400 && error.statusCode < 500) return new Response(JSON.stringify({ code: error.body?.code ?? 'INVALID_INPUT' }), { status: error.statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+        if (error.statusCode >= 400 && error.statusCode < 500) return new Response(JSON.stringify({ code: error.body?.code ?? 'INVALID_INPUT' }), { status: error.statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(error.statusCode === 429 ? { 'Retry-After': String(typeof error.body?.retryAfter === 'number' ? error.body.retryAfter : 60) } : {}) } });
     }
     c.header('Cache-Control', 'no-store');
     const configuration = error instanceof ConfigurationError;
@@ -372,11 +373,18 @@ app.onError((error, c) => {
 });
 
 export default {
-    fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+        const started = Date.now();
+        env = { ...env, requestWork: { webhooks: false } };
         const headers = new Headers(request.headers);
         headers.set(auditRequestHeader, crypto.randomUUID());
-        return dispatch(new Request(request, { headers }), env, ctx, (incoming, scoped, context) =>
+        const response = await dispatch(new Request(request, { headers }), env, ctx, (incoming, scoped, context) =>
             browserRequest(incoming, scoped, async (resolved) => app.fetch(resolved, scoped, context)));
+        if (new URL(request.url).pathname.startsWith('/api/')) response.headers.set('X-Request-ID', headers.get(auditRequestHeader)!);
+        if (new URL(request.url).pathname.startsWith('/api/') && (env.APP_ENV === 'development' || response.status >= 500 || crypto.getRandomValues(new Uint32Array(1))[0]! < 0x1_0000_0000 * 0.01)) {
+            console.log(JSON.stringify({ event: 'http_request', requestId: headers.get(auditRequestHeader), method: request.method, path: logPath(new URL(request.url).pathname), status: response.status, durationMs: Date.now() - started }));
+        }
+        return response;
     },
     async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
         ctx.waitUntil(runScheduled(env, async (scoped) => {

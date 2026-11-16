@@ -23,7 +23,7 @@ function isAccessError(error: unknown): boolean {
     return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
-function mayAutomaticallyRefresh(query: { state: { error: Error | null; errorUpdatedAt: number } }): boolean {
+export function mayAutomaticallyRefresh(query: { state: { error: Error | null; errorUpdatedAt: number } }): boolean {
     const { error, errorUpdatedAt } = query.state;
     if (!error) return true;
     return error instanceof ApiError && (error.code === 'NETWORK_ERROR' || error.status >= 500 || error.status === 429)
@@ -140,7 +140,8 @@ export function DataProvider({ children }: PropsWithChildren) {
         window.addEventListener('pageshow', restore);
         const contextChanged = () => {
             endIdentity(client);
-            void client.resetQueries({ queryKey: identityKey, exact: true });
+            // A new sign-in flow is deliberately anonymous until its credential request completes.
+            if (!browserFlowId()) void client.resetQueries({ queryKey: identityKey, exact: true });
             void client.invalidateQueries({ queryKey: ['browser-accounts'] });
         };
         const accountsChanged = () => { publish({ type: 'accounts' }); void client.invalidateQueries({ queryKey: ['browser-accounts'] }); };
@@ -158,7 +159,10 @@ export function useIdentity() {
         if (identity?.browserAccountId && !selectedBrowserAccount() && !browserFlowId()) selectBrowserAccount(identity.browserAccountId, false);
         return identity;
     }, staleTime: freshness.identity, gcTime: Infinity });
-    const refresh = useCallback(async () => { await client.refetchQueries({ queryKey: identityKey, exact: true }, { throwOnError: true }); }, [client]);
+    // Writes require a new read; only a completed login may join its post-selection read.
+    const refresh = useCallback(async (options?: { cancelRefetch?: boolean }) => {
+        await client.refetchQueries({ queryKey: identityKey, exact: true }, { throwOnError: true, ...options });
+    }, [client]);
     return { ...query, refresh };
 }
 
@@ -250,10 +254,10 @@ export function useConfiguration() {
     }), [client]);
 }
 
-export function ResourceFeedback({ query }: { query: Pick<UseQueryResult<unknown>, 'data' | 'error' | 'isFetching' | 'refetch'> }) {
+export function ResourceFeedback({ query, retryDisabled = false }: { query: Pick<UseQueryResult<unknown>, 'data' | 'error' | 'isFetching' | 'refetch'>; retryDisabled?: boolean }) {
     const { t } = useTranslation();
     return <>
-        {query.error && <div className="notice error"><div role="alert">{t(i18n.exists(`errors.${errorCode(query.error)}`) ? `errors.${errorCode(query.error)}` : 'errors.UNKNOWN_ERROR')}{query.data !== undefined && <> {t('cachedDataNotice')}</>}</div><Button className="text-button small" disabled={query.isFetching} onClick={() => { void query.refetch(); }}>{t('tryAgain')}</Button></div>}
+        {query.error && <div className="notice error"><div role="alert">{t(i18n.exists(`errors.${errorCode(query.error)}`) ? `errors.${errorCode(query.error)}` : 'errors.UNKNOWN_ERROR')}{query.data !== undefined && <> {t('cachedDataNotice')}</>}</div><Button className="text-button small" disabled={query.isFetching || retryDisabled} onClick={() => { void query.refetch(); }}>{t('tryAgain')}</Button></div>}
         {query.data === undefined && !query.error && <div className="loading-state" role="status"><Progress />{t('loading')}</div>}
         {query.data !== undefined && query.isFetching && <span className="sr-only" role="status">{t('updatingData')}</span>}
     </>;

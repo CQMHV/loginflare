@@ -50,12 +50,14 @@ export function emailManagement(env: Env, schedule?: (task: Promise<unknown>) =>
         const code = randomCode();
         const hash = await digest(challengeId, code);
         const now = Date.now();
-        if (!await replaceEmailChallenge(env.DB, { id: challengeId, userId: user.id, emailId: row.id, purpose, hash, now, expiresAt: now + lifetime, authorization })) fail('INVALID_CODE');
         async function deliver() {
             try {
-                await sendEmailCode(env, { ...user, email: row.email }, code, purpose);
-            } catch {
+                await sendEmailCode(env, { ...user, email: row.email }, code, purpose, async () => {
+                    if (!await replaceEmailChallenge(env.DB, { id: challengeId, userId: user.id, emailId: row.id, purpose, hash, now, expiresAt: now + lifetime, authorization })) fail('INVALID_CODE');
+                });
+            } catch (error) {
                 await env.DB.prepare('DELETE FROM "emailChallenge" WHERE "id" = ?').bind(challengeId).run();
+                if (purpose !== 'recovery' && error instanceof APIError) throw error;
                 if (purpose !== 'recovery') fail('EMAIL_DELIVERY_FAILED', 'SERVICE_UNAVAILABLE');
                 // Public recovery must not disclose account eligibility on mail failure.
                 console.error(JSON.stringify({ event: 'email_recovery_delivery_failed' }));

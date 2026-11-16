@@ -5,6 +5,7 @@ import worker from '../src/server/index';
 import type { Env } from '../src/server/config';
 import { advanceInstallation, instanceEnv, readInstallation } from '../src/server/setup';
 import { SetupCloudflare } from '../src/server/setup-cloudflare';
+import { reserveMail } from '../src/server/mail-budget';
 import { cookies } from './helpers';
 
 const canonical = 'https://auth.example.test';
@@ -137,6 +138,16 @@ it('does not report dependency failures as healthy readiness', async () => {
         expect(response.status).toBe(503);
         expect(await response.text()).not.toContain('private database failure');
     } finally { prepare.mockRestore(); }
+});
+
+it('returns a retryable quota response without sending a setup invitation', async () => {
+    const f = fixture(); await f.initialize();
+    for (let i = 0; i < 3; i++) await reserveMail(env.DB, adminEmail);
+    const denied = await f.request('/api/setup/invite', { locale: 'en-US' });
+    expect(denied.status).toBe(429); expect(await denied.json()).toEqual({ code: 'TOO_MANY_REQUESTS' });
+    expect(Number(denied.headers.get('Retry-After'))).toBeGreaterThan(0);
+    expect(f.messages).toHaveLength(0);
+    expect((await readInstallation(env.DB))?.invitationHash).toBeNull();
 });
 
 it('reports a conflicting DNS record without overwriting it', async () => {
