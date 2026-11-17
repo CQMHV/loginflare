@@ -48,6 +48,8 @@ Use the token once in the Worker’s `CF_SETUP_TOKEN` secret. When the resources
 
 ### Updates and recovery
 
+See [Updating and recovering Loginflare](upgrading.md) for the complete flow, read-only tools, Fork migrations and recovery. Upstream maintains source and releases only. After setup, pushes to downstream `main` continue to deploy automatically without a separate version confirmation.
+
 Workers Builds publishes from the connected repository’s `main`. The deploy script checks the target Worker, storage bindings, migration history, and current branch before promotion. A code-only release applies no migrations. Pending migrations on an existing instance need a reviewed SHA-256 entry in [the online migration list](../migrations/online.json). Test with representative data and verify that the previously deployed Worker can continue to serve throughout the change. Incompatible changes need a separately reviewed operations procedure and a planned service window.
 
 Each file is applied in a D1 batch with its history entry. A failure names the file and leaves the current Worker serving. Previously committed files remain applied. Fix the pending file and retry from the latest `main`; do not edit already-applied files. [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) covers database recovery when needed.

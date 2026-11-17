@@ -7,6 +7,7 @@ import { advanceInstallation, instanceEnv, readInstallation } from '../src/serve
 import { SetupCloudflare } from '../src/server/setup-cloudflare';
 import { reserveMail } from '../src/server/mail-budget';
 import { cookies } from './helpers';
+import { requiredMigrations, requireSchema } from '../src/server/schema-readiness';
 
 const canonical = 'https://auth.example.test';
 const progress = 'https://instance.account.workers.dev';
@@ -72,6 +73,8 @@ function fixture() {
     const advance = () => advanceInstallation(deployment, api);
     const initialize = async () => {
         await env.DB.prepare('CREATE TABLE lfReleaseLock (id INTEGER PRIMARY KEY, owner TEXT NOT NULL, expiresAt INTEGER NOT NULL)').run();
+        await env.DB.prepare('CREATE TABLE lfReleaseMigration (name TEXT PRIMARY KEY, digest TEXT NOT NULL)').run();
+        await env.DB.batch(requiredMigrations.map(({ name, digest }) => env.DB.prepare('INSERT INTO lfReleaseMigration (name, digest) VALUES (?, ?)').bind(name, digest)));
         await Promise.all([advance(), advance()]);
         for (let i = 0; i < 8 && (await readInstallation(env.DB))?.step !== 'ready'; i++) {
             await env.DB.prepare('UPDATE lfInstallation SET retryAt = 0').run();
@@ -127,6 +130,37 @@ it('checks uncached instance material for readiness and keeps liveness independe
     expect((await f.request('/api/health')).status).toBe(200);
     await f.deployment.PRIVATE!.delete('installation.json');
     expect((await f.request('/api/readiness')).status).toBe(503);
+});
+
+it('blocks business and readiness for missing migrations while leaving setup and liveness available', async () => {
+    const f = fixture();
+    await f.initialize();
+    await env.DB.prepare('UPDATE lfInstallation SET completedAt = ?').bind(Date.now()).run();
+    const migration = requiredMigrations.at(-1)!;
+    await env.DB.prepare('DELETE FROM lfReleaseMigration WHERE name = ?').bind(migration.name).run();
+    expect((await f.request('/api/health')).status).toBe(200);
+    expect((await f.request('/api/setup/status', undefined, progress)).status).toBe(200);
+    expect((await f.request('/api/readiness')).status).toBe(503);
+    const blocked = await f.request('/api/auth/get-session');
+    expect(blocked.status).toBe(503);
+    expect(await blocked.json()).toEqual({ code: 'SCHEMA_UPGRADE_REQUIRED' });
+    await env.DB.prepare('INSERT INTO lfReleaseMigration (name, digest) VALUES (?, ?)').bind(migration.name, migration.digest).run();
+    expect((await f.request('/api/readiness')).status).toBe(200);
+    expect((await f.request('/api/auth/get-session')).status).toBe(200);
+});
+
+it('shares schema reads within one instance, checks fresh readiness and never reuses another identity', async () => {
+    const f = fixture();
+    await f.initialize();
+    const read = vi.spyOn(env.DB, 'prepare');
+    try {
+        await Promise.all([requireSchema(env.DB, 'instance-one'), requireSchema(env.DB, 'instance-one')]);
+        await requireSchema(env.DB, 'instance-one');
+        expect(read.mock.calls.filter(([sql]) => sql.startsWith('SELECT name, digest')).length).toBe(1);
+        await requireSchema(env.DB, 'instance-two');
+        await requireSchema(env.DB, 'instance-two', true);
+        expect(read.mock.calls.filter(([sql]) => sql.startsWith('SELECT name, digest')).length).toBe(3);
+    } finally { read.mockRestore(); }
 });
 
 it('does not report dependency failures as healthy readiness', async () => {

@@ -1,7 +1,10 @@
 import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-plugin';
 import { defineConfig } from 'vitest/config';
+import { loadRelease } from './scripts/release-manifest.mjs';
+const { bundle } = loadRelease(process.cwd());
 
 export default defineConfig({
+    define: { __LOGINFLARE_MIGRATIONS__: JSON.stringify(bundle.migrations.map(({ name, hash }) => ({ name, digest: hash }))) },
     plugins: [
         cloudflareTest(async () => ({
             main: './src/server/index.ts',

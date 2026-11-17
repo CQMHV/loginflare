@@ -1,0 +1,126 @@
+{
+    "format": 1,
+    "version": "0.2.0",
+    "upgradeFrom": [
+        {
+            "id": "installation-23",
+            "commit": "aa10563825c7d7669e8be6d0ebab6aa35c84acf4",
+            "through": "0023_installation.sql"
+        },
+        {
+            "id": "installation-27",
+            "commit": "3d721f99ee7de2cbf9471df298263fec9c9fb6a9",
+            "through": "0027_business_events.sql"
+        }
+    ],
+    "migrations": [
+        {
+            "name": "0001_auth.sql",
+            "digest": "99843afae17b180354aece5d7530b8b72e144d537afa9a5aa0a075012a53f291"
+        },
+        {
+            "name": "0002_oauth.sql",
+            "digest": "efd6c29177c24b54706f26f22d0b201945d0c34db90d92cec9c2b9aa7395878d"
+        },
+        {
+            "name": "0003_oauth_policy.sql",
+            "digest": "a83c44e5107d52fe61d8256ebcc19e4be01338c4c4eea472e1e39598e337a37c"
+        },
+        {
+            "name": "0004_username.sql",
+            "digest": "e2e4e9cd22c97b038f4477a4f3e9a3c3d20c3b22f1ebed38b262019fda44bd84"
+        },
+        {
+            "name": "0005_emails.sql",
+            "digest": "a01ee360c5fd1a817d45201e66396fc8aa7084e373c17b3e2ee786d4d90ee2db"
+        },
+        {
+            "name": "0006_management.sql",
+            "digest": "eee5f6ee9a1461458754ab875fb440424409f2f6e596519041289654228975b6"
+        },
+        {
+            "name": "0007_maintenance.sql",
+            "digest": "9520bd1dd7f71e3ef954d03ad120f653005b6bff36b181f31ec93b8ab27250d6"
+        },
+        {
+            "name": "0008_avatars.sql",
+            "digest": "4c7f6c0c63a819f18a6b9cf1acc7f04732c1a8aab93664e6698dd940b45ca975"
+        },
+        {
+            "name": "0009_branding.sql",
+            "digest": "c353b13f57ae84ca9a468fd3183074f1e97474445cea7abd377ec8bf6a8235f2"
+        },
+        {
+            "name": "0010_branding_color_scheme.sql",
+            "digest": "b51fb45b1bdc97b66b6253d8e52cb2603dd12bc715968293ec9976f3f301a393"
+        },
+        {
+            "name": "0011_mfa.sql",
+            "digest": "d7905fc3060c01cd48733a00ffc422c6f04478be361d47f73f80d8b875b089ab"
+        },
+        {
+            "name": "0012_social_connections.sql",
+            "digest": "9253b9a59f4906a21efbcfa8eca56b9aec170ccebe42a662f0975b3ce3ff059a"
+        },
+        {
+            "name": "0013_social_icons.sql",
+            "digest": "0218470ef70aa25cef8f1a1a7ee729f1fddbfce2a49d1730a399ffbc0e6bd2e3"
+        },
+        {
+            "name": "0014_social_provider_presets.sql",
+            "digest": "95e485d464d87bc5004fb3fdb190ee632a8ba5c9284dcd8ae7e837ff65e45bb5"
+        },
+        {
+            "name": "0015_social_x_telegram.sql",
+            "digest": "86ab6fa47dc7a9a3a43ef1b1ca9c981ede1b82dbd24f947f8f51faacea95619e"
+        },
+        {
+            "name": "0016_developer_applications.sql",
+            "digest": "bd540d565e44b7162ca66571c9c97c6f32f63f9cc330996ca40b1696a490d8bb"
+        },
+        {
+            "name": "0017_account_applications.sql",
+            "digest": "12268937f602100465832853ffc0c7976ba449cb7232916ab0a6b29b32434ab1"
+        },
+        {
+            "name": "0018_browser_accounts.sql",
+            "digest": "a9e59064081daa904ca5d6510c900d747d5637da5743ced1df43c64ab378ff39"
+        },
+        {
+            "name": "0019_api_access.sql",
+            "digest": "8cc90158cbb5023ac7ab40b29e79f0c72f94287a58d3aca5070c0857066e4a28"
+        },
+        {
+            "name": "0020_audit_logs.sql",
+            "digest": "1df43ded252c00b1e6cf2da3f8c85506adcdcfbd7e90b567d14599f5ae691647"
+        },
+        {
+            "name": "0021_machines.sql",
+            "digest": "352f3fe1b99e8d0dadcbca4e193fc28a575498e14b60e4705de88fbd736bff26"
+        },
+        {
+            "name": "0022_machine_audit.sql",
+            "digest": "4c444fb43c5cf2b1773d54b712157b93ddc01cc7d94509860628853260f2a92b"
+        },
+        {
+            "name": "0023_installation.sql",
+            "digest": "d9595e39e539119f918e8d28309bfab9f60bf3b7dda08e1feb7a5e1f8dcd933d"
+        },
+        {
+            "name": "0024_signing_key_rotation.sql",
+            "digest": "c9daa975951ca43b5a0c7ec83ffd6beeaccf2e7ff8d6b65e85653d6bc8c9026d"
+        },
+        {
+            "name": "0025_account_deletion.sql",
+            "digest": "039a1999863754c5d586d7f88718d262f90073ae00fee7e28b59b99d385b5a9c"
+        },
+        {
+            "name": "0026_passkeys.sql",
+            "digest": "2c10076a17fd937a08627ed454a5e88f9b6feab8730c87b6aa5da873840ada6a"
+        },
+        {
+            "name": "0027_business_events.sql",
+            "digest": "cfa053536344c2664da3e6f1eebe069b82d3425871e802b1a87fce0eb099af10"
+        }
+    ]
+}

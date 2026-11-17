@@ -2,6 +2,7 @@ import { validateConfig, type Env } from './config';
 import { advanceInstallation, handleSetup, instanceEnv, readInstallation, setupPage } from './setup';
 import { admitRequest } from './request-budget';
 import { mediaImageSources } from './public-assets';
+import { requireSchema } from './schema-readiness';
 
 type BusinessFetch = (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
 const readMethod = (request: Request) => request.method === 'GET' || request.method === 'HEAD';
@@ -19,6 +20,7 @@ async function dispatchInner(request: Request, env: Env, ctx: ExecutionContext, 
                 const row = await readInstallation(env.DB);
                 if (!row?.completedAt || row.step !== 'ready' || row.origin !== url.origin) throw new Error('Not ready');
                 await instanceEnv(env, row, true);
+                await requireSchema(env.DB, row.instanceId + ':' + row.fingerprint, true);
             }
             return Response.json({ status: 'ready' }, { headers: { 'Cache-Control': 'no-store' } });
         } catch {
@@ -49,6 +51,8 @@ async function dispatchInner(request: Request, env: Env, ctx: ExecutionContext, 
             }
             if (canonical && row.completedAt) {
                 if (setup && readMethod(request)) return Response.redirect(new URL('/', row.origin), 302);
+                try { await requireSchema(env.DB, row.instanceId + ':' + row.fingerprint); }
+                catch { return json('SCHEMA_UPGRADE_REQUIRED', 503); }
                 return business(request, await instanceEnv(env, row), ctx);
             }
         }
@@ -72,6 +76,7 @@ export async function dispatch(request: Request, env: Env, ctx: ExecutionContext
         response = json('REQUEST_FAILED', 503);
     }
     const headers = new Headers(response.headers);
+    if (['/api/health', '/api/readiness'].includes(new URL(request.url).pathname) && env.LOGINFLARE_BUILD_ID) headers.set('X-Loginflare-Build', env.LOGINFLARE_BUILD_ID);
     if (response.status === 429 && !headers.has('Retry-After')) headers.set('Retry-After', headers.get('X-Retry-After') ?? '60');
     if (!headers.has('Referrer-Policy')) headers.set('Referrer-Policy', 'no-referrer');
     if (!headers.has('X-Content-Type-Options')) headers.set('X-Content-Type-Options', 'nosniff');
@@ -88,5 +93,8 @@ export async function runScheduled(env: Env, task: (env: Env) => Promise<unknown
     if (env.APP_ENV === 'development') { await task(env); return; }
     if (env.CF_SETUP_TOKEN) await advanceInstallation(env);
     const row = await readInstallation(env.DB);
-    if (row?.completedAt) await task(await instanceEnv(env, row));
+    if (row?.completedAt) {
+        await requireSchema(env.DB, row.instanceId + ':' + row.fingerprint);
+        await task(await instanceEnv(env, row));
+    }
 }

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
+import { pendingMigrations, releaseTables } from './upgrade-state.mjs';
+export { pendingMigrations } from './upgrade-state.mjs';
 
 const lockTime = 15 * 60_000;
-const metadata = ['lfReleaseLock', 'lfReleaseTarget', 'lfReleaseMigration'];
+const metadata = releaseTables;
 const installationMigration = '0023_installation.sql';
 const createLock = `CREATE TABLE IF NOT EXISTS lfReleaseLock (
     id INTEGER PRIMARY KEY CHECK (id = 1), owner TEXT NOT NULL, expiresAt INTEGER NOT NULL)`;
@@ -14,17 +16,8 @@ const createLedger = `CREATE TABLE IF NOT EXISTS lfReleaseMigration (
 export const statement = (sql, ...params) => ({ sql, params });
 const rows = async (query, sql, ...params) => (await query([statement(sql, ...params)]))[0]?.results ?? [];
 
-export function pendingMigrations(migrations, ledger) {
-    if (ledger.length > migrations.length) throw new Error('Database migration history is ahead of this build.');
-    for (const [index, entry] of ledger.entries()) {
-        const expected = migrations[index];
-        if (entry.name !== expected.name || entry.digest !== expected.hash) throw new Error(`Migration history mismatch: ${entry.name}.`);
-    }
-    return migrations.slice(ledger.length);
-}
-
 /** query must execute each supplied batch as one D1 transaction. */
-export async function release({ query, target, migrations, online, isCurrent, verify, prepare = async () => {}, publish, afterPublish, pause = wait }) {
+export async function release({ query, target, migrations, online, isCurrent, verify, prepare = async () => {}, publish, afterPublish, checkSchema, checkPublished, deployment, pause = wait }) {
     if (!await isCurrent()) return false;
     await query([statement(createLock)]);
     const owner = randomUUID();
@@ -44,8 +37,8 @@ export async function release({ query, target, migrations, online, isCurrent, ve
     try {
         if (!await isCurrent()) return false;
         await verify();
-        // Cloudflare exposes its reserved _cf_KV table even in a new D1.
-        const objects = await rows(query, "SELECT name FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT GLOB 'sqlite_*' AND name <> '_cf_KV'");
+        // D1 reserves internal metadata tables, including on a freshly written database.
+        const objects = await rows(query, "SELECT name FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT GLOB 'sqlite_*' AND name NOT IN ('_cf_KV', '_cf_METADATA')");
         const identity = JSON.stringify(target);
         if (objects.some(({ name }) => name === 'lfReleaseTarget')) {
             const [record] = await rows(query, 'SELECT identity FROM lfReleaseTarget WHERE id = 1');
@@ -63,6 +56,15 @@ export async function release({ query, target, migrations, online, isCurrent, ve
                 throw new Error(`${migration.name} has no matching online migration approval. Use the separate operations procedure.`);
             }
         }
+        const stage = async (value) => {
+            if (!deployment) return;
+            await query([statement(`INSERT INTO lfReleaseDeployment (id, version, commitSha, stage, updatedAt) VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET version = excluded.version, commitSha = excluded.commitSha, stage = excluded.stage, updatedAt = excluded.updatedAt`,
+            deployment.version, deployment.commit, value, Date.now())]);
+        };
+        if (deployment) await query([statement(`CREATE TABLE IF NOT EXISTS lfReleaseDeployment (
+            id INTEGER PRIMARY KEY CHECK (id = 1), version TEXT NOT NULL, commitSha TEXT NOT NULL, stage TEXT NOT NULL, updatedAt INTEGER NOT NULL)`)]);
+        await stage('migrating');
         await prepare();
         for (const migration of pending) {
             if (!await isCurrent()) return false;
@@ -76,12 +78,15 @@ export async function release({ query, target, migrations, online, isCurrent, ve
             console.log(`Applied ${migration.name}.`);
         }
         if (!state.initialComplete) await query([statement('UPDATE lfReleaseTarget SET initialComplete = 1 WHERE id = 1')]);
+        if (checkSchema) await checkSchema();
         await verify();
         if (!await isCurrent()) return false;
         if (Date.now() + 6 * 60_000 >= expiresAt) throw new Error('Not enough time remains to publish under this lock; retry the latest main build.');
+        await stage('publishing');
         ambiguous = true;
         await publish();
         ambiguous = false;
+        await stage('published');
         // Data requiring the new Worker must not change before promotion is
         // confirmed. Failure here is recoverable with the new Worker serving;
         // release the lock so a retry can resume its idempotent work.
@@ -89,8 +94,14 @@ export async function release({ query, target, migrations, online, isCurrent, ve
             const now = Date.now();
             const renewed = await rows(query, 'UPDATE lfReleaseLock SET expiresAt = ? WHERE id = 1 AND owner = ? AND expiresAt > ? RETURNING owner', now + lockTime, owner, now);
             if (!renewed.length) throw new Error('Worker publication succeeded, but the release lock expired. Retry the latest main release before completing post-publication work.');
+            await stage('post-processing');
             await afterPublish();
         }
+        if (checkPublished) {
+            await stage('verifying');
+            await checkPublished();
+        }
+        await stage('verified');
         return true;
     } finally {
         // An interrupted upload may still be accepted upstream. Retain the

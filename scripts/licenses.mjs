@@ -70,5 +70,5 @@ await writeFile(join(root, 'public/assets/third-party-notices.txt'), [
     'These dependencies retain their own licenses. Loginflare’s MIT OR Apache-2.0 choice does not replace them.',
     ...notices.sort().map((notice) => `${'='.repeat(72)}\n${notice}`),
     '',
-].join('\n\n').replace(/[\t ]+$/gm, '').trimEnd() + '\n');
+].join('\n\n').replaceAll('\r\n', '\n').replace(/[\t ]+$/gm, '').trimEnd() + '\n');
 console.log(`Generated third-party notices for ${visited.size} runtime packages.`);

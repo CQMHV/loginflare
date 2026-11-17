@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.0
+
+- Keep downstream Fork deployments automatic after setup. Validate the selected Wrangler configuration during the deployment build, preflight resource ownership and migration history, verify schema before publication, and confirm the intended Worker build after promotion.
+- Ship optional status, read-only planning, apply and verification tools with source releases. Preserve custom migration approvals, instance keys and existing D1/R2 bindings; record recoverable publication stages separately from applied migrations.
+- Use the selected Wrangler file and environment for remote preflight. Resume unfinished avatar URL updates after switching off R2 direct delivery.
+- Register online approvals for migrations 0024–0027 with real old/new Worker regression coverage from the managed 23- and 27-migration baselines. Cache required-migration checks per installed instance and fail business readiness when schema upgrades are missing.
+- Prepare versioned source packages, checksums, upgrade notes and a manually triggered draft-release workflow gated by full CI. The upstream workflow does not deploy a service.
+
 - Return an explicit passkey-unavailable 400 for interrupted MFA, including final session-insert races; retain 503 for actual storage failures.
 - Classify authentication service failures by request ID without raw error logging. Report Turnstile outages separately with localized retry guidance and preserve normal verification refusals.
 

@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { resolveTarget, validateDeploymentConfiguration, verifyCheckout } from './deployment.mjs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readDeploymentConfig, resolveTarget, validateDeploymentConfiguration, verifyCheckout, verifyBuild } from './deployment.mjs';
 import { verifyMediaHeaders } from './public-assets.mjs';
 
-const template = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
+const template = {
+    name: 'loginflare', vars: { APP_ENV: 'production' },
+    d1_databases: [{ binding: 'DB', database_name: 'loginflare' }],
+    r2_buckets: [{ binding: 'AVATARS', bucket_name: 'loginflare-avatars' }, { binding: 'PRIVATE', bucket_name: 'loginflare-private' }],
+    send_email: [{ name: 'EMAIL' }],
+    ratelimits: [{ name: 'REQUEST_LIMITER', namespace_id: '1001', simple: { limit: 600, period: 60 } }],
+};
 const database = { uuid: '00000000-0000-4000-8000-000000000001', name: 'test-db' };
 test('deployment requires the request limiter instead of silently dropping admission protection', () => {
     assert.throws(() => validateDeploymentConfiguration({ ...template, ratelimits: [] }), /REQUEST_LIMITER/);
@@ -47,14 +55,6 @@ test('resource naming preserves short defaults, explicit names and existing live
     assert.equal(existing.avatars, 'previous-avatars'); assert.equal(existing.privateBucket, 'previous-private');
     await assert.rejects(target('example', configured, bindings), /differs from the active binding/);
 });
-test('public release template leaves resource IDs to Cloudflare and separates the private bucket', () => {
-    assert.equal(validateDeploymentConfiguration(template), template);
-    assert.equal(template.d1_databases[0].database_id, undefined);
-    assert.equal(template.env, undefined);
-    assert.deepEqual(Object.keys(template.vars), ['APP_ENV']);
-    assert.equal(template.version_metadata.binding, 'CF_VERSION_METADATA');
-    assert.deepEqual(template.r2_buckets.map(({ binding }) => binding), ['AVATARS', 'PRIVATE']);
-});
 test('deployment refuses wizard configuration conflicts and local builds', () => {
     assert.throws(() => validateDeploymentConfiguration({ ...template, vars: { ...template.vars, AUTH_URL: '' } }), /must not be declared/);
     assert.throws(() => validateDeploymentConfiguration({ ...template, env: { staging: { vars: { EMAIL_FROM: '' } } } }), /must not be declared/);
@@ -82,6 +82,36 @@ const mediaHeaders = {
     'Content-Security-Policy': "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; sandbox; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin',
 };
+
+test('preflight selects and normalizes the same custom Wrangler file and environment as the deployment build', async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'loginflare-config-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const environments = { ...process.env };
+    t.after(() => {
+        for (const key of ['LOGINFLARE_CONFIG', 'CLOUDFLARE_ENV']) {
+            if (environments[key] === undefined) delete process.env[key]; else process.env[key] = environments[key];
+        }
+    });
+    delete process.env.CLOUDFLARE_ENV;
+    process.env.LOGINFLARE_CONFIG = 'fork.jsonc';
+    const path = join(root, 'fork.jsonc');
+    const customDb = '00000000-0000-4000-8000-000000000002';
+    const staging = { ...template, name: 'fork-staging', vars: { APP_ENV: 'staging', PUBLIC_ASSETS_URL: mediaBase },
+        d1_databases: [{ ...template.d1_databases[0], database_id: customDb }] };
+    writeFileSync(path, '// Custom JSONC\n' + JSON.stringify({ ...template, env: { staging } }));
+    writeFileSync(join(root, '.env.deployment'), 'CLOUDFLARE_ENV=staging\n');
+    const { source, configuration } = readDeploymentConfig(root);
+    assert.equal(source.path, path);
+    assert.equal(source.environment, 'staging');
+    assert.equal(configuration.vars.PUBLIC_ASSETS_URL, mediaBase);
+    assert.equal(configuration.d1_databases[0].database_id, customDb);
+    await assert.rejects(target('fork-staging', configuration, [{ name: 'DB', type: 'd1', id: database.uuid }]), /differs from the active DB binding/);
+    process.env.CLOUDFLARE_ENV = 'staging';
+    assert.equal(readDeploymentConfig(root).source.digest, source.digest);
+    writeFileSync(path, JSON.stringify({ ...template, env: { staging: { ...staging, vars: { APP_ENV: 'staging' } } } }));
+    assert.notEqual(readDeploymentConfig(root).source.digest, source.digest);
+});
+
 test('public media deployment requires the exact domain while PRIVATE and r2.dev remain closed', async () => {
     const active = { domain: 'images.example.test', enabled: true, status: { ownership: 'active', ssl: 'active' } };
     async function resolve({ configured = mediaBase, previous, avatars = [active], privateDomains = [], privateManaged = false, avatarManaged = false } = {}) {
@@ -122,7 +152,6 @@ test('public media deployment requires the exact domain while PRIVATE and r2.dev
     const privateDefault = await resolve({ configured: '', avatars: [] });
     await privateDefault.resolved.ensureBuckets();
     let queries = 0;
-    await privateDefault.resolved.migrateMedia(async () => { queries++; throw new Error('Unnecessary D1 access'); });
     await privateDefault.resolved.verifyMediaConfiguration(async () => { queries++; throw new Error('Unnecessary D1 access'); });
     assert.equal(queries, 0);
     const reads = [];
@@ -144,4 +173,30 @@ test('public media security headers are checked without uploading probe objects 
         await assert.rejects(verifyMediaHeaders(mediaBase, async () => new Response(null, { status: 404, headers })), /security headers/);
     }
     for (const status of [200, 301, 403, 500]) await assert.rejects(verifyMediaHeaders(mediaBase, async () => new Response(null, { status, headers: mediaHeaders })), /security headers/);
+});
+
+test('read-only resource resolution never creates a missing database or bucket', async () => {
+    const calls = [];
+    const api = async (path, options = {}) => {
+        calls.push([path, options.method ?? 'GET']);
+        if (path.startsWith('/workers/services/')) return null;
+        if (path.startsWith('/d1/database?')) return [];
+        throw new Error('Unexpected API request: ' + path);
+    };
+    await assert.rejects(resolveTarget(api, template, 'account', 'test', undefined, fetch, { readOnly: true }), /does not create resources/);
+    assert.ok(calls.every(([, method]) => method === 'GET'));
+    const resolved = await resolveTarget(async (path, options = {}) => {
+        assert.equal(options.method ?? 'GET', 'GET');
+        if (path.startsWith('/workers/services/')) return null;
+        if (path.startsWith('/d1/database?')) return [{ ...database, name: 'test' }];
+        if (path.startsWith('/r2/buckets/')) return null;
+        throw new Error('Unexpected API request: ' + path);
+    }, template, 'account', 'test', undefined, fetch, { readOnly: true });
+    await assert.rejects(resolved.verifyBuckets(), /does not create resources/);
+});
+
+test('publication rejects a build from another commit, version, migration bundle or deployment configuration', () => {
+    const vars = { LOGINFLARE_SOURCE_COMMIT: 'commit', LOGINFLARE_RELEASE_VERSION: '0.2.0', LOGINFLARE_MIGRATION_HASH: 'bundle', LOGINFLARE_CONFIG_DIGEST: 'config' };
+    verifyBuild({ vars }, 'commit', { version: '0.2.0' }, { hash: 'bundle' }, 'config');
+    for (const name of Object.keys(vars)) assert.throws(() => verifyBuild({ vars: { ...vars, [name]: 'other' } }, 'commit', { version: '0.2.0' }, { hash: 'bundle' }, 'config'), /does not match/);
 });

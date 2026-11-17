@@ -4,13 +4,33 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { buildMigrationBundle } from './migration-bundle.mjs';
+import { loadEnv } from 'vite';
+import { unstable_readConfig } from 'wrangler';
 import { release } from './releases.mjs';
 import { migrateAvatarUrls, publicAssetsBase, verifyMediaHeaders } from './public-assets.mjs';
+import { loadRelease } from './release-manifest.mjs';
+import { inspectUpgrade, requireUpgrade, verifyUpgradeSchema, verifyPublished } from './upgrade-state.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bootstrap = ['SETUP_ORIGIN', 'SETUP_ADMIN_EMAIL', 'CF_SETUP_TOKEN'];
 export const managedConfiguration = ['AUTH_URL', 'EMAIL_FROM', 'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'BETTER_AUTH_SECRET', ...bootstrap];
+
+export function deploymentConfigPath() {
+    return process.env.LOGINFLARE_CONFIG ?? 'wrangler.jsonc';
+}
+
+export function deploymentConfigSource(directory, mode = 'deployment') {
+    const path = resolve(directory, deploymentConfigPath());
+    const environment = loadEnv(mode, directory, 'CLOUDFLARE_').CLOUDFLARE_ENV || undefined;
+    const digest = createHash('sha256').update(JSON.stringify([environment ?? null, readFileSync(path, 'utf8')])).digest('hex');
+    return { path, environment, digest };
+}
+
+export function readDeploymentConfig(directory) {
+    const source = deploymentConfigSource(directory);
+    const configuration = unstable_readConfig({ config: source.path, env: source.environment }, { preserveOriginalMain: true });
+    return { source, configuration: validateDeploymentConfiguration(configuration) };
+}
 
 export function validateDeploymentConfiguration(configuration) {
     if (!['production', 'staging'].includes(configuration.vars?.APP_ENV)) throw new Error('Deployment requires a production or staging build. Run pnpm build:deploy.');
@@ -30,7 +50,7 @@ export function validateDeploymentConfiguration(configuration) {
     return configuration;
 }
 
-function cloudflare(token, account) {
+export function cloudflare(token, account) {
     return async (path, { method = 'GET', body, allowMissing = false } = {}) => {
         const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${path}`, {
             method, redirect: 'error', signal: AbortSignal.timeout(30_000),
@@ -61,7 +81,7 @@ function resourceName(value, worker, template, suffix = '') {
     return selected;
 }
 
-export async function resolveTarget(api, configuration, account, name, expectedTag, mediaFetch = fetch) {
+export async function resolveTarget(api, configuration, account, name, expectedTag, mediaFetch = fetch, { readOnly = false } = {}) {
     const workerPath = `/workers/scripts/${name}`, servicePath = `/workers/services/${name}`;
     const dbBinding = configuration.d1_databases.find(({ binding }) => binding === 'DB');
     const avatarBinding = configuration.r2_buckets.find(({ binding }) => binding === 'AVATARS');
@@ -90,6 +110,7 @@ export async function resolveTarget(api, configuration, account, name, expectedT
     } else {
         database = await getDb();
         if (!database) {
+            if (readOnly) throw new Error('No existing target D1 database was found. Read-only preflight does not create resources.');
             try { database = await api('/d1/database', { method: 'POST', body: { name: dbName } }); }
             catch (error) {
                 database = await getDb();
@@ -110,9 +131,10 @@ export async function resolveTarget(api, configuration, account, name, expectedT
     if (avatars === privateBucket) throw new Error('Private installation material and public assets require separate buckets.');
 
     const target = { account, name, database: database.uuid, avatars, privateBucket };
-    const ensureBucket = async (bucket, publicDomain) => {
+    const ensureBucket = async (bucket, publicDomain, create = true) => {
         const path = `/r2/buckets/${bucket}`;
         if (!await api(path, { allowMissing: true })) {
+            if (!create) throw new Error(`R2 bucket ${bucket} is missing. Read-only preflight does not create resources.`);
             try { await api('/r2/buckets', { method: 'POST', body: { name: bucket } }); }
             catch (error) { if (!await api(path, { allowMissing: true })) throw error; }
         }
@@ -140,16 +162,20 @@ export async function resolveTarget(api, configuration, account, name, expectedT
         }
     };
     const mediaTarget = async (query) => {
-        if (!publicBase && !previousMedia?.text) return null;
         if (!(await query([{ sql: "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'lfInstallation'", params: [] }]))[0]?.results?.length) return null;
         const installation = (await query([{ sql: 'SELECT "origin" FROM "lfInstallation" WHERE "id" = 1', params: [] }]))[0]?.results?.[0];
         if (!installation) return null;
         publicAssetsBase(publicBase ?? undefined, false, installation.origin);
         return publicBase ?? `${installation.origin}/avatars`;
     };
-    return { target, verify, ensureBuckets: async () => { await ensureBucket(privateBucket); await ensureBucket(avatars, publicBase); },
-        verifyMediaConfiguration: async (query) => { await mediaTarget(query); },
+    return { target, verify, activeBuild: remoteBinding(initial, 'LOGINFLARE_BUILD_ID')?.text,
+        activeCommit: remoteBinding(initial, 'LOGINFLARE_SOURCE_COMMIT')?.text,
+        activeVersion: remoteBinding(initial, 'LOGINFLARE_RELEASE_VERSION')?.text,
+        ensureBuckets: async () => { await ensureBucket(privateBucket); await ensureBucket(avatars, publicBase); },
+        verifyBuckets: async () => { await ensureBucket(privateBucket, undefined, false); await ensureBucket(avatars, publicBase, false); },
+        verifyMediaConfiguration: async (query) => { if (publicBase) await mediaTarget(query); },
         migrateMedia: async (query) => {
+            // Use the desired base even when the active setting was already cleared by a previous attempt.
             const base = await mediaTarget(query);
             if (base) await migrateAvatarUrls(query, base);
         },
@@ -179,7 +205,13 @@ export function verifyCheckout(commit, expected, branch) {
     if (branch && branch !== 'main' && branch !== 'refs/heads/main') throw new Error('Releases must run from main.');
 }
 
-export async function deploy(input = process.argv.slice(2)) {
+export function verifyBuild(configuration, commit, manifest, bundle, configDigest) {
+    if (configuration.vars.LOGINFLARE_SOURCE_COMMIT !== commit || configuration.vars.LOGINFLARE_RELEASE_VERSION !== manifest.version
+        || configuration.vars.LOGINFLARE_MIGRATION_HASH !== bundle.hash) throw new Error('The built Worker does not match this source version and migration bundle. Run pnpm build:deploy again.');
+    if (configuration.vars.LOGINFLARE_CONFIG_DIGEST !== configDigest) throw new Error('The built Worker does not match the selected Wrangler configuration or environment. Run pnpm build:deploy again.');
+}
+
+export async function deploy(input = process.argv.slice(2), override = {}) {
     input = input.filter((argument) => argument !== '--');
     if (input.some((argument) => argument !== '--dry-run')) throw new Error('Deployment accepts only --dry-run.');
     const pointer = resolve(root, '.wrangler/deploy/config.json');
@@ -198,8 +230,10 @@ export async function deploy(input = process.argv.slice(2)) {
     };
     if (input.includes('--dry-run')) { deployWorker(); return; }
 
-    const account = process.env.CLOUDFLARE_ACCOUNT_ID ?? configuration.account_id;
-    const name = process.env.WRANGLER_CI_OVERRIDE_NAME ?? configuration.name;
+    const account = override.account ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? configuration.account_id;
+    const name = override.worker ?? process.env.WRANGLER_CI_OVERRIDE_NAME ?? configuration.name;
+    if ((override.account && process.env.CLOUDFLARE_ACCOUNT_ID && override.account !== process.env.CLOUDFLARE_ACCOUNT_ID)
+        || (override.worker && process.env.WRANGLER_CI_OVERRIDE_NAME && override.worker !== process.env.WRANGLER_CI_OVERRIDE_NAME)) throw new Error('Explicit upgrade target conflicts with the deployment environment.');
     const token = process.env.CLOUDFLARE_API_TOKEN;
     if (!/^[0-9a-f]{32}$/.test(account ?? '') || !slug.test(name ?? '') || name.length > 63 || !token
         || (configuration.account_id && configuration.account_id !== account)) {
@@ -207,6 +241,9 @@ export async function deploy(input = process.argv.slice(2)) {
     }
     const commit = git(['rev-parse', 'HEAD']);
     verifyCheckout(commit, process.env.WORKERS_CI_COMMIT_SHA, process.env.WORKERS_CI_BRANCH);
+    const { bundle, manifest, online } = loadRelease(root);
+    const configSource = deploymentConfigSource(root);
+    verifyBuild(configuration, commit, manifest, bundle, configSource.digest);
     const isCurrent = async () => {
         const head = git(['ls-remote', '--exit-code', 'origin', 'refs/heads/main']).split(/\s/)[0];
         if (head === commit) return true;
@@ -216,14 +253,17 @@ export async function deploy(input = process.argv.slice(2)) {
     if (!await isCurrent()) return;
     const api = cloudflare(token, account);
     const resolved = await resolveTarget(api, configuration, account, name, process.env.WRANGLER_CI_MATCH_TAG);
-    const { migrations } = buildMigrationBundle(root);
-    const online = JSON.parse(readFileSync(resolve(root, 'migrations/online.json'), 'utf8'));
+    const { migrations } = bundle;
     const query = (batch) => api(`/d1/database/${resolved.target.database}/query`, {
         method: 'POST', body: { batch: batch.map(({ sql, params }) => ({ sql, params: params.map(String) })) },
     });
+    const plan = requireUpgrade(await inspectUpgrade({ query, target: resolved.target, migrations, online, version: manifest.version, commit, waitForLock: true }));
+    console.log(JSON.stringify({ event: 'upgrade_preflight', configuration: { path: configSource.path, environment: configSource.environment ?? null }, ...plan }));
     const published = await release({
         query,
         target: resolved.target, migrations, online, isCurrent, verify: resolved.verify,
+        checkSchema: () => verifyUpgradeSchema(query, bundle),
+        deployment: { version: manifest.version, commit },
         publish: async () => {
             writeFileSync(build, JSON.stringify(resolved.config) + '\n');
             deployWorker();
@@ -232,6 +272,14 @@ export async function deploy(input = process.argv.slice(2)) {
         afterPublish: async () => {
             try { await resolved.migrateMedia(query); }
             catch (error) { throw new Error('Worker publication succeeded, but media URL migration did not finish. Retry the latest main release to resume it.', { cause: error }); }
+        },
+        checkPublished: async () => {
+            await verifyUpgradeSchema(query, bundle);
+            await resolved.verifyBuckets();
+            const row = (await query([{ sql: 'SELECT origin, completedAt FROM lfInstallation WHERE id = 1', params: [] }]))[0]?.results?.[0];
+            const origin = row?.completedAt ? row.origin : `https://${name}.${(await api('/workers/subdomain')).subdomain}.workers.dev`;
+            if (!configuration.vars?.LOGINFLARE_BUILD_ID) throw new Error('Published build has no verification identifier.');
+            await verifyPublished(origin, configuration.vars.LOGINFLARE_BUILD_ID, { installed: Boolean(row?.completedAt) });
         },
     });
     if (published) console.log(`Released ${commit.slice(0, 12)} to ${name} using D1 ${resolved.target.database}.`);

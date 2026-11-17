@@ -1,1 +1,6 @@
-{}
+{
+    "0024_signing_key_rotation.sql": "c9daa975951ca43b5a0c7ec83ffd6beeaccf2e7ff8d6b65e85653d6bc8c9026d",
+    "0025_account_deletion.sql": "039a1999863754c5d586d7f88718d262f90073ae00fee7e28b59b99d385b5a9c",
+    "0026_passkeys.sql": "2c10076a17fd937a08627ed454a5e88f9b6feab8730c87b6aa5da873840ada6a",
+    "0027_business_events.sql": "cfa053536344c2664da3e6f1eebe069b82d3425871e802b1a87fce0eb099af10"
+}
