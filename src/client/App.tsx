@@ -444,11 +444,11 @@ function AuthPage({ mode }: { mode: AuthMode }) {
                 {mode === 'login' && <div className="form-options"><Checkbox label={t('rememberMe')} checked={rememberMe} onCheckedChange={setRememberMe} /><Link to={authPath('forgot-password')}>{t('forgotPassword')}</Link></div>}
                 {needsCaptcha && <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />}
                 <Button type="submit" className="primary full" busy={busy} disabled={needsCaptcha && !captchaToken}>{busy ? t('working') : t(mode === 'login' ? 'login' : mode === 'signup' ? 'signup' : mode === 'verify-email' ? 'resend' : mode === 'forgot-password' ? recoveryChallenge ? 'emails.recoveryVerify' : 'emails.sendCode' : 'resetPassword')}<Icon name="arrow" size={18} /></Button>
+                {mode === 'login' && browserSupportsWebAuthn() && <Button className="secondary full" disabled={busy} onClick={() => { void signInPasskey(); }}>{t('passkeys.signIn')}</Button>}
                 {mode === 'forgot-password' && recoveryChallenge && <Button className="text-button" disabled={busy} onClick={() => {
                     setRecoveryChallenge(undefined); setRecoveryCode(''); setError(undefined); setCaptchaToken(''); setCaptchaReset((value) => value + 1);
                 }}>{t('emails.recoveryStartOver')}</Button>}
             </form>}
-        {mode === 'login' && browserSupportsWebAuthn() && <Button className="secondary full" disabled={busy} onClick={() => { void signInPasskey(); }}>{t('passkeys.signIn')}</Button>}
         {['login', 'signup'].includes(mode) && <SocialButtons locale={locale} />}
         {mode === 'login' && <p className="auth-crosslink">{t('noAccount')} <Link to={authPath('signup')}>{t('signup')}</Link></p>}
         {mode === 'signup' && <p className="auth-crosslink">{t('haveAccount')} <Link to={authPath('login')}>{t('login')}</Link></p>}
