@@ -2,6 +2,8 @@
 
 [English](deployment.md)
 
+可选的 R2 图片直出配置见[公开图片交付](public-media.zh-CN.md)。
+
 [![部署到 Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
 需要新建仓库时，使用部署按钮。已有组织仓库时，在 Cloudflare 的 **Workers & Pages → 创建应用 → 导入仓库** 中选择它。两种方式都使用 `main`，构建目录为仓库根目录，构建命令为 `pnpm build:deploy`，部署命令为 `pnpm run deploy`，关闭此 Worker 的预览构建。资源 ID 由 Cloudflare 分配；发布会创建或绑定 D1，以及分别存放站点文件和实例密钥的两个私有 R2 桶。

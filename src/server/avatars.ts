@@ -4,12 +4,15 @@ import type { Env } from './config';
 import { databaseRateLimit } from './rate-limit';
 import { avatarIdPattern, avatarMimeType, avatarSize, AvatarImageError, inspectImage } from '../shared/avatars';
 import { maximumImageBytes } from '../shared/image-limits';
+import { mediaRedirect, mediaUrl } from './public-assets';
 
 export const avatars = new Hono<{ Bindings: Env }>();
 
 avatars.on(['GET', 'HEAD'], '/avatars/:id', async (c) => {
     const id = c.req.param('id');
     if (!avatarIdPattern.test(id)) { c.header('Cache-Control', 'no-store'); return c.body(null, 404); }
+    const redirect = mediaRedirect(c.env, id);
+    if (redirect) return redirect;
     const conditions = new Headers();
     if (c.req.header('If-None-Match')) conditions.set('If-None-Match', c.req.header('If-None-Match')!);
     const object = c.req.method === 'HEAD' ? await c.env.AVATARS.head(id) : await c.env.AVATARS.get(id, { onlyIf: conditions });
@@ -55,11 +58,11 @@ avatars.on(['POST', 'DELETE'], '/api/account/avatar', async (c) => {
         }
         if (file.mime !== avatarMimeType || file.width !== avatarSize || file.height !== avatarSize || c.req.header('Content-Type') !== avatarMimeType) return c.json({ code: 'AVATAR_INVALID_IMAGE' }, 400);
         const id = crypto.randomUUID();
-        image = `${c.env.AUTH_URL}/avatars/${id}`;
+        image = mediaUrl(c.env, id, `${c.env.AUTH_URL}/avatars/${id}`);
         // Register before writing R2: crashes and uncertain D1 outcomes remain collectable.
         await c.env.DB.prepare('INSERT INTO "userAvatar" ("id", "userId", "url", "createdAt", "deleteAfter") VALUES (?, ?, ?, ?, ?)')
             .bind(id, identity.user.id, image, now, now + 3_600_000).run();
-        await c.env.AVATARS.put(id, file.sanitized(), { httpMetadata: { contentType: file.mime, contentDisposition: 'inline' } });
+        await c.env.AVATARS.put(id, file.sanitized(), { httpMetadata: { contentType: file.mime, contentDisposition: 'inline', cacheControl: 'public, max-age=300' } });
     }
     const committing = Date.now(), nowIso = new Date(committing).toISOString();
     const changed = await c.env.DB.prepare(`UPDATE "user" SET "image" = ?, "updatedAt" = ? WHERE "id" = ? AND COALESCE("banned", 0) = 0 AND "emailVerified" = 1

@@ -10,6 +10,7 @@ import { connectionTypes, type ConnectionConfig, type ConnectionType, type Publi
 import { avatarIdPattern, inspectImage } from '../shared/avatars';
 import { maximumImageBytes } from '../shared/image-limits';
 import { parseSvg } from '../shared/svg';
+import { mediaRedirect, mediaUrl } from './public-assets';
 
 export interface ConnectionRow {
     id: string; name: string; type: ConnectionType; config: string; secret: string | null;
@@ -44,14 +45,14 @@ export async function connection(env: Env, id: string, testing = false): Promise
 }
 export async function publicProviders(env: Env): Promise<PublicProvider[]> {
     return (await env.DB.prepare('SELECT "id", "name", "type", "iconId" FROM "socialConnection" WHERE "enabled" = 1 AND "archived" = 0 ORDER BY "position", "id"')
-        .all<Pick<ConnectionRow, 'id' | 'name' | 'type' | 'iconId'>>()).results.map(({ iconId, ...provider }) => ({ ...provider, iconUrl: socialIconUrl(iconId) }));
+        .all<Pick<ConnectionRow, 'id' | 'name' | 'type' | 'iconId'>>()).results.map(({ iconId, ...provider }) => ({ ...provider, iconUrl: socialIconUrl(env, iconId) }));
 }
-export function socialIconUrl(id: string | null): string | null { return id ? `/social/icons/${id}` : null; }
+export function socialIconUrl(env: Env, id: string | null): string | null { return id ? mediaUrl(env, `social-icons/${id}`, `/social/icons/${id}`) : null; }
 function present(env: Env, row: ConnectionRow): SocialConnection {
     return { id: row.id, name: row.name, type: row.type, position: row.position, revision: row.revision,
         config: JSON.parse(row.config) as ConnectionConfig, hasSecret: !!row.secret,
         enabled: !!row.enabled, archived: !!row.archived, identityLocked: !!row.identityLocked, linkedAccounts: row.linkedAccounts ?? 0,
-        iconId: row.iconId, iconUrl: socialIconUrl(row.iconId),
+        iconId: row.iconId, iconUrl: socialIconUrl(env, row.iconId),
         callbackURL: `${env.AUTH_URL}/api/auth/callback/${row.id}` };
 }
 function identityConfig(value: { type: string; config: ConnectionConfig }) {
@@ -98,13 +99,15 @@ socialConnections.post('/api/admin/social-connections/icon', async (c) => {
     } catch { return c.json({ code: 'SOCIAL_ICON_INVALID' }, 400); }
     const id = crypto.randomUUID(), now = Date.now();
     await c.env.DB.prepare('INSERT INTO "socialIcon" ("id", "createdAt", "deleteAfter") VALUES (?, ?, ?)').bind(id, now, now + 3_600_000).run();
-    await c.env.AVATARS.put(`social-icons/${id}`, content, { httpMetadata: { contentType: mime, contentDisposition: 'attachment' } });
+    await c.env.AVATARS.put(`social-icons/${id}`, content, { httpMetadata: { contentType: mime, contentDisposition: 'attachment', cacheControl: 'public, max-age=300' } });
     if (!await isAdministrator(c.env, c.get('identity'))) return c.json({ code: 'UNAUTHORIZED' }, 401);
-    return c.json({ iconId: id, iconUrl: socialIconUrl(id) });
+    return c.json({ iconId: id, iconUrl: socialIconUrl(c.env, id) });
 });
 socialConnections.on(['GET', 'HEAD'], '/social/icons/:id', async (c) => {
     const id = c.req.param('id');
     if (!avatarIdPattern.test(id)) { c.header('Cache-Control', 'no-store'); return c.body(null, 404); }
+    const redirect = mediaRedirect(c.env, `social-icons/${id}`);
+    if (redirect) return redirect;
     const conditions = new Headers();
     if (c.req.header('If-None-Match')) conditions.set('If-None-Match', c.req.header('If-None-Match')!);
     const object = c.req.method === 'HEAD' ? await c.env.AVATARS.head(`social-icons/${id}`) : await c.env.AVATARS.get(`social-icons/${id}`, { onlyIf: conditions });

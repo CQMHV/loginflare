@@ -8,6 +8,7 @@ import { avatarIdPattern, inspectImage } from '../shared/avatars';
 import { colorSchemes } from '../shared/branding';
 import { maximumImageBytes } from '../shared/image-limits';
 import { publicBranding, readBranding } from './branding-settings';
+import { mediaRedirect, mediaUrl } from './public-assets';
 
 type Identity = NonNullable<Awaited<ReturnType<ReturnType<typeof createAuth>['api']['getSession']>>>;
 type BrandingEnv = { Bindings: Env; Variables: { identity: Identity } };
@@ -27,8 +28,8 @@ const authorize: MiddlewareHandler<BrandingEnv> = async (c, next) => {
 };
 branding.use('/api/admin/branding', authorize);
 branding.use('/api/admin/branding/logo', authorize);
-branding.get('/api/branding', async (c) => c.json(publicBranding(await readBranding(c.env.DB))));
-branding.get('/api/admin/branding', async (c) => c.json(publicBranding(await readBranding(c.env.DB))));
+branding.get('/api/branding', async (c) => c.json(publicBranding(await readBranding(c.env.DB), c.env)));
+branding.get('/api/admin/branding', async (c) => c.json(publicBranding(await readBranding(c.env.DB), c.env)));
 
 const settings = z.object({
     name: z.string().trim().min(1).max(100).refine((value) => !/[\u0000-\u001f\u007f]/.test(value)),
@@ -56,7 +57,7 @@ branding.put('/api/admin/branding', async (c) => {
         if (value.logoId && !await c.env.DB.prepare('SELECT 1 FROM "brandLogo" WHERE "id" = ? AND ("deleteAfter" IS NULL OR "deleteAfter" > ?)').bind(value.logoId, Date.now()).first()) return c.json({ code: 'BRANDING_LOGO_UNAVAILABLE' }, 400);
         return c.json({ code: 'UNAUTHORIZED' }, 401);
     }
-    return c.json(publicBranding(await readBranding(c.env.DB)));
+    return c.json(publicBranding(await readBranding(c.env.DB), c.env));
 });
 
 branding.post('/api/admin/branding/logo', async (c) => {
@@ -76,16 +77,18 @@ branding.post('/api/admin/branding/logo', async (c) => {
     } catch { return c.json({ code: 'BRANDING_LOGO_INVALID' }, 400); }
     const id = crypto.randomUUID(), now = Date.now();
     await c.env.DB.prepare('INSERT INTO "brandLogo" ("id", "createdAt", "deleteAfter") VALUES (?, ?, ?)').bind(id, now, now + 3_600_000).run();
-    await c.env.AVATARS.put(`branding/${id}`, content, { httpMetadata: { contentType: mime, contentDisposition: 'attachment' } });
+    await c.env.AVATARS.put(`branding/${id}`, content, { httpMetadata: { contentType: mime, contentDisposition: 'attachment', cacheControl: 'public, max-age=300' } });
     const identity = c.get('identity');
     const authorized = await c.env.DB.prepare(`SELECT 1 FROM "user" u JOIN "session" s ON s."userId" = u."id" WHERE u."id" = ? AND u."role" = 'admin' AND COALESCE(u."banned", 0) = 0 AND u."emailVerified" = 1 AND s."id" = ? AND s."expiresAt" > ?`)
         .bind(identity.user.id, identity.session.id, new Date().toISOString()).first();
     if (!authorized) return c.json({ code: 'UNAUTHORIZED' }, 401);
-    return c.json({ logoId: id, logoUrl: `/branding/logos/${id}` });
+    return c.json({ logoId: id, logoUrl: mediaUrl(c.env, `branding/${id}`, `/branding/logos/${id}`) });
 });
 branding.on(['GET', 'HEAD'], '/branding/logos/:id', async (c) => {
     const id = c.req.param('id');
     if (!avatarIdPattern.test(id)) { c.header('Cache-Control', 'no-store'); return c.body(null, 404); }
+    const redirect = mediaRedirect(c.env, `branding/${id}`);
+    if (redirect) return redirect;
     const conditions = new Headers();
     if (c.req.header('If-None-Match')) conditions.set('If-None-Match', c.req.header('If-None-Match')!);
     const object = c.req.method === 'HEAD' ? await c.env.AVATARS.head(`branding/${id}`) : await c.env.AVATARS.get(`branding/${id}`, { onlyIf: conditions });

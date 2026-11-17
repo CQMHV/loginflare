@@ -4,7 +4,10 @@ import { testOrigin } from './runtime';
 
 /** Test-only browser emulation; production still validates the real server-side challenge. */
 export async function installOfflineRoutes(context: BrowserContext) {
-    const allowed = (url: URL) => url.origin === testOrigin || (['web.localhost', 'spa.localhost', '127.0.0.1'].includes(url.hostname) && ['5181', '5182'].includes(url.port));
+    const media = new URL(testOrigin); media.hostname = '127.0.0.1';
+    const allowed = (url: URL) => url.origin === testOrigin
+        || (url.origin === media.origin && url.pathname.startsWith('/cdn-cgi/local/r2/public/isolated-avatars/'))
+        || (['web.localhost', 'spa.localhost', '127.0.0.1'].includes(url.hostname) && ['5181', '5182'].includes(url.port));
     // Independent emulated clients must not share the loopback rate-limit bucket.
     const clientAddress = `2001:db8:${randomBytes(12).toString('hex').match(/.{4}/g)!.join(':')}`;
     const clientHeaders = (url: URL, headers: Record<string, string> = {}) => url.origin === testOrigin && url.pathname.startsWith('/api/')

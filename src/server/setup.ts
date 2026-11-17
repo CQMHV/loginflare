@@ -320,7 +320,7 @@ export async function handleSetup(request: Request, env: Env, row: Installation 
     try {
         if (path === '/api/setup/status' && request.method === 'GET') {
             const canonical = url.origin === row?.origin;
-            const { name, logoUrl } = publicBranding(await readBranding(env.DB));
+            const { name, logoUrl } = publicBranding(await readBranding(env.DB), env);
             return json({ step: row?.step ?? 'target', canonical, branding: { name, logoUrl },
                 publicUrl: row?.step === 'ready' ? row.origin : undefined, completed: Boolean(row?.completedAt),
                 error: row?.error ?? undefined, detail: row?.errorDetail ?? undefined,

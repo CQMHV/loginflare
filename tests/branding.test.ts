@@ -199,6 +199,27 @@ it('does not publish a logo uploaded by a session that was revoked during storag
     expect((await env.AVATARS.list()).objects).toHaveLength(0);
 });
 
+it('keeps localized pages branded when the asset service has no SPA fallback', async () => {
+    const client = harness(), assetPaths: string[] = [];
+    const bindings = { ...client.bindings, ASSETS: { ...client.bindings.ASSETS, fetch: async (input: RequestInfo | URL) => {
+        const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+        assetPaths.push(path);
+        return path === '/' ? new Response('<!doctype html><html><head><title>Loginflare</title><meta name="description"><link rel="icon"></head></html>', { headers: { 'Content-Type': 'text/html' } }) : new Response('Not found', { status: 404 });
+    } } };
+    for (const path of ['/en-us/login?client=fixture', '/zh-cn/account/security', '/zh-cn/admin/users']) {
+        const response = await app.fetch(new Request(origin + path), bindings, createExecutionContext());
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Cache-Control')).toBe('no-store');
+        expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+        expect(await response.text()).toContain('data-branding=');
+    }
+    expect(assetPaths).toEqual(['/', '/', '/']);
+    for (const path of ['/index.html', '/unknown', '/api/unknown']) {
+        expect((await app.fetch(new Request(origin + path), bindings, createExecutionContext())).status).toBe(404);
+    }
+    expect(assetPaths).toEqual(['/', '/', '/']);
+});
+
 it('escapes branding in HTML bootstrap metadata and transactional mail', async () => {
     const { client, cookie } = await admin(), name = 'Example </title><script>alert(1)</script> &quot; Co';
     await update(client, cookie, await current(client), { name });

@@ -14,6 +14,7 @@ import { avatars } from './avatars';
 import { maximumImageBytes } from '../shared/image-limits';
 import { branding } from './branding';
 import { publicBranding, readBranding } from './branding-settings';
+import { mediaImageSources, publicMediaBase } from './public-assets';
 import { socialConnections, connection } from './social-connections';
 import { databaseRateLimit } from './rate-limit';
 import { browserRequest, browserRoutes, signOutBrowserAccount } from './browser-accounts';
@@ -173,27 +174,24 @@ const headers = {
     referrerPolicy: 'no-referrer',
     xFrameOptions: 'DENY',
 } as const;
-const productionHeaders = secureHeaders({ ...headers, contentSecurityPolicy });
 const avatarHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], sandbox: [] } });
-const brandingHeaders = secureHeaders({ ...headers, contentSecurityPolicy: { defaultSrc: ["'none'"], styleSrc: ["'unsafe-inline'"], sandbox: [] } });
+const brandingHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], styleSrc: ["'unsafe-inline'"], sandbox: [] } });
 const publicLogoHeaders = secureHeaders({ ...headers, crossOriginResourcePolicy: 'cross-origin', contentSecurityPolicy: { defaultSrc: ["'none'"], styleSrc: ["'unsafe-inline'"], sandbox: [] } });
 // Native logout uses a browser form and its own document CSP. Send only the
 // origin as Referer so a same-origin form keeps a usable Origin header.
 const logoutHeaders = secureHeaders({ ...headers, referrerPolicy: 'strict-origin' });
-const developmentHeaders = secureHeaders({
-    ...headers,
-    contentSecurityPolicy: {
-        ...contentSecurityPolicy,
-        scriptSrc: [...contentSecurityPolicy.scriptSrc, "'unsafe-inline'"],
-        connectSrc: [...contentSecurityPolicy.connectSrc, 'ws://localhost:5173'],
-    },
-});
 app.use('*', (c, next) => {
     if (/^\/branding\/logos\/[^/]+$/.test(c.req.path)) return publicLogoHeaders(c, next);
     if (/^\/social\/icons\/[^/]+$/.test(c.req.path)) return brandingHeaders(c, next);
     if (/^\/avatars\/[^/]+$/.test(c.req.path)) return avatarHeaders(c, next);
     if (c.req.path === '/api/auth/oauth2/end-session' || c.req.path === '/api/auth/oauth2/end-session/confirm') return logoutHeaders(c, next);
-    return (c.env.APP_ENV === 'development' ? developmentHeaders : productionHeaders)(c, next);
+    const development = c.env.APP_ENV === 'development';
+    return secureHeaders({ ...headers, contentSecurityPolicy: {
+        ...contentSecurityPolicy,
+        imgSrc: [...contentSecurityPolicy.imgSrc, ...mediaImageSources(c.env)],
+        scriptSrc: [...contentSecurityPolicy.scriptSrc, ...(development ? ["'unsafe-inline'"] : [])],
+        connectSrc: [...contentSecurityPolicy.connectSrc, ...(development ? ['ws://localhost:5173'] : [])],
+    } })(c, next);
 });
 
 app.use('/api/*', async (c, next) => {
@@ -348,14 +346,18 @@ app.all('*', async (c) => {
     const asset = c.req.path.startsWith('/assets/') || c.req.path === '/favicon.svg'
         || (c.env.APP_ENV === 'development' && ['/node_modules/', '/@', '/src/'].some((prefix) => c.req.path.startsWith(prefix)));
     if (c.req.path !== '/' && !page && !asset) return c.text('Not found', 404);
-    const response = await c.env.ASSETS.fetch(c.req.raw);
+    const response = await c.env.ASSETS.fetch(page || c.req.path === '/'
+        ? new Request(new URL('/', c.req.url), c.req.raw) : c.req.raw);
     const headers = new Headers(response.headers);
     if (headers.get('content-type')?.includes('text/html')) headers.set('Cache-Control', 'no-store');
     const document = new Response(response.body, { status: response.status, headers });
     if ((page || c.req.path === '/') && headers.get('content-type')?.includes('text/html')) {
-        const value = publicBranding(await readBranding(c.env.DB));
+        const value = publicBranding(await readBranding(c.env.DB), c.env);
         return new HTMLRewriter()
-            .on('html', { element(element) { element.setAttribute('data-branding', JSON.stringify(value).replace(/[<>&]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`)); } })
+            .on('html', { element(element) {
+                element.setAttribute('data-branding', JSON.stringify(value).replace(/[<>&]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`));
+                element.setAttribute('data-public-assets-url', publicMediaBase(c.env) ?? '');
+            } })
             .on('title', { element(element) { element.setInnerContent(value.name); } })
             .on('meta[name="description"]', { element(element) { element.setAttribute('content', value.name.replaceAll('&', '&amp;')); } })
             .on('link[rel="icon"]', { element(element) { element.setAttribute('href', value.logoUrl); } }).transform(document);

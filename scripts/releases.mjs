@@ -24,7 +24,7 @@ export function pendingMigrations(migrations, ledger) {
 }
 
 /** query must execute each supplied batch as one D1 transaction. */
-export async function release({ query, target, migrations, online, isCurrent, verify, prepare = async () => {}, publish, pause = wait }) {
+export async function release({ query, target, migrations, online, isCurrent, verify, prepare = async () => {}, publish, afterPublish, pause = wait }) {
     if (!await isCurrent()) return false;
     await query([statement(createLock)]);
     const owner = randomUUID();
@@ -82,6 +82,15 @@ export async function release({ query, target, migrations, online, isCurrent, ve
         ambiguous = true;
         await publish();
         ambiguous = false;
+        // Data requiring the new Worker must not change before promotion is
+        // confirmed. Failure here is recoverable with the new Worker serving;
+        // release the lock so a retry can resume its idempotent work.
+        if (afterPublish) {
+            const now = Date.now();
+            const renewed = await rows(query, 'UPDATE lfReleaseLock SET expiresAt = ? WHERE id = 1 AND owner = ? AND expiresAt > ? RETURNING owner', now + lockTime, owner, now);
+            if (!renewed.length) throw new Error('Worker publication succeeded, but the release lock expired. Retry the latest main release before completing post-publication work.');
+            await afterPublish();
+        }
         return true;
     } finally {
         // An interrupted upload may still be accepted upstream. Retain the

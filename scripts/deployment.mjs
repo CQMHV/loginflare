@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildMigrationBundle } from './migration-bundle.mjs';
 import { release } from './releases.mjs';
+import { migrateAvatarUrls, publicAssetsBase, verifyMediaHeaders } from './public-assets.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bootstrap = ['SETUP_ORIGIN', 'SETUP_ADMIN_EMAIL', 'CF_SETUP_TOKEN'];
@@ -14,6 +15,7 @@ export const managedConfiguration = ['AUTH_URL', 'EMAIL_FROM', 'TURNSTILE_SITE_K
 export function validateDeploymentConfiguration(configuration) {
     if (!['production', 'staging'].includes(configuration.vars?.APP_ENV)) throw new Error('Deployment requires a production or staging build. Run pnpm build:deploy.');
     for (const [name, environment] of [['default', configuration], ...Object.entries(configuration.env ?? {})]) {
+        publicAssetsBase(environment.vars?.PUBLIC_ASSETS_URL);
         for (const key of managedConfiguration) {
             if (Object.hasOwn(environment.vars ?? {}, key)) throw new Error(`${name}: ${key} must not be declared in the checked-in configuration.`);
         }
@@ -59,7 +61,7 @@ function resourceName(value, worker, template, suffix = '') {
     return selected;
 }
 
-export async function resolveTarget(api, configuration, account, name, expectedTag) {
+export async function resolveTarget(api, configuration, account, name, expectedTag, mediaFetch = fetch) {
     const workerPath = `/workers/scripts/${name}`, servicePath = `/workers/services/${name}`;
     const dbBinding = configuration.d1_databases.find(({ binding }) => binding === 'DB');
     const avatarBinding = configuration.r2_buckets.find(({ binding }) => binding === 'AVATARS');
@@ -71,6 +73,9 @@ export async function resolveTarget(api, configuration, account, name, expectedT
     };
     const initial = await settings();
     const remoteBinding = (current, binding) => current?.bindings?.find((item) => item.name === binding);
+    const previousMedia = remoteBinding(initial, 'PUBLIC_ASSETS_URL');
+    if (previousMedia && previousMedia.type !== 'plain_text') throw new Error('PUBLIC_ASSETS_URL must be a non-secret text setting.');
+    const publicBase = publicAssetsBase(configuration.vars?.PUBLIC_ASSETS_URL ?? previousMedia?.text);
     const remoteDb = remoteBinding(initial, 'DB');
     if (remoteDb && (remoteDb.type !== 'd1' || !uuid.test(remoteDb.id))) throw new Error('The active DB binding is not a D1 database.');
     if (dbBinding.database_id && remoteDb && dbBinding.database_id !== remoteDb.id) throw new Error('The configured D1 ID differs from the active DB binding.');
@@ -105,7 +110,7 @@ export async function resolveTarget(api, configuration, account, name, expectedT
     if (avatars === privateBucket) throw new Error('Private installation material and public assets require separate buckets.');
 
     const target = { account, name, database: database.uuid, avatars, privateBucket };
-    const ensureBucket = async (bucket) => {
+    const ensureBucket = async (bucket, publicDomain) => {
         const path = `/r2/buckets/${bucket}`;
         if (!await api(path, { allowMissing: true })) {
             try { await api('/r2/buckets', { method: 'POST', body: { name: bucket } }); }
@@ -113,9 +118,17 @@ export async function resolveTarget(api, configuration, account, name, expectedT
         }
         const managed = await api(`${path}/domains/managed`);
         const custom = await api(`${path}/domains/custom`);
-        if (managed?.enabled !== false || !Array.isArray(custom?.domains) || custom.domains.length) {
+        if (managed?.enabled !== false || !Array.isArray(custom?.domains)) {
             throw new Error(`R2 bucket ${bucket} must have public access disabled.`);
         }
+        if (publicDomain) {
+            if (custom.domains.length !== 1 || custom.domains[0].domain !== new URL(publicDomain).hostname
+                || custom.domains[0].enabled !== true || custom.domains[0].status?.ownership !== 'active'
+                || custom.domains[0].status?.ssl !== 'active') {
+                throw new Error(`R2 bucket ${bucket} must have exactly the configured, active public media custom domain.`);
+            }
+            await verifyMediaHeaders(publicDomain, mediaFetch);
+        } else if (custom.domains.length) throw new Error(`R2 bucket ${bucket} must have public access disabled.`);
     };
     const verify = async () => {
         const current = await settings();
@@ -126,9 +139,22 @@ export async function resolveTarget(api, configuration, account, name, expectedT
             if (!item && remoteBinding(initial, binding)) throw new Error(`The active ${binding} binding disappeared during the release.`);
         }
     };
-    return { target, verify, ensureBuckets: async () => { await ensureBucket(avatars); await ensureBucket(privateBucket); },
+    const mediaTarget = async (query) => {
+        if (!publicBase && !previousMedia?.text) return null;
+        if (!(await query([{ sql: "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'lfInstallation'", params: [] }]))[0]?.results?.length) return null;
+        const installation = (await query([{ sql: 'SELECT "origin" FROM "lfInstallation" WHERE "id" = 1', params: [] }]))[0]?.results?.[0];
+        if (!installation) return null;
+        publicAssetsBase(publicBase ?? undefined, false, installation.origin);
+        return publicBase ?? `${installation.origin}/avatars`;
+    };
+    return { target, verify, ensureBuckets: async () => { await ensureBucket(privateBucket); await ensureBucket(avatars, publicBase); },
+        verifyMediaConfiguration: async (query) => { await mediaTarget(query); },
+        migrateMedia: async (query) => {
+            const base = await mediaTarget(query);
+            if (base) await migrateAvatarUrls(query, base);
+        },
         config: { ...configuration, name, account_id: account,
-            vars: { ...configuration.vars, LOGINFLARE_ACCOUNT_ID: account, LOGINFLARE_WORKER_NAME: name },
+            vars: { ...configuration.vars, PUBLIC_ASSETS_URL: publicBase ?? '', LOGINFLARE_ACCOUNT_ID: account, LOGINFLARE_WORKER_NAME: name },
             d1_databases: configuration.d1_databases.map((item) => item === dbBinding ? { ...item, database_name: database.name, database_id: database.uuid } : item),
             r2_buckets: configuration.r2_buckets.map((item) => item === avatarBinding ? { ...item, bucket_name: avatars }
                 : item === privateBinding ? { ...item, bucket_name: privateBucket } : item),
@@ -192,16 +218,21 @@ export async function deploy(input = process.argv.slice(2)) {
     const resolved = await resolveTarget(api, configuration, account, name, process.env.WRANGLER_CI_MATCH_TAG);
     const { migrations } = buildMigrationBundle(root);
     const online = JSON.parse(readFileSync(resolve(root, 'migrations/online.json'), 'utf8'));
+    const query = (batch) => api(`/d1/database/${resolved.target.database}/query`, {
+        method: 'POST', body: { batch: batch.map(({ sql, params }) => ({ sql, params: params.map(String) })) },
+    });
     const published = await release({
-        query: (batch) => api(`/d1/database/${resolved.target.database}/query`, {
-            method: 'POST', body: { batch: batch.map(({ sql, params }) => ({ sql, params: params.map(String) })) },
-        }),
+        query,
         target: resolved.target, migrations, online, isCurrent, verify: resolved.verify,
         publish: async () => {
             writeFileSync(build, JSON.stringify(resolved.config) + '\n');
             deployWorker();
         },
-        prepare: resolved.ensureBuckets,
+        prepare: async () => { await resolved.ensureBuckets(); await resolved.verifyMediaConfiguration(query); },
+        afterPublish: async () => {
+            try { await resolved.migrateMedia(query); }
+            catch (error) { throw new Error('Worker publication succeeded, but media URL migration did not finish. Retry the latest main release to resume it.', { cause: error }); }
+        },
     });
     if (published) console.log(`Released ${commit.slice(0, 12)} to ${name} using D1 ${resolved.target.database}.`);
 }

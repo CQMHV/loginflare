@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type Response } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { test } from './fixtures';
 import { snapshotEmails, waitForMail } from './mailbox';
@@ -20,8 +20,9 @@ test('loads management code on demand and consolidates a completed browser login
     expect(signup.status()).toBe(200);
     const verified = await context.request.get(await waitForMail(before, 'verify'));
     expect(verified.status()).toBe(302);
-    const scripts: string[] = [], requests: string[] = [], scriptBodies: Promise<number>[] = [];
+    const scripts: string[] = [], requests: string[] = [], scriptBodies: Promise<number>[] = [], staticResponses: Response[] = [];
     page.on('response', (response) => {
+        if (new URL(response.url()).origin === testOrigin && new URL(response.url()).pathname.startsWith('/assets/')) staticResponses.push(response);
         if (new URL(response.url()).origin === testOrigin && response.request().resourceType() === 'script') scriptBodies.push(response.body().then((body) => body.length));
     });
     page.on('request', (request) => {
@@ -30,8 +31,14 @@ test('loads management code on demand and consolidates a completed browser login
         if (request.resourceType() === 'script') scripts.push(url.pathname);
         if (url.pathname.startsWith('/api/')) requests.push(`${request.method()} ${url.pathname}`);
     });
-    await page.goto('/en-us/login');
+    const document = await page.goto('/en-us/login');
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
+    expect(await document!.headerValue('X-Loginflare-Test-Worker')).toBe('1');
+    expect(staticResponses.length).toBeGreaterThan(0);
+    for (const response of staticResponses) {
+        expect(await response.headerValue('X-Loginflare-Test-Worker'), response.url()).toBeNull();
+        expect(await response.headerValue('X-Content-Type-Options'), response.url()).toBe('nosniff');
+    }
     expect(scripts.some((path) => /\/(AccessManagement|Applications|Machines|Webhooks|BrandingSettings|MfaSettings|Emails)-/.test(path))).toBe(false);
     const coldScriptBytes = (await Promise.all(scriptBodies)).reduce((sum, size) => sum + size, 0);
     // Keep headroom below the pre-split 1.34 MB login payload.

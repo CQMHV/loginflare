@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { avatarIdPattern } from '../shared/avatars';
+import { publicImageSource } from '../shared/avatars';
 import type { ConnectionType } from '../shared/social';
 import googleIcon from './assets/google.png';
 import microsoftIcon from './assets/microsoft.svg';
@@ -22,15 +22,9 @@ function PresetIcon({ type }: { type: ConnectionType }) {
 
 export function ProviderIcon({ type, iconUrl, slot, className = '' }: { type: ConnectionType; iconUrl?: string | null; slot?: string; className?: string }) {
     const [failed, setFailed] = useState<string>();
-    let source: string | undefined;
-    if (iconUrl) {
-        try {
-            const url = new URL(iconUrl, window.location.origin);
-            if (url.origin === window.location.origin && url.pathname.startsWith('/social/icons/') && avatarIdPattern.test(url.pathname.slice('/social/icons/'.length)) && !url.search && !url.hash) source = url.pathname;
-        } catch { /* Invalid icon metadata uses the default symbol. */ }
-    }
+    const source = publicImageSource(iconUrl, window.location.origin, document.documentElement.dataset.publicAssetsUrl, 'social-icon');
     return <span slot={slot} className={`provider-icon ${className}`} aria-hidden="true">
-        {source && source !== failed ? <img src={source} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(source)} />
+        {source && source !== failed ? <img src={source} alt="" decoding="async" crossOrigin="anonymous" referrerPolicy="no-referrer" onError={() => setFailed(source)} />
             : <PresetIcon type={type} />}
     </span>;
 }

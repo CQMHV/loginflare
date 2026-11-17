@@ -6,6 +6,7 @@ import type { Env } from './config';
 import { advanceBrowserOAuthFlow, browserAccounts, browserOAuthQueryMatches, consumeBrowserFlow, readBrowserFlow, resolveBrowserRequest } from './browser-accounts';
 import { activeApiToken, businessScopeCatalog, identityScopes, knownApiScopes, permittedApiScopes } from './api-access-policy';
 import { writeAudit } from './audit';
+import { mediaImageSources } from './public-assets';
 
 export const protocolRoutes: Record<string, readonly string[]> = {
     '/.well-known/openid-configuration': ['GET', 'HEAD'],
@@ -236,7 +237,7 @@ oauth.all('*', async (c) => {
             const chinese = form.get('ui_locales')?.split(' ').some((value) => /^zh(?:-|$)/i.test(value))
                 || c.req.header('accept-language')?.toLowerCase().startsWith('zh');
             response = new Response(logoutAccountPage(logoutChoices, !!chinese, confirmationId, c.env.AUTH_URL), { status: response.status, headers: response.headers });
-            response.headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+            response.headers.set('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' ${mediaImageSources(c.env).join(' ')}; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
         }
         const redirect = form.get('post_logout_redirect_uri') ?? query.get('post_logout_redirect_uri');
         if (redirect) {
@@ -246,7 +247,7 @@ oauth.all('*', async (c) => {
             if (match) {
                 // Chromium applies form-action to the redirect following POST.
                 // The provider still validates the client-specific URI and signed confirmation cookie.
-                response.headers.set('Content-Security-Policy', `default-src 'none'; ${logoutChoices ? "style-src 'unsafe-inline'; img-src 'self'; " : ''}form-action 'self' ${new URL(redirect).origin}; base-uri 'none'; frame-ancestors 'none'`);
+                response.headers.set('Content-Security-Policy', `default-src 'none'; ${logoutChoices ? `style-src 'unsafe-inline'; img-src 'self' ${mediaImageSources(c.env).join(' ')}; ` : ''}form-action 'self' ${new URL(redirect).origin}; base-uri 'none'; frame-ancestors 'none'`);
             }
         }
     }

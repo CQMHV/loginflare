@@ -123,10 +123,11 @@ test('adjusts SVG logos before upload and retains vectors with the displayed rot
     expect(uploaded.status()).toBe(200); await expect(editor).toHaveCount(0);
     expect(uploads).toHaveLength(1); expect(uploads[0]!.toString()).toContain('<g transform='); expect(uploads[0]!.toString()).not.toContain('<image');
     const { logoUrl } = await uploaded.json() as { logoUrl: string };
-    const stored = await context.request.get(`${testOrigin}${logoUrl}`);
+    const stored = await context.request.get(new URL(logoUrl, testOrigin).href);
+    expect(stored.headers()['x-loginflare-test-worker']).toBeUndefined();
     expect(stored.headers()['content-type']).toBe('image/svg+xml'); expect(await stored.text()).toBe(uploads[0]!.toString());
     const pixels = await page.evaluate(async (url) => {
-        const image = new Image(); image.src = url; await image.decode();
+        const image = new Image(); image.crossOrigin = 'anonymous'; image.src = url; await image.decode();
         const canvas = document.createElement('canvas'); canvas.width = 4; canvas.height = 8;
         const drawing = canvas.getContext('2d')!; drawing.drawImage(image, 0, 0, 4, 8);
         return { width: image.naturalWidth, height: image.naturalHeight, top: Array.from(drawing.getImageData(2, 1, 1, 1).data), bottom: Array.from(drawing.getImageData(2, 6, 1, 1).data) };

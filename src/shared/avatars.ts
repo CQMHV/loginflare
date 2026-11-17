@@ -4,6 +4,19 @@ export const avatarSize = 256;
 export const avatarMimeType = 'image/webp';
 export const avatarIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+/** Only our canonical image keys may be rendered, never arbitrary profile URLs. */
+export function publicImageSource(image: string | null | undefined, origin: string, publicBase: string | undefined, kind: 'avatar' | 'social-icon'): string | undefined {
+    if (!image) return;
+    try {
+        const url = new URL(image, origin), id = url.pathname.split('/').at(-1)!;
+        if (!avatarIdPattern.test(id) || url.username || url.password || url.search || url.hash) return;
+        const path = kind === 'avatar' ? `/avatars/${id}` : `/social/icons/${id}`;
+        const key = kind === 'avatar' ? id : `social-icons/${id}`;
+        if (image === `${origin}${path}` || (kind === 'social-icon' && image === path)
+            || (publicBase && image === `${publicBase}/${key}`)) return image;
+    } catch { /* Invalid profile data uses the default avatar. */ }
+}
+
 export class AvatarImageError extends Error {
     constructor(public code = 'AVATAR_INVALID_IMAGE') { super(code); }
 }

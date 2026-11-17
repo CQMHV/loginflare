@@ -1,8 +1,11 @@
-export type Env = Omit<Cloudflare.Env, 'APP_ENV' | 'AUTH_URL' | 'EMAIL_FROM' | 'TURNSTILE_SITE_KEY' | 'CF_VERSION_METADATA'> & {
+import { publicAssetsBase } from '../shared/public-assets';
+
+export type Env = Omit<Cloudflare.Env, 'APP_ENV' | 'AUTH_URL' | 'EMAIL_FROM' | 'TURNSTILE_SITE_KEY' | 'PUBLIC_ASSETS_URL' | 'CF_VERSION_METADATA'> & {
     APP_ENV: 'development' | 'staging' | 'production';
     AUTH_URL: string;
     EMAIL_FROM: string;
     TURNSTILE_SITE_KEY: string;
+    PUBLIC_ASSETS_URL?: string;
     PRIVATE?: R2Bucket;
     CF_SETUP_TOKEN?: string;
     SETUP_ORIGIN?: string;
@@ -33,6 +36,8 @@ export function validateConfig(env: Env): void {
     const local = env.APP_ENV === 'development';
     if (local && !['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname)) throw new ConfigurationError('Development must use a loopback origin');
     if (!local && origin.protocol !== 'https:') throw new ConfigurationError('HTTPS is required');
+    try { publicAssetsBase(env.PUBLIC_ASSETS_URL, local, env.AUTH_URL); }
+    catch { throw new ConfigurationError('Invalid PUBLIC_ASSETS_URL'); }
     if (!local && (/^[123]x0/.test(env.TURNSTILE_SITE_KEY) || /^[123]x0/.test(env.TURNSTILE_SECRET_KEY))) throw new ConfigurationError('Turnstile test keys are not allowed');
     if (!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(env.EMAIL_FROM)) throw new ConfigurationError('Invalid EMAIL_FROM');
     if (!env.DB || !env.EMAIL || !env.AVATARS) throw new ConfigurationError('Missing resource bindings');

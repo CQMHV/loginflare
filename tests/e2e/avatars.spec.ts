@@ -75,6 +75,7 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
     expect(inspectImage(payload)).toMatchObject({ mime: 'image/webp', width: 256, height: 256 });
     expect(payload.toString()).not.toContain('fixture-private-location');
     const stored = await context.request.get((await uploaded.json()).image);
+    expect(stored.headers()['x-loginflare-test-worker']).toBeUndefined();
     expect(stored.headers()['content-type']).toBe('image/webp');
     expect(inspectImage(await stored.body())).toMatchObject({ mime: 'image/webp', width: 256, height: 256 });
     await expect(page.locator('.profile-avatar img')).toBeVisible();

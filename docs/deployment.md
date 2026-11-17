@@ -2,6 +2,8 @@
 
 [简体中文](deployment.zh-CN.md)
 
+For optional direct R2 image delivery, see [Public image delivery](public-media.md).
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
 Use the button for a new repository, or import your existing organization repository in **Workers & Pages → Create application → Import a repository**. In either case, select `main`, leave the root at the repository root, and use `pnpm build:deploy` and `pnpm run deploy`. Leave preview builds disabled for this Worker. Cloudflare assigns the resource IDs. The release creates or binds D1 and two private R2 buckets, one for assets and one for instance keys.

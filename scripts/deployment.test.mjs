@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { resolveTarget, validateDeploymentConfiguration, verifyCheckout } from './deployment.mjs';
+import { verifyMediaHeaders } from './public-assets.mjs';
 
 const template = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
 const database = { uuid: '00000000-0000-4000-8000-000000000001', name: 'test-db' };
@@ -74,4 +75,73 @@ test('a branch-triggered first build can use the checked-out commit without a pi
     verifyCheckout(commit, commit, 'main');
     assert.throws(() => verifyCheckout(commit, 'b'.repeat(40), 'main'), /does not match/);
     assert.throws(() => verifyCheckout(commit, commit, 'preview'), /run from main/);
+});
+
+const mediaBase = 'https://images.example.test';
+const mediaHeaders = {
+    'Content-Security-Policy': "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; sandbox; frame-ancestors 'none'",
+    'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin',
+};
+test('public media deployment requires the exact domain while PRIVATE and r2.dev remain closed', async () => {
+    const active = { domain: 'images.example.test', enabled: true, status: { ownership: 'active', ssl: 'active' } };
+    async function resolve({ configured = mediaBase, previous, avatars = [active], privateDomains = [], privateManaged = false, avatarManaged = false } = {}) {
+        const calls = [];
+        const resolved = await resolveTarget(async (path, options) => {
+            assert.ok(!options?.method || options.method === 'GET', 'existing resources require only read checks');
+            calls.push(path);
+            if (path.startsWith('/workers/services/')) return {};
+            if (path.endsWith('/settings')) return { bindings: previous ? [{ name: 'PUBLIC_ASSETS_URL', type: 'plain_text', text: previous }] : [] };
+            if (path.startsWith('/d1/database?')) return [{ ...database, name: 'test' }];
+            if (path.startsWith('/d1/database')) return database;
+            if (path.startsWith('/r2/buckets/')) {
+                const privateBucket = path.includes('test-private');
+                if (path.endsWith('/domains/managed')) return { enabled: privateBucket ? privateManaged : avatarManaged };
+                if (path.endsWith('/domains/custom')) return { domains: privateBucket ? privateDomains : avatars };
+                return {};
+            }
+            throw new Error('Unexpected request: ' + path);
+        }, { ...template, vars: { ...template.vars, ...(configured === null ? {} : { PUBLIC_ASSETS_URL: configured }) } }, 'test-account', 'test', undefined,
+        async (url, options) => {
+            assert.equal(url, mediaBase + '/loginflare-deployment-header-check');
+            assert.equal(options.method, 'HEAD'); assert.equal(options.redirect, 'manual');
+            return new Response(null, { status: 404, headers: mediaHeaders });
+        });
+        return { resolved, calls };
+    }
+    const allowed = await resolve(); await allowed.resolved.ensureBuckets();
+    assert.equal(allowed.resolved.config.vars.PUBLIC_ASSETS_URL, mediaBase);
+    for (const options of [
+        { privateDomains: [active] }, { privateManaged: true }, { avatarManaged: true },
+        { avatars: [] }, { avatars: [{ ...active, enabled: false }] },
+        { avatars: [{ ...active, domain: 'other.example.test' }] }, { avatars: [active, active] },
+        { avatars: [{ ...active, status: { ownership: 'active', ssl: 'pending' } }] }, { configured: '' },
+    ]) await assert.rejects((await resolve(options)).resolved.ensureBuckets(), /public access disabled|configured, active/);
+    const inherited = await resolve({ configured: null, previous: mediaBase });
+    await inherited.resolved.ensureBuckets(); assert.equal(inherited.resolved.config.vars.PUBLIC_ASSETS_URL, mediaBase);
+    assert.throws(() => validateDeploymentConfiguration({ ...template, vars: { ...template.vars, PUBLIC_ASSETS_URL: 'http://images.example.test' } }), /PUBLIC_ASSETS_URL/);
+    const privateDefault = await resolve({ configured: '', avatars: [] });
+    await privateDefault.resolved.ensureBuckets();
+    let queries = 0;
+    await privateDefault.resolved.migrateMedia(async () => { queries++; throw new Error('Unnecessary D1 access'); });
+    await privateDefault.resolved.verifyMediaConfiguration(async () => { queries++; throw new Error('Unnecessary D1 access'); });
+    assert.equal(queries, 0);
+    const reads = [];
+    await allowed.resolved.verifyMediaConfiguration(async (batch) => {
+        assert.ok(batch.every(({ sql }) => /^SELECT /.test(sql)), 'pre-publication media validation must be read-only');
+        reads.push(...batch);
+        return [{ results: [{ origin: 'https://auth.example.test' }] }];
+    });
+    assert.equal(reads.length, 2);
+    await assert.rejects(allowed.resolved.verifyMediaConfiguration(async () => [{ results: [{ origin: mediaBase }] }]), /separate HTTPS origin/);
+    await assert.rejects(allowed.resolved.migrateMedia(async () => [{ results: [{ origin: mediaBase }] }]), /separate HTTPS origin/);
+    await allowed.resolved.migrateMedia(async () => [{ results: [] }]); // New installation has no user data.
+});
+
+test('public media security headers are checked without uploading probe objects or following redirects', async () => {
+    await verifyMediaHeaders(mediaBase, async () => new Response(null, { status: 404, headers: mediaHeaders }));
+    for (const key of Object.keys(mediaHeaders)) {
+        const headers = { ...mediaHeaders }; delete headers[key];
+        await assert.rejects(verifyMediaHeaders(mediaBase, async () => new Response(null, { status: 404, headers })), /security headers/);
+    }
+    for (const status of [200, 301, 403, 500]) await assert.rejects(verifyMediaHeaders(mediaBase, async () => new Response(null, { status, headers: mediaHeaders })), /security headers/);
 });

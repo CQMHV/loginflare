@@ -6,22 +6,16 @@ import { useDataActions } from './data';
 import { useClearSecrets } from './page-state';
 import { ToolbarIcon } from './ToolbarIcon';
 import { ImagePicker } from './ImagePicker';
-import { avatarIdPattern, avatarSize } from '../shared/avatars';
+import { publicImageSource, avatarSize } from '../shared/avatars';
 import { ErrorNotice, useFeedback } from './feedback';
 import { browserContextHeaders } from './browser-context';
 
 export function Avatar({ name, image, className }: { name: string; image?: string | null; className: string }) {
     const { t } = useTranslation();
     const [failed, setFailed] = useState<string>();
-    let source: string | undefined;
-    if (image && image !== failed) {
-        try {
-            const url = new URL(image);
-            if (url.origin === window.location.origin && url.pathname.startsWith('/avatars/') && avatarIdPattern.test(url.pathname.slice('/avatars/'.length)) && !url.search && !url.hash) source = image;
-        } catch { /* Invalid profile data uses the default avatar. */ }
-    }
+    const source = image !== failed ? publicImageSource(image, window.location.origin, document.documentElement.dataset.publicAssetsUrl, 'avatar') : undefined;
     return <span className={className} role="img" aria-label={t('avatar.label', { name })}>
-        {source ? <img src={source} alt="" decoding="async" loading={className === 'table-avatar' ? 'lazy' : undefined} referrerPolicy="no-referrer" onError={() => setFailed(source)} /> : <ToolbarIcon name="person" />}
+        {source ? <img src={source} alt="" decoding="async" loading={className === 'table-avatar' ? 'lazy' : undefined} crossOrigin="anonymous" referrerPolicy="no-referrer" onError={() => setFailed(source)} /> : <ToolbarIcon name="person" />}
     </span>;
 }
 

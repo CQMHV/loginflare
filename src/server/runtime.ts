@@ -1,6 +1,7 @@
 import { validateConfig, type Env } from './config';
 import { advanceInstallation, handleSetup, instanceEnv, readInstallation, setupPage } from './setup';
 import { admitRequest } from './request-budget';
+import { mediaImageSources } from './public-assets';
 
 type BusinessFetch = (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
 const readMethod = (request: Request) => request.method === 'GET' || request.method === 'HEAD';
@@ -78,7 +79,7 @@ export async function dispatch(request: Request, env: Env, ctx: ExecutionContext
     if (headers.get('Content-Type')?.includes('text/html') && !headers.has('Content-Security-Policy')) {
         headers.set('Cache-Control', 'no-store');
         const development = env.APP_ENV === 'development';
-        headers.set('Content-Security-Policy', `default-src 'self'; script-src 'self'${development ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self'${development ? ' ws://localhost:5173' : ''}; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
+        headers.set('Content-Security-Policy', `default-src 'self'; script-src 'self'${development ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self'${development ? ' ws://localhost:5173' : ''}; img-src 'self' data: ${mediaImageSources(env).join(' ')}; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
     }
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

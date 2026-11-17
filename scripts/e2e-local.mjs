@@ -1,7 +1,7 @@
 import { readD1Migrations } from '@cloudflare/vitest-plugin';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { dirname, extname, relative, resolve, sep } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
@@ -24,19 +24,22 @@ const workerPath = resolve(dirname(state), 'worker.mjs');
 const entry = relative(dirname(workerPath), resolve('dist/loginflare_local/index.js')).replaceAll('\\', '/');
 await writeFile(workerPath, `import worker from ${JSON.stringify(entry.startsWith('.') ? entry : './' + entry)};
 export default {
-    fetch(request, env, ctx) {
+    async fetch(request, env, ctx) {
         if (new URL(request.url).pathname === '/api/health') return env.TEST_READY.fetch('http://ready.local/');
         const EMAIL = { send(message) { return env.TEST_MAILBOX.fetch('http://mailbox.local/', { method: 'POST', body: JSON.stringify(message) }).then(response => {
             if (!response.ok) throw new Error('Local capture failed');
             return response.json();
         }); } };
-        return worker.fetch(request, { ...env, EMAIL }, ctx);
+        const response = await worker.fetch(request, { ...env, EMAIL }, ctx);
+        const headers = new Headers(response.headers);
+        headers.set('X-Loginflare-Test-Worker', '1');
+        headers.set('X-Loginflare-Test-Invocation', crypto.randomUUID());
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     }
 };
 `);
-const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8' };
-const assets = resolve('dist/client');
 const workerRoot = resolve('dist/loginflare_local');
+const built = JSON.parse(await readFile(resolve(workerRoot, 'wrangler.json'), 'utf8'));
 const workerModules = (await readdir(workerRoot, { recursive: true })).filter((file) => file.endsWith('.js'))
     .map((file) => ({ type: 'ESModule', path: resolve(workerRoot, file) }));
 let ready = false;
@@ -47,22 +50,18 @@ const options = convertV4MiniflareOptions({
     compatibilityDate: '2026-10-26', compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
     d1Databases: { DB: '00000000-0000-4000-8000-000000000001' },
     r2Buckets: { AVATARS: 'isolated-avatars' },
+    assets: { directory: resolve(workerRoot, built.assets.directory), binding: 'ASSETS',
+        run_worker_first: built.assets.run_worker_first, routerConfig: { has_user_worker: true },
+        assetConfig: { not_found_handling: built.assets.not_found_handling } },
     ratelimits: { REQUEST_LIMITER: { namespace_id: '1001', simple: { limit: 600, period: 60 } } },
     bindings: {
         APP_ENV: 'development', AUTH_URL: origin, EMAIL_FROM: 'no-reply@loginflare.test',
+        PUBLIC_ASSETS_URL: `${origin.replace('localhost', '127.0.0.1')}/cdn-cgi/local/r2/public/isolated-avatars`,
         TURNSTILE_SITE_KEY: '1x00000000000000000000AA', TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
         BETTER_AUTH_SECRET: 'isolated-browser-test-secret-with-more-than-32-characters',
     },
     serviceBindings: {
         TEST_READY: () => Response.json({ status: ready ? 'ok' : 'starting' }, { status: ready ? 200 : 503 }),
-        async ASSETS(request) {
-            const pathname = new URL(request.url).pathname;
-            if (pathname === '/index.html') return new Response(null, { status: 307, headers: { Location: '/' } });
-            const file = pathname.startsWith('/assets/') || pathname === '/favicon.svg' ? resolve(assets, '.' + pathname) : resolve(assets, 'index.html');
-            if (!file.startsWith(assets + sep)) return new Response('Not found', { status: 404 });
-            try { return new Response(await readFile(file), { headers: { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream' } }); }
-            catch (error) { if (error.code === 'ENOENT') return new Response('Not found', { status: 404 }); throw error; }
-        },
         async TEST_MAILBOX(request) {
             const message = await request.json();
             await writeFile(resolve(mailbox, `${Date.now()}-${randomUUID()}-email-text.txt`), message.text || '', { mode: 0o600 });
