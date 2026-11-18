@@ -5,9 +5,11 @@ import { brandColors } from './src/shared/brand-colors.ts';
 import { defaultBranding } from './src/shared/branding.ts';
 import { randomUUID } from 'node:crypto';
 import { deploymentConfigPath, deploymentConfigSource, validateDeploymentConfiguration } from './scripts/deployment.mjs';
-import { loadRelease, sourceCommit as checkoutCommit } from './scripts/release-manifest.mjs';
+import { loadRelease, sourceCommit as checkoutCommit, sourceRepository } from './scripts/release-manifest.mjs';
+import { updateRepository } from './src/shared/releases.ts';
 const { bundle, manifest } = loadRelease(process.cwd());
 const sourceCommit = checkoutCommit(process.cwd());
+const originRepository = sourceRepository(process.cwd());
 
 const applicationBuild = process.env.WORKERS_CI_BUILD_UUID ?? randomUUID();
 export default defineConfig(({ mode }) => ({
@@ -48,6 +50,7 @@ export default defineConfig(({ mode }) => ({
                 LOGINFLARE_BUILD_ID: configuration.vars?.APP_ENV === 'development' ? 'development' : applicationBuild,
                 LOGINFLARE_SOURCE_COMMIT: sourceCommit,
                 LOGINFLARE_RELEASE_VERSION: manifest.version,
+                LOGINFLARE_UPDATE_REPOSITORY: updateRepository(configuration.vars?.LOGINFLARE_UPDATE_REPOSITORY ?? originRepository) ?? '',
                 LOGINFLARE_MIGRATION_HASH: bundle.hash,
                 ...(mode === 'deployment' ? { LOGINFLARE_CONFIG_DIGEST: deploymentConfigSource(process.cwd(), mode).digest } : {}),
                 ...(account ? { LOGINFLARE_ACCOUNT_ID: account } : {}),

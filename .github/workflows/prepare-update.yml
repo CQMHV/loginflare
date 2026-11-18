@@ -1,0 +1,39 @@
+name: Prepare Loginflare update
+
+on:
+    workflow_dispatch:
+        inputs:
+            version:
+                description: 'Target release tag, or leave blank for the latest stable release'
+                type: string
+
+permissions:
+    contents: read
+
+concurrency:
+    group: loginflare-update
+    cancel-in-progress: false
+
+jobs:
+    prepare:
+        if: github.repository != 'CQMHV/loginflare' && github.ref == 'refs/heads/main'
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        permissions:
+            contents: write
+            pull-requests: write
+        steps:
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+              with:
+                  ref: main
+                  fetch-depth: 0
+                  persist-credentials: true
+            - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+              with:
+                  node-version: 24
+                  package-manager-cache: false
+            - name: Prepare pull request
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  LOGINFLARE_TARGET_TAG: ${{ inputs.version }}
+              run: node scripts/prepare-update.mjs

@@ -1,10 +1,11 @@
 import type { BrowserContext } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, mockAdminUpdates } from './fixtures';
 import { testOrigin } from './runtime';
 import { connectionTypes, defaultConnectionConfig, type SocialConnection } from '../../src/shared/social';
 import type { Identity } from '../../src/client/api';
 
 async function administrator(context: BrowserContext) {
+    await mockAdminUpdates(context);
     const now = new Date().toISOString();
     const identity: Identity = {
         user: { id: 'connector-admin', name: 'Connector Administrator', email: 'connector-admin@loginflare.test', emailVerified: true, role: 'admin', createdAt: now },

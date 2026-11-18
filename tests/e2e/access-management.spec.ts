@@ -174,7 +174,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         const navigation = page.getByRole('navigation', { name: labels.navigation, exact: true, includeHidden: true });
         await expect(navigation.getByRole('group')).toHaveCount(4);
         for (const name of labels.groups) await expect(navigation.getByRole('group', { name, exact: true })).toBeVisible();
-        await expect(navigation.getByRole('link')).toHaveCount(9);
+        await expect(navigation.getByRole('link')).toHaveCount(10);
         const guide = page.getByRole('region', { name: labels.guide, exact: true });
         await expect(guide).toContainText(labels.signIn);
         await expect(guide.getByRole('link', { name: labels.developer, exact: true })).toHaveAttribute('href', `/${language}/developer/applications`);
@@ -491,7 +491,7 @@ for (const language of ['en-us', 'zh-cn'] as const) {
         expect((await heading.boundingBox())!.y).toBeLessThan(320);
         await toggle.press('Enter');
         const nav = page.getByRole('navigation', { name: chinese ? '管理导航' : 'Administration navigation', exact: true });
-        await expect(nav.getByRole('link')).toHaveCount(9);
+        await expect(nav.getByRole('link')).toHaveCount(10);
         await expect(nav.getByRole('group')).toHaveCount(4);
         await expect(nav.getByRole('link', { name: chinese ? '用户' : 'Users', exact: true })).toHaveAttribute('aria-current', 'page');
         await page.keyboard.press('Tab');

@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { upstreamRepository } from '../src/shared/releases.ts';
 import { buildMigrationBundle } from './migration-bundle.mjs';
 import { loadRelease } from './release-manifest.mjs';
 import { release } from './releases.mjs';
@@ -32,6 +33,11 @@ const results = [];
 for (const baseline of manifest.upgradeFrom) {
     const checkout = resolve(run, baseline.id);
     mkdirSync(checkout);
+    const exists = spawnSync('git', ['cat-file', '-e', `${baseline.commit}^{commit}`], { cwd: root, timeout: 15_000 });
+    if (exists.error) throw exists.error;
+    if (exists.status !== 0) {
+        command('git', ['fetch', '--no-tags', `https://github.com/${upstreamRepository}.git`, baseline.commit], root);
+    }
     const archive = command('git', ['archive', baseline.commit], root, { encoding: null });
     command('tar', ['-xf', '-', '-C', checkout], root, { input: archive });
     const previousDependencies = JSON.parse(readFileSync(resolve(checkout, 'package.json'), 'utf8')).dependencies;
