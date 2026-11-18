@@ -2,6 +2,21 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { buildMigrationBundle } from './migration-bundle.mjs';
 import { spawnSync } from 'node:child_process';
+import { updateRepository } from '../src/shared/releases.ts';
+
+export function sourceRepository(root) {
+    if (sourceCommit(root) === 'source-archive') return null;
+    const result = spawnSync('git', ['config', '--get', 'remote.origin.url'], { cwd: root, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+    if (result.status !== 0) return null;
+    const value = result.stdout.trim();
+    const ssh = /^git@github\.com:([^?#]+)$/i.exec(value);
+    if (ssh) return updateRepository(ssh[1].replace(/\.git$/i, ''));
+    try {
+        const url = new URL(value);
+        if (!['https:', 'ssh:'].includes(url.protocol) || url.hostname !== 'github.com' || url.port || url.search || url.hash) return null;
+        return updateRepository(url.pathname.slice(1).replace(/\.git$/i, ''));
+    } catch { return null; }
+}
 
 export function sourceCommit(root) {
     const git = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'ignore'] });

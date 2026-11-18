@@ -1,5 +1,5 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
-import { expect, test, selectMaterialOption } from './fixtures';
+import { expect, test, mockAdminUpdates, selectMaterialOption } from './fixtures';
 import { testOrigin } from './runtime';
 import type { Identity } from '../../src/client/api';
 import { defaultConnectionConfig, type ConnectionType, type SocialConnection } from '../../src/shared/social';
@@ -7,6 +7,7 @@ import { defaultConnectionConfig, type ConnectionType, type SocialConnection } f
 type Reorder = { order: string[]; previousOrder: string[] };
 
 async function connections(context: BrowserContext) {
+    await mockAdminUpdates(context);
     const now = new Date().toISOString();
     const actor: Identity = {
         user: { id: 'sorting-admin', name: 'Sorting Administrator', email: 'sorting@loginflare.test', emailVerified: true, role: 'admin', createdAt: now },

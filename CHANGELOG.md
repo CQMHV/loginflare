@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-## 0.2.0
+## 0.1.0
 
+- Use the same release build for the Cloudflare deployment button and explicit production builds. Complete first-admin setup through the installation page.
+- Show published updates in the admin console. A downstream maintainer can run the GitHub workflow to prepare a reviewable pull request from a fixed release tag, preserving downstream files and migration history.
 - Keep downstream Fork deployments automatic after setup. Validate the selected Wrangler configuration during the deployment build, preflight resource ownership and migration history, verify schema before publication, and confirm the intended Worker build after promotion.
 - Ship optional status, read-only planning, apply and verification tools with source releases. Preserve custom migration approvals, instance keys and existing D1/R2 bindings; record recoverable publication stages separately from applied migrations.
 - Use the selected Wrangler file and environment for remote preflight. Resume unfinished avatar URL updates after switching off R2 direct delivery.

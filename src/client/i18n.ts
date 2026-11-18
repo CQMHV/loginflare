@@ -15,6 +15,13 @@ import { webhooksEn, webhooksZh, webhookErrorsEn, webhookErrorsZh } from './webh
 
 const enUS = {
     administration: { accounts: 'Accounts & sign-in', applications: 'Application integration', access: 'Access control', operations: 'Operations & integrations', roles: 'Roles', roleTypes: 'Role types' },
+    updates: {
+        title: 'Version updates', installed: 'Installed version {{version}}', available: 'Version {{version}} is available.',
+        current: 'You are on the latest release.', unpublished: 'No official release is available to check.', checking: 'Checking for updates…',
+        unavailable: 'Unable to check for updates right now.', details: 'View update', prepare: 'Prepare update on GitHub',
+        confirmOnGitHub: 'Select Run workflow to create a pull request for review.', releaseNotes: 'Release notes',
+        repositoryMissing: 'The installation repository was not detected. Configure its GitHub repository to prepare an update.', configure: 'Configure updates',
+    },
     webhooks: webhooksEn,
     passkeys: passkeysEn,
     deletion: deletionEn,
@@ -297,6 +304,13 @@ const enUS = {
 
 const zhCN: typeof enUS = {
     administration: { accounts: '账号与登录', applications: '应用接入', access: '访问控制', operations: '运维与集成', roles: '角色', roleTypes: '角色类型' },
+    updates: {
+        title: '版本更新', installed: '当前版本 {{version}}', available: '新版本 {{version}} 已发布。',
+        current: '当前已是最新正式版本。', unpublished: '暂无可检查的正式版本。', checking: '正在检查更新…',
+        unavailable: '暂时无法检查更新。', details: '查看更新', prepare: '前往 GitHub 准备更新',
+        confirmOnGitHub: '点击「Run workflow」创建升级 PR，供维护者审阅。', releaseNotes: '版本说明',
+        repositoryMissing: '未识别到安装仓库。设置下游 GitHub 仓库后即可准备更新。', configure: '配置更新',
+    },
     webhooks: webhooksZh,
     passkeys: passkeysZh,
     deletion: deletionZh,

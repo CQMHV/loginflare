@@ -14,6 +14,9 @@ export type Env = Omit<Cloudflare.Env, 'APP_ENV' | 'AUTH_URL' | 'EMAIL_FROM' | '
     LOGINFLARE_WORKER_NAME?: string;
     LOGINFLARE_ACCOUNT_ID?: string;
     LOGINFLARE_BUILD_ID?: string;
+    LOGINFLARE_SOURCE_COMMIT?: string;
+    LOGINFLARE_RELEASE_VERSION?: string;
+    LOGINFLARE_UPDATE_REPOSITORY?: string;
     requestWork?: { webhooks: boolean };
 };
 

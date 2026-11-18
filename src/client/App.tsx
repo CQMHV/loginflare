@@ -26,6 +26,7 @@ import { BrowserAccountChooser, BrowserAccountMenu, useBrowserAccounts } from '.
 import { cancelBrowserFlow, completeBrowserLogin, ensureBrowserFlow, startBrowserFlow } from './browser-account-actions';
 import { browserContextEvent, browserContextVersion, browserFlowId, browserFlowTargetAccount, clearBrowserFlow, flowPath, selectedBrowserAccount, selectBrowserAccount } from './browser-context';
 import { authenticatePasskey, browserSupportsWebAuthn, cancelPasskey, Passkeys, passkeyError } from './Passkeys';
+import { UpdateNotice, VersionUpdates } from './VersionUpdates';
 const ApplicationsPage = lazy(() => import('./Applications').then((module) => ({ default: module.ApplicationsPage })));
 const ApplicationEditor = lazy(() => import('./Applications').then((module) => ({ default: module.ApplicationEditor })));
 const AuthorizedApplicationsPage = lazy(() => import('./AuthorizedApplications').then((module) => ({ default: module.AuthorizedApplicationsPage })));
@@ -658,7 +659,10 @@ function AppFrame({ area, title, home, navigationLabel, navigation }: AppFramePr
         </aside>
         <div className="app-content">
             <header className="app-header"><div className="mobile-brand"><Brand destination={home} /></div><div className="header-actions"><LanguageSwitcher compact /><ThemeSwitcher /><AccountMenu busy={busy} onSignOut={() => { void signOut(); }} /></div></header>
-            <main ref={mainRef} className="page-content"><ConnectionNotice /><PageBoundary resetKey={pathname + search}><Suspense fallback={<Busy />}><Outlet /></Suspense></PageBoundary></main>
+            <main ref={mainRef} className="page-content"><ConnectionNotice />
+                {area === 'admin' && pathname !== localizedPath(locale, 'admin/updates') && <UpdateNotice details={localizedPath(locale, 'admin/updates')} />}
+                <PageBoundary resetKey={pathname + search}><Suspense fallback={<Busy />}><Outlet /></Suspense></PageBoundary>
+            </main>
             <footer className="app-footer">{brand.name} <span>·</span> {t('openSource')}</footer>
         </div>
     </div>;
@@ -703,6 +707,7 @@ function AdminLayout() {
                 <h2 id="admin-operations">{t('administration.operations')}</h2>
                 <NavigationLink to={localizedPath(locale, 'admin/audit-logs')}><Icon name="sessions" />{t('access.audit')}</NavigationLink>
                 <NavigationLink to={localizedPath(locale, 'admin/webhooks')}><Icon name="globe" />{t('webhooks.title')}</NavigationLink>
+                <NavigationLink to={localizedPath(locale, 'admin/updates')}><Icon name="settings" />{t('updates.title')}</NavigationLink>
             </div></>} />;
 }
 
@@ -968,6 +973,7 @@ function LocaleRoutes() {
                         <Route path="admin" element={<Navigate to={localizedPath(locale, 'admin/users')} replace />} />
                         <Route path="admin/users" element={<UsersPage />} />
                         <Route path="admin/branding" element={<BrandingSettings />} />
+                        <Route path="admin/updates" element={<VersionUpdates />} />
                         <Route path="admin/social-connections" element={<SocialConnectionsPage />} />
                         <Route path="admin/access/resources" element={<ApiResourcesPage locale={locale} />} />
                         <Route path="admin/access/resources/detail" element={<ApiResourceDetailPage key={new URLSearchParams(search).get('id') ?? ''} locale={locale} />} />

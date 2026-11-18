@@ -90,10 +90,12 @@ test('schema validation failure prevents publication, and partial migration retr
     let published = false;
     await assert.rejects(f.apply({ checkSchema: async () => { throw new Error('schema drift'); }, publish: async () => { published = true; } }), /schema drift/);
     assert.equal(published, false);
-    const extra = { name: '0028_fork.sql', hash: 'fork', statements: ['CREATE TABLE forkData (id INTEGER PRIMARY KEY)'] };
-    const failing = { name: '0029_failure.sql', hash: 'fail', statements: ['INSERT INTO absent VALUES (1)'] };
+    const lastMigration = bundle.migrations.at(-1).name.slice(0, -'.sql'.length);
+    const extra = { name: `${lastMigration}_test_1.sql`, hash: 'fork', statements: ['CREATE TABLE forkData (id INTEGER PRIMARY KEY)'] };
+    const failing = { name: `${lastMigration}_test_2.sql`, hash: 'fail', statements: ['INSERT INTO absent VALUES (1)'] };
     const old = f.db.prepare('SELECT * FROM lfReleaseMigration ORDER BY name').all();
-    await assert.rejects(f.apply({ migrations: [...bundle.migrations, extra, failing], online: { [extra.name]: extra.hash, [failing.name]: failing.hash } }), /0029_failure/);
+    await assert.rejects(f.apply({ migrations: [...bundle.migrations, extra, failing], online: { [extra.name]: extra.hash, [failing.name]: failing.hash } }),
+        (error) => error.message.includes(failing.name));
     assert.deepEqual(f.db.prepare('SELECT * FROM lfReleaseMigration ORDER BY name LIMIT ?').all(old.length), old);
     assert.equal(f.db.prepare('SELECT count(*) AS n FROM lfReleaseMigration WHERE name = ?').get(extra.name).n, 1);
 });
