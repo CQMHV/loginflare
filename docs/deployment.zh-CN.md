@@ -6,7 +6,7 @@
 
 [![部署到 Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
-需要新建仓库时，使用部署按钮。已有组织仓库时，在 Cloudflare 的 **Workers & Pages → 创建应用 → 导入仓库** 中选择它。两种方式都使用 `main`，构建目录为仓库根目录，构建命令为 `pnpm build:deploy`，部署命令为 `pnpm run deploy`，关闭此 Worker 的预览构建。资源 ID 由 Cloudflare 分配；发布会创建或绑定 D1，以及分别存放站点文件和实例密钥的两个私有 R2 桶。
+使用部署按钮创建仓库并连接 Workers Builds，接受自动识别的构建和部署命令。已有仓库时，在 Cloudflare 的 **Workers & Pages → 创建应用 → 导入仓库** 选择仓库，使用 `main` 和仓库根目录。将构建命令设为 `pnpm run build`，部署命令设为 `pnpm run deploy`，即可执行与部署按钮相同的构建和发布检查。可以关闭预览构建。Cloudflare 分配资源 ID，发布流程创建或绑定 D1，以及分别存放站点文件和实例密钥的两个私有 R2 桶。
 
 登录域名须属于一个已接入 Cloudflare 的有效站点。账号须启用 R2；实际发信需要 Workers Paid 和 [Email Sending](https://developers.cloudflare.com/email-service/)。
 
@@ -25,7 +25,7 @@
 
 ### 安装遇到问题时
 
-安装页会显示当前步骤、处理建议和诊断码。保留页面即可自动检查进度；修正安装配置后，程序会核对已有资源再继续。请在 Worker 的“设置 → 变量和机密”中核对上面的三项机密，不要把令牌填入网页表单、构建变量或 Git。
+安装页会显示当前步骤、处理建议和诊断码。保留页面即可自动检查进度。修正安装配置后，程序会核对已有资源再继续。请在 Worker 的 **设置 → 变量和机密** 中核对上面的三项机密。`CF_SETUP_TOKEN` 只存入本次安装的 Cloudflare Worker 机密。
 
 | 页面提示 | 下一步 |
 | --- | --- |

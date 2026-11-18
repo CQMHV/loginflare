@@ -1,0 +1,171 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { newerVersion, stableVersion, updateRepository, upstreamRepository } from '../src/shared/releases.ts';
+
+const provenancePath = '.loginflare-upstream.json';
+const hash = /^[a-f0-9]{40}$/;
+const releaseTag = (value) => typeof value === 'string' && value.startsWith('v') && stableVersion(value.slice(1));
+
+function command(program, args, cwd, options = {}) {
+    return spawnSync(program, args, { cwd, encoding: 'utf8', timeout: 120_000, maxBuffer: 8 * 1024 * 1024,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...options.env }, input: options.input });
+}
+
+function output(result, description) {
+    if (result.status !== 0) throw new Error(`${description} failed${result.error ? `: ${result.error.code}` : ''}.`);
+    return result.stdout.trim();
+}
+
+const git = (root, args, options) => command('git', args, root, options);
+const readGit = (root, args, options) => output(git(root, args, options), `git ${args[0]}`);
+const showJson = (root, tree, path) => JSON.parse(readGit(root, ['show', `${tree}:${path}`]));
+
+export function verifyRelease(release, provenance, commit, taggedManifest) {
+    if (!releaseTag(release?.tag_name) || release.draft !== false || release.prerelease !== false || !release.published_at) {
+        throw new Error('The selected version must be a published stable release.');
+    }
+    const version = release.tag_name.slice(1);
+    if (!hash.test(commit) || provenance?.format !== 1 || provenance.commit !== commit || provenance.version !== version || taggedManifest.version !== version) {
+        throw new Error('The release tag, provenance and source version do not agree.');
+    }
+    if (!Array.isArray(taggedManifest.migrations) || taggedManifest.migrations.some(({ name, digest }) => !/^\d+_[\w.-]+\.sql$/.test(name) || !/^[a-f0-9]{64}$/.test(digest))) {
+        throw new Error('The release migration list is invalid.');
+    }
+    return { tag: release.tag_name, commit, version, migrations: taggedManifest.migrations };
+}
+
+export function verifyBaseline(root, head, baseline) {
+    const local = showJson(root, head, 'release.json');
+    if (local.version !== baseline.version) throw new Error('The installation manifest does not match its upstream baseline.');
+    const marker = git(root, ['show', `${head}:${provenancePath}`]);
+    if (marker.status === 0) {
+        const recorded = JSON.parse(marker.stdout);
+        if (recorded.tag !== baseline.tag || recorded.commit !== baseline.commit) throw new Error('The recorded upstream baseline does not match the published release.');
+        return;
+    }
+    if (git(root, ['merge-base', '--is-ancestor', baseline.commit, head]).status === 0) return;
+    const roots = readGit(root, ['rev-list', '--max-parents=0', head]).split(/\s+/);
+    if (roots.length === 1 && !readGit(root, ['diff', '--name-only', baseline.commit, roots[0], '--', '.', ':(exclude)wrangler.jsonc'])) return;
+    throw new Error('The source baseline could not be verified. Review and merge the fixed upstream tag manually.');
+}
+
+function migrationFiles(root, tree) {
+    return readGit(root, ['ls-tree', '-r', tree, '--', 'migrations']).split('\n')
+        .filter((line) => /\tmigrations\/\d+_.+\.sql$/.test(line));
+}
+
+export function candidateTree(root, head, baseline, target) {
+    verifyBaseline(root, head, baseline);
+    if (!newerVersion(target.version, baseline.version)) throw new Error('The upstream target must be newer than the installed version.');
+    const merge = git(root, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '--allow-unrelated-histories',
+        `--merge-base=${baseline.commit}`, head, target.commit]);
+    if (merge.status === 1) throw new Error(`Resolve these merge conflicts before updating:\n${merge.stdout.trim().split(/\r?\n/).slice(1).filter(Boolean).join('\n')}`);
+    const merged = output(merge, 'Three-way merge');
+    if (showJson(root, merged, 'release.json').version !== target.version || showJson(root, merged, 'package.json').version !== target.version) {
+        throw new Error('The merged source does not declare the target version.');
+    }
+    const previous = migrationFiles(root, head);
+    const next = migrationFiles(root, merged);
+    if (previous.some((entry, index) => entry !== next[index])) throw new Error('The update would rewrite or reorder existing migrations. Review the migration history manually.');
+
+    const directory = mkdtempSync(join(tmpdir(), 'loginflare-update-'));
+    const options = { env: { GIT_INDEX_FILE: join(directory, 'index') } };
+    try {
+        readGit(root, ['read-tree', merged], options);
+        const contents = JSON.stringify({ tag: target.tag, commit: target.commit }, null, 4) + '\n';
+        const blob = readGit(root, ['hash-object', '-w', '--stdin'], { ...options, input: contents });
+        readGit(root, ['update-index', '--add', '--cacheinfo', `100644,${blob},${provenancePath}`], options);
+        return readGit(root, ['write-tree'], options);
+    } finally {
+        rmSync(join(directory, 'index'), { force: true });
+        rmdirSync(directory);
+    }
+}
+
+function remoteRelease(root, requested) {
+    if (requested && !releaseTag(requested)) throw new Error('Use a stable version tag such as v0.1.1.');
+    const suffix = requested ? `tags/${requested}` : 'latest';
+    const release = JSON.parse(output(command('gh', ['api', `repos/${upstreamRepository}/releases/${suffix}`], root), 'Reading the published upstream release'));
+    if (!releaseTag(release.tag_name) || (requested && requested !== release.tag_name) || release.draft || release.prerelease || !release.published_at) {
+        throw new Error('No matching published stable release was found.');
+    }
+    readGit(root, ['fetch', '--no-tags', `https://github.com/${upstreamRepository}.git`, `refs/tags/${release.tag_name}`]);
+    const commit = readGit(root, ['rev-parse', 'FETCH_HEAD^{commit}']);
+    const provenance = JSON.parse(output(command('gh', ['release', 'download', release.tag_name, '--repo', upstreamRepository, '--pattern', 'provenance.json', '--output', '-'], root), 'Reading upstream provenance'));
+    return verifyRelease(release, provenance, commit, showJson(root, commit, 'release.json'));
+}
+
+function findPullRequest(root, repository, branch) {
+    const result = command('gh', ['pr', 'list', '--repo', repository, '--base', 'main', '--head', branch, '--state', 'all', '--json', 'url,state', '--limit', '2'], root);
+    return JSON.parse(output(result, 'Checking for an existing upgrade pull request'))[0];
+}
+
+function pushBranch(root, repository, commit, branch) {
+    const pushed = git(root, ['push', `https://github.com/${repository}.git`, `${commit}:refs/heads/${branch}`]);
+    if (pushed.status === 0) return;
+    if (/workflow.*refus|refus.*workflow|workflow.*permission/i.test(pushed.stderr ?? '')) {
+        throw new Error('GitHub denied writing workflow files. Merge the fixed upstream tag into a review branch using an authorized maintainer account.');
+    }
+    throw new Error('GitHub could not create the upgrade branch. Check repository permissions and the existing branch before retrying.');
+}
+
+function createPullRequest(root, repository, branch, title, body) {
+    const created = command('gh', ['pr', 'create', '--repo', repository, '--base', 'main', '--head', branch, '--title', title, '--body-file', '-'], root, { input: body });
+    return created.status === 0 ? created.stdout.trim() : null;
+}
+
+export function prepareUpdate(root, repository, requested = '', {
+    getRelease = remoteRelease, find = findPullRequest, push = pushBranch, create = createPullRequest,
+    getRefs = (root, branch) => readGit(root, ['ls-remote', 'origin', 'refs/heads/main', `refs/heads/${branch}`]),
+} = {}) {
+    const origin = readGit(root, ['config', '--get', 'remote.origin.url']);
+    if (!updateRepository(repository) || origin.replace(/\.git$/i, '').toLowerCase() !== `https://github.com/${repository}`.toLowerCase()) {
+        throw new Error('Run this workflow from the downstream GitHub repository.');
+    }
+    const head = readGit(root, ['rev-parse', 'HEAD']);
+    const local = showJson(root, head, 'release.json');
+    if (!stableVersion(local.version)) throw new Error('The installation does not declare a stable version.');
+    const target = getRelease(root, requested);
+    if (!newerVersion(target.version, local.version)) return `No newer stable release than v${local.version}.`;
+    const branch = `loginflare-update/${target.tag}`;
+    const existing = find(root, repository, branch);
+    if (existing) return `An update pull request already exists (${existing.state}): ${existing.url}`;
+    const baseline = getRelease(root, `v${local.version}`);
+    const tree = candidateTree(root, head, baseline, target);
+    const previousNames = new Set(baseline.migrations.map(({ name }) => name));
+    const pending = target.migrations.filter(({ name }) => !previousNames.has(name));
+
+    const refs = getRefs(root, branch);
+    const remote = new Map(refs.split(/\r?\n/).map((line) => line.split(/\t/).reverse()));
+    if (remote.get('refs/heads/main') !== head) throw new Error('Downstream main has advanced. Run Prepare Loginflare update again.');
+    if (remote.has(`refs/heads/${branch}`)) {
+        readGit(root, ['fetch', '--no-tags', 'origin', `refs/heads/${branch}`]);
+        const [previousTree, parent] = readGit(root, ['rev-parse', 'FETCH_HEAD^{tree}', 'FETCH_HEAD^']).split(/\r?\n/);
+        if (previousTree !== tree || parent !== head) {
+            throw new Error('The existing upgrade branch contains other changes. Review it before retrying.');
+        }
+    } else {
+        const bot = { GIT_AUTHOR_NAME: 'github-actions[bot]', GIT_AUTHOR_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com',
+            GIT_COMMITTER_NAME: 'github-actions[bot]', GIT_COMMITTER_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com' };
+        const commit = readGit(root, ['-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', head, '-m', `chore: update Loginflare to ${target.tag}`], { env: bot });
+        push(root, repository, commit, branch);
+    }
+
+    const body = [`Update Loginflare from ${baseline.tag} to [${target.tag}](https://github.com/${upstreamRepository}/releases/tag/${target.tag}).`,
+        '', `Upstream source: ${target.commit}`, '', 'Official migrations in this update:',
+        ...(pending.length ? pending.map(({ name }) => `- ${name}`) : ['- None']), '',
+        'Review the changes and run the downstream checks before merging. GitHub may require approval for the CI run. Merging into main publishes through the existing Workers Builds configuration.'].join('\n');
+    const url = create(root, repository, branch, `Update Loginflare to ${target.tag}`, body);
+    if (url) return url;
+    const found = find(root, repository, branch);
+    if (!found) throw new Error('The branch is ready. Allow GitHub Actions to create pull requests in repository settings, then run the workflow again.');
+    return found.url;
+}
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+    try { console.log(prepareUpdate(process.cwd(), process.env.GITHUB_REPOSITORY, (process.env.LOGINFLARE_TARGET_TAG ?? '').trim())); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+}

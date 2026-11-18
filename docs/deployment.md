@@ -6,7 +6,7 @@ For optional direct R2 image delivery, see [Public image delivery](public-media.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/CQMHV/loginflare)
 
-Use the button for a new repository, or import your existing organization repository in **Workers & Pages → Create application → Import a repository**. In either case, select `main`, leave the root at the repository root, and use `pnpm build:deploy` and `pnpm run deploy`. Leave preview builds disabled for this Worker. Cloudflare assigns the resource IDs. The release creates or binds D1 and two private R2 buckets, one for assets and one for instance keys.
+Use the button to create a repository and connect it to Workers Builds. Accept the detected build and deploy commands. For an existing repository, import it through **Workers & Pages → Create application → Import a repository**, select `main`, and keep the repository root. Set the build command to `pnpm run build` and the deploy command to `pnpm run deploy`. These commands run the same deployment build and release checks as the deployment button. Preview builds can stay disabled. Cloudflare assigns the resource IDs. The release creates or binds D1 and two private R2 buckets, one for assets and one for instance keys.
 
 You need an active Cloudflare zone for your login hostname, R2 enabled, and Workers Paid with [Email Sending](https://developers.cloudflare.com/email-service/) for real delivery.
 
@@ -25,7 +25,7 @@ Default bucket names derive from the full Worker name. Names that would exceed R
 
 ### When setup needs attention
 
-The installation page shows the current step, recovery guidance and a diagnostic code. Keep it open to check progress automatically. After a configuration correction, setup checks existing resources before continuing. Check the three secrets above under the Worker's **Settings → Variables and Secrets**; do not enter the token in a web form, build variables or Git.
+The installation page shows the current step, recovery guidance and a diagnostic code. Keep it open to check progress automatically. After a configuration correction, setup checks existing resources before continuing. Check the three secrets above under the Worker's **Settings → Variables and Secrets**. Keep `CF_SETUP_TOKEN` in the Cloudflare Worker secrets for this installation only.
 
 | Page guidance | Next step |
 | --- | --- |

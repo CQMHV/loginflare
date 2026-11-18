@@ -6,7 +6,17 @@ The upstream repository maintains source, CI and releases; it does not deploy an
 
 ## Follow a version
 
-The version being prepared is **0.2.0**. Supported sources have managed release records and private instance storage: the 23-migration baseline `aa10563825c7d7669e8be6d0ebab6aa35c84acf4` and the 27-migration baseline `3d721f99ee7de2cbf9471df298263fec9c9fb6a9`. A tag cannot be used before it is released. Once available, select an exact upstream version rather than a moving `latest`.
+The first official release is **0.1.0**. Supported sources have managed release records and private instance storage: the 23-migration baseline `aa10563825c7d7669e8be6d0ebab6aa35c84acf4` and the 27-migration baseline `3d721f99ee7de2cbf9471df298263fec9c9fb6a9`. Older source used the same version number. Identify an installation by its Git commit and migration ledger. Select a fixed tag after the upstream release is published.
+
+## Prepare an update from the admin console
+
+**Version updates** shows the installed version and the latest upstream release. Select **Prepare update on GitHub**, choose downstream `main`, then select **Run workflow**. Enter the version tag shown in the console, or leave it blank for the latest stable release at the time of the run. The workflow creates a pull request for review. Merging triggers deployment.
+
+For first use, enable GitHub Actions in the downstream repository and select **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. Approve CI for the bot pull request if GitHub prompts you. The Worker reads public release information and needs no GitHub credential. If the build cannot detect the GitHub repository, set `LOGINFLARE_UPDATE_REPOSITORY` to `owner/repo` in the Wrangler `vars` used by the build.
+
+The workflow verifies the published tag and provenance before merging the version delta. If it reports conflicts, a changed migration order, an unknown baseline or denied workflow-file changes, use a review branch to merge the same tag manually. If the branch exists but PR creation was blocked, correct the repository setting and rerun. Review downstream CI results and instance preflight before merging.
+
+## Synchronize manually
 
 1. Merge the selected upstream version into a development branch. Preserve downstream source, branding, deployment settings and migrations. Resolve conflicts and run `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm test:upgrade` and `pnpm test:e2e`.
 2. Optionally run the read-only remote preflight below. Retain a D1 Time Travel recovery point and confirm that the original PRIVATE and AVATARS buckets remain recoverable. These tools do not export accounts or keys.
@@ -52,7 +62,7 @@ Local `apply` exercises database release only: it does not start or publish a Wo
 
 ## Migrations and Fork changes
 
-`release.json` pins official version and migration digests. `migrations/online.json` records reviewed compatible online migrations. For 0.2.0, applying 0024–0027 was tested with the 23-migration Worker still serving password login, retained sessions, OIDC PKCE, UserInfo and refresh tokens. The 27-migration baseline passed the same regression. `scripts/upgrade-compatibility.mjs` maintains this evidence; it does not certify arbitrary downstream source changes.
+`release.json` pins official version and migration digests. `migrations/online.json` records reviewed compatible online migrations. For 0.1.0, applying 0024–0027 was tested with the 23-migration Worker still serving password login, retained sessions, OIDC PKCE, UserInfo and refresh tokens. The 27-migration baseline passed the same regression. `scripts/upgrade-compatibility.mjs` maintains this evidence. Deeply customized forks require their own validation.
 
 Keep downstream migration names, digests and approvals intact. The acceptance-only `0024_acceptance_probe.sql`, for example, is not official. Append new custom migrations to the complete history, test representative data with your own previous Worker, and register their SHA-256 approvals. Conflicting order or modified applied files block publication; tools do not rename, reorder or delete history. Unreviewed or incompatible changes need a separate maintenance procedure.
 

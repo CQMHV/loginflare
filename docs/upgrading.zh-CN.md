@@ -6,7 +6,17 @@
 
 ## 同步目标版本
 
-本轮准备的版本为 **0.2.0**，支持具有发布记录和私有实例存储的 23 项迁移基线（`aa10563825c7d7669e8be6d0ebab6aa35c84acf4`）及 27 项迁移基线（`3d721f99ee7de2cbf9471df298263fec9c9fb6a9`）。尚未发行的标签不能用于同步；维护者完成发行后，从上游选择固定版本，不使用含义变化的 `latest`。
+首个正式版本为 **0.1.0**，支持具有发布记录和私有实例存储的 23 项迁移基线（`aa10563825c7d7669e8be6d0ebab6aa35c84acf4`）及 27 项迁移基线（`3d721f99ee7de2cbf9471df298263fec9c9fb6a9`）。旧源码曾使用相同版本号，升级时按真实 Git 提交和迁移账本识别。维护者完成发行后，从上游选择固定标签。
+
+## 从管理台准备更新
+
+管理台的「版本更新」显示当前版本和上游最新正式版本。发现更新后，点「前往 GitHub 准备更新」，选择下游 `main`，再点 **Run workflow**。可以填写看到的版本标签，留空时使用运行时最新的正式版本。工作流准备一条供审阅的 PR，合并后才会触发正式部署。
+
+首次使用时，在下游仓库启用 GitHub Actions 和 **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**。若 GitHub 要求批准机器人 PR 的检查，请按 PR 提示执行。Worker 只读公开发行信息，无需配置 GitHub 令牌。默认从构建仓库读取 GitHub 地址，无法识别时可在构建使用的 Wrangler `vars` 中设置 `LOGINFLARE_UPDATE_REPOSITORY` 为 `owner/repo`。
+
+升级工作流核对已发布的上游标签及来源记录，再合并新旧版本之间的差异。遇到冲突、迁移顺序变化、无法确认来源或 GitHub 阻止更新工作流文件时，按运行日志在审阅分支手动同步相同标签。若已创建更新分支但 PR 创建被仓库策略阻止，修正权限后重跑即可。合并前检查下游 CI 和实例预检。
+
+## 手动同步
 
 1. 将上游目标版本合入自己的开发分支，保留品牌、自有源码、部署配置和迁移。解决冲突后运行 `pnpm install --frozen-lockfile`、`pnpm check`、`pnpm test:upgrade` 和 `pnpm test:e2e`。
 2. 如需提前检查远程实例，使用下文的只读工具。更新前保留 D1 Time Travel 恢复点，并确认原 PRIVATE 和 AVATARS 桶仍可恢复；工具不会导出账号数据或密钥。
@@ -52,7 +62,7 @@ pnpm upgrade:verify --local --state work/upgrade-demo
 
 ## 迁移与自有修改
 
-`release.json` 固定官方版本和迁移摘要，`migrations/online.json` 登记审核过的在线兼容迁移。0.2.0 已验证 0024–0027 执行后，23 项基线旧 Worker 的密码登录、原会话、OIDC PKCE、UserInfo 和刷新令牌仍可用；当前 27 项基线也通过相同回归。该证据由 `scripts/upgrade-compatibility.mjs` 持续验证，不代表任意深度修改的 Fork 都兼容。
+`release.json` 固定官方版本和迁移摘要，`migrations/online.json` 登记审核过的在线兼容迁移。0.1.0 已验证 0024–0027 执行后，23 项基线旧 Worker 的密码登录、原会话、OIDC PKCE、UserInfo 和刷新令牌仍可用；当前 27 项基线也通过相同回归。该证据由 `scripts/upgrade-compatibility.mjs` 持续验证，深度修改的 Fork 需要单独验证。
 
 下游自有迁移保留原名称、摘要和审批记录；例如验收环境的 `0024_acceptance_probe.sql` 不属于官方迁移。新增自有迁移须追加到完整历史，并在代表性数据及自己的上一版 Worker 验证后登记 SHA-256。顺序冲突或已执行文件被改动时发布阻断，不会自动重排、改名或删除记录。未经审核或不兼容的变更另走维护流程。
 

@@ -3,6 +3,7 @@ import { createAuth } from './auth';
 import type { Env } from './config';
 import { PaginationError, pageBoundary, pageResult, readPageInput } from './pagination';
 import { databaseRateLimit } from './rate-limit';
+import { readUpdateStatus } from './releases';
 
 type Auth = ReturnType<typeof createAuth>;
 type Identity = NonNullable<Awaited<ReturnType<Auth['api']['getSession']>>>;
@@ -25,7 +26,9 @@ const authorize: MiddlewareHandler<ManagementEnv> = async (c, next) => {
     await next();
 };
 management.use('/admin/users', authorize);
+management.use('/admin/updates', authorize);
 management.use('/account/sessions', authorize);
+management.get('/admin/updates', async (c) => c.json(await readUpdateStatus(c.env)));
 
 interface UserRow { id: string; name: string; username: string | null; image: string | null; email: string; emailVerified: number; role: string | null; banned: number | null; createdAt: string }
 management.get('/admin/users', async (c) => {

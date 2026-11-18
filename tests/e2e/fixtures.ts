@@ -1,5 +1,6 @@
 import { expect, test as base, type APIRequestContext, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
+import type { UpdateStatus } from '../../src/shared/releases';
 import { testOrigin } from './runtime';
 
 /** Test-only browser emulation; production still validates the real server-side challenge. */
@@ -47,6 +48,13 @@ export async function installOfflineRoutes(context: BrowserContext) {
 export const test = base.extend({
     context: async ({ context }, use) => { await installOfflineRoutes(context); await use(context); },
 });
+
+export async function mockAdminUpdates(context: BrowserContext) {
+    const update: UpdateStatus = { currentVersion: '0.0.0', currentCommit: null, status: 'unpublished',
+        availableVersion: null, releaseUrl: null, actionUrl: null };
+    await context.route(`${testOrigin}/api/admin/updates`, (route) => route.fulfill({ json: update }));
+}
+
 export async function openNavigation(page: Page) {
     await expect(page.locator('.sidebar')).toBeVisible();
     const toggle = page.locator('.mobile-navigation button');
