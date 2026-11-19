@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.1
+
+- Create downstream upgrade commits as `github-actions[bot]` with GitHub's Verified signature. Verify the commit's signature, source tree, and downstream parent before opening or reusing the upgrade PR.
+- Installations on 0.1.0 can use a maintainer-signed review branch to adopt the updated workflow code before using bot-signed upgrades. This release adds no database migrations.
+
 ## 0.1.0
 
 - Use the same release build for the Cloudflare deployment button and explicit production builds. Complete first-admin setup through the installation page.
