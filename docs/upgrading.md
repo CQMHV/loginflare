@@ -14,7 +14,9 @@ The first official release is **0.1.0**. Supported sources have managed release 
 
 For first use, enable GitHub Actions in the downstream repository and select **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. Approve CI for the bot pull request if GitHub prompts you. The Worker reads public release information and needs no GitHub credential. If the build cannot detect the GitHub repository, set `LOGINFLARE_UPDATE_REPOSITORY` to `owner/repo` in the Wrangler `vars` used by the build.
 
-The workflow verifies the published tag and provenance before merging the version delta. If it reports conflicts, a changed migration order, an unknown baseline or denied workflow-file changes, use a review branch to merge the same tag manually. If the branch exists but PR creation was blocked, correct the repository setting and rerun. Review downstream CI results and instance preflight before merging.
+The workflow verifies the published tag and provenance before merging the version delta. GitHub creates and signs the upgrade commit as `github-actions[bot]` using the workflow token. Before creating a PR, the workflow checks that GitHub verified the signature, the commit contains the reviewed files, and its parent is the checked downstream `main` commit. A rerun can reuse a branch that passes the same checks.
+
+If the workflow reports a conflict, a changed migration history, an unknown baseline, unsupported Git file changes or denied workflow-file changes, merge the same tag manually in a signed review branch. If verification fails for an existing upgrade branch, review that branch before retrying. If the branch passes verification but PR creation was blocked, correct the repository setting and rerun. Review downstream CI results and instance preflight before merging.
 
 ## Synchronize manually
 

@@ -14,7 +14,9 @@
 
 首次使用时，在下游仓库启用 GitHub Actions 和 **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**。若 GitHub 要求批准机器人 PR 的检查，请按 PR 提示执行。Worker 只读公开发行信息，无需配置 GitHub 令牌。默认从构建仓库读取 GitHub 地址，无法识别时可在构建使用的 Wrangler `vars` 中设置 `LOGINFLARE_UPDATE_REPOSITORY` 为 `owner/repo`。
 
-升级工作流核对已发布的上游标签及来源记录，再合并新旧版本之间的差异。遇到冲突、迁移顺序变化、无法确认来源或 GitHub 阻止更新工作流文件时，按运行日志在审阅分支手动同步相同标签。若已创建更新分支但 PR 创建被仓库策略阻止，修正权限后重跑即可。合并前检查下游 CI 和实例预检。
+升级工作流核对已发布的上游标签及来源记录，再合并新旧版本之间的差异。GitHub 通过工作流令牌，以 `github-actions[bot]` 的身份创建并签名。创建 PR 前，工作流核对 GitHub 签名验证结果、提交内容和对应的下游 `main` 父提交。重跑时可以复用通过相同核对的更新分支。
+
+遇到冲突、迁移历史变化、无法确认来源、签名接口无法表示的 Git 文件变更，或 GitHub 阻止更新工作流文件时，在签名的审阅分支手动同步相同标签。如果现有更新分支验签失败，先审阅该分支再重试。若更新分支已经通过验签，但 PR 创建被仓库策略阻止，修正权限后重跑即可。合并前检查下游 CI 和实例预检。
 
 ## 手动同步
 
