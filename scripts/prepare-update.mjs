@@ -6,12 +6,13 @@ import { pathToFileURL } from 'node:url';
 import { newerVersion, stableVersion, updateRepository, upstreamRepository } from '../src/shared/releases.ts';
 
 const provenancePath = '.loginflare-upstream.json';
+const actionsBot = 'github-actions[bot]';
 const hash = /^[a-f0-9]{40}$/;
 const releaseTag = (value) => typeof value === 'string' && value.startsWith('v') && stableVersion(value.slice(1));
 
-function command(program, args, cwd, options = {}) {
-    return spawnSync(program, args, { cwd, encoding: 'utf8', timeout: 120_000, maxBuffer: 8 * 1024 * 1024,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...options.env }, input: options.input });
+function command(program, args, cwd, { encoding = 'utf8', maxBuffer = 8 * 1024 * 1024, env, input } = {}) {
+    return spawnSync(program, args, { cwd, encoding, timeout: 120_000, maxBuffer,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env }, input });
 }
 
 function output(result, description) {
@@ -103,13 +104,74 @@ function findPullRequest(root, repository, branch) {
     return JSON.parse(output(result, 'Checking for an existing upgrade pull request'))[0];
 }
 
-function pushBranch(root, repository, commit, branch) {
-    const pushed = git(root, ['push', `https://github.com/${repository}.git`, `${commit}:refs/heads/${branch}`]);
-    if (pushed.status === 0) return;
-    if (/workflow.*refus|refus.*workflow|workflow.*permission/i.test(pushed.stderr ?? '')) {
-        throw new Error('GitHub denied writing workflow files. Merge the fixed upstream tag into a review branch using an authorized maintainer account.');
+function githubApi(root, endpoint, { body, jq } = {}) {
+    const args = ['api', endpoint];
+    if (body) args.push('--method', 'POST', '--input', '-');
+    if (jq) args.push('--jq', jq);
+    const response = command('gh', args, root, { input: body && JSON.stringify(body) });
+    if (response.status !== 0 && /workflow.*(refus|permission)|refus.*workflow/i.test(response.stderr ?? '')) {
+        throw new Error('GitHub denied writing workflow files. Merge the fixed upstream tag in a signed review branch using an authorized maintainer account.');
     }
-    throw new Error('GitHub could not create the upgrade branch. Check repository permissions and the existing branch before retrying.');
+    return JSON.parse(output(response, `GitHub ${endpoint}`));
+}
+
+function fileChanges(root, head, tree) {
+    const result = git(root, ['diff-tree', '-r', '--no-commit-id', '--raw', '--no-renames', '--no-abbrev', '-z', head, tree], { encoding: null });
+    if (result.status !== 0) throw new Error('Could not read the update diff.');
+    const entries = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(result.stdout).split('\0');
+    const additions = [], deletions = [];
+    for (let index = 0; index < entries.length - 1; index += 2) {
+        const [oldMode, newMode, , blob, status] = entries[index].slice(1).split(' ');
+        const path = entries[index + 1];
+        if (status === 'D') {
+            deletions.push({ path });
+            continue;
+        }
+        if (!['A', 'M'].includes(status) || newMode !== '100644' || !['000000', '100644'].includes(oldMode)) {
+            throw new Error(`GitHub's signing API cannot reproduce the file type or mode for ${path}. Merge the fixed upstream tag in a signed review branch.`);
+        }
+        const contents = git(root, ['cat-file', 'blob', blob], { encoding: null, maxBuffer: 128 * 1024 * 1024 });
+        if (contents.status !== 0) throw new Error(`Could not read the update file ${path}.`);
+        additions.push({ path, contents: contents.stdout.toString('base64') });
+    }
+    return { additions, deletions };
+}
+
+function createSignedCommit(root, api, repository, branch, head, changes, tag) {
+    const query = `mutation ($input: CreateCommitOnBranchInput!) {
+        createCommitOnBranch(input: $input) { commit { oid } }
+    }`;
+    const input = { branch: { repositoryNameWithOwner: repository, branchName: branch }, expectedHeadOid: head,
+        message: { headline: `chore: update Loginflare to ${tag}` }, fileChanges: changes };
+    const response = api(root, 'graphql', { body: { query, variables: { input } } });
+    const oid = response.data?.createCommitOnBranch?.commit?.oid;
+    if (response.errors?.length || !hash.test(oid)) throw new Error('GitHub did not confirm creation of the signed update commit. Check the update branch before retrying.');
+    return oid;
+}
+
+function verifySignedCommit(root, api, repository, commit, head, tree) {
+    const [owner, name] = repository.split('/');
+    const query = `query ($owner: String!, $name: String!, $oid: GitObjectID!) {
+        repository(owner: $owner, name: $name) {
+            object(oid: $oid) { ... on Commit {
+                oid
+                tree { oid }
+                parents(first: 2) { nodes { oid } }
+                signature { isValid wasSignedByGitHub }
+            } }
+        }
+    }`;
+    const response = api(root, 'graphql', { body: { query, variables: { owner, name, oid: commit } } });
+    const object = response.data?.repository?.object;
+    if (response.errors?.length || object?.oid !== commit || object.tree?.oid !== tree
+        || object.parents?.nodes?.length !== 1 || object.parents.nodes[0]?.oid !== head) {
+        throw new Error('The upgrade branch does not match the expected source and parent. Review it before retrying.');
+    }
+    const actor = api(root, `repos/${repository}/commits/${commit}?per_page=1`, { jq: '{login:.author.login,type:.author.type}' });
+    if (object.signature?.isValid !== true || object.signature.wasSignedByGitHub !== true
+        || actor.login !== actionsBot || actor.type !== 'Bot') {
+        throw new Error('The upgrade commit lacks a Verified GitHub Actions signature. Review the branch before retrying.');
+    }
 }
 
 function createPullRequest(root, repository, branch, title, body) {
@@ -118,7 +180,7 @@ function createPullRequest(root, repository, branch, title, body) {
 }
 
 export function prepareUpdate(root, repository, requested = '', {
-    getRelease = remoteRelease, find = findPullRequest, push = pushBranch, create = createPullRequest,
+    getRelease = remoteRelease, find = findPullRequest, api = githubApi, create = createPullRequest,
     getRefs = (root, branch) => readGit(root, ['ls-remote', 'origin', 'refs/heads/main', `refs/heads/${branch}`]),
 } = {}) {
     const origin = readGit(root, ['config', '--get', 'remote.origin.url']);
@@ -138,20 +200,20 @@ export function prepareUpdate(root, repository, requested = '', {
     const previousNames = new Set(baseline.migrations.map(({ name }) => name));
     const pending = target.migrations.filter(({ name }) => !previousNames.has(name));
 
-    const refs = getRefs(root, branch);
-    const remote = new Map(refs.split(/\r?\n/).map((line) => line.split(/\t/).reverse()));
+    const readRefs = () => new Map(getRefs(root, branch).split(/\r?\n/).map((line) => line.split(/\t/).reverse()));
+    const remote = readRefs();
     if (remote.get('refs/heads/main') !== head) throw new Error('Downstream main has advanced. Run Prepare Loginflare update again.');
-    if (remote.has(`refs/heads/${branch}`)) {
-        readGit(root, ['fetch', '--no-tags', 'origin', `refs/heads/${branch}`]);
-        const [previousTree, parent] = readGit(root, ['rev-parse', 'FETCH_HEAD^{tree}', 'FETCH_HEAD^']).split(/\r?\n/);
-        if (previousTree !== tree || parent !== head) {
-            throw new Error('The existing upgrade branch contains other changes. Review it before retrying.');
-        }
-    } else {
-        const bot = { GIT_AUTHOR_NAME: 'github-actions[bot]', GIT_AUTHOR_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com',
-            GIT_COMMITTER_NAME: 'github-actions[bot]', GIT_COMMITTER_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com' };
-        const commit = readGit(root, ['-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', head, '-m', `chore: update Loginflare to ${target.tag}`], { env: bot });
-        push(root, repository, commit, branch);
+    const ref = `refs/heads/${branch}`;
+    let commit = remote.get(ref);
+    if (!commit || commit === head) {
+        const changes = fileChanges(root, head, tree);
+        if (!commit) api(root, `repos/${repository}/git/refs`, { body: { ref, sha: head } });
+        commit = createSignedCommit(root, api, repository, branch, head, changes, target.tag);
+    }
+    verifySignedCommit(root, api, repository, commit, head, tree);
+    const checked = readRefs();
+    if (checked.get('refs/heads/main') !== head || checked.get(ref) !== commit) {
+        throw new Error('The downstream main or signed upgrade branch moved during verification. Rerun the update workflow.');
     }
 
     const body = [`Update Loginflare from ${baseline.tag} to [${target.tag}](https://github.com/${upstreamRepository}/releases/tag/${target.tag}).`,

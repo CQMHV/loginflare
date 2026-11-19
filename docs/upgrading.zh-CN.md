@@ -6,6 +6,8 @@
 
 ## 同步目标版本
 
+**0.1.1** 起，GitHub 会为更新机器人生成的提交代签，本次没有新增数据库迁移。从 0.1.0 启用签名自动更新时，先在维护者签名的审阅分支上[手动同步 v0.1.1](#手动同步)。合并该 PR 后，下游默认分支上的工作流就会使用新版脚本。
+
 首个正式版本为 **0.1.0**，支持具有发布记录和私有实例存储的 23 项迁移基线（`aa10563825c7d7669e8be6d0ebab6aa35c84acf4`）及 27 项迁移基线（`3d721f99ee7de2cbf9471df298263fec9c9fb6a9`）。旧源码曾使用相同版本号，升级时按真实 Git 提交和迁移账本识别。维护者完成发行后，从上游选择固定标签。
 
 ## 从管理台准备更新
@@ -14,11 +16,13 @@
 
 首次使用时，在下游仓库启用 GitHub Actions 和 **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**。若 GitHub 要求批准机器人 PR 的检查，请按 PR 提示执行。Worker 只读公开发行信息，无需配置 GitHub 令牌。默认从构建仓库读取 GitHub 地址，无法识别时可在构建使用的 Wrangler `vars` 中设置 `LOGINFLARE_UPDATE_REPOSITORY` 为 `owner/repo`。
 
-升级工作流核对已发布的上游标签及来源记录，再合并新旧版本之间的差异。遇到冲突、迁移顺序变化、无法确认来源或 GitHub 阻止更新工作流文件时，按运行日志在审阅分支手动同步相同标签。若已创建更新分支但 PR 创建被仓库策略阻止，修正权限后重跑即可。合并前检查下游 CI 和实例预检。
+升级工作流核对已发布的上游标签及来源记录，再合并新旧版本之间的差异。GitHub 通过工作流令牌，以 `github-actions[bot]` 的身份创建并签名。创建 PR 前，工作流核对 GitHub 签名验证结果、提交内容和对应的下游 `main` 父提交。重跑时可以复用通过相同核对的更新分支。
+
+遇到冲突、迁移历史变化、无法确认来源、签名接口无法表示的 Git 文件变更，或 GitHub 阻止更新工作流文件时，在签名的审阅分支手动同步相同标签。如果现有更新分支验签失败，先审阅该分支再重试。若更新分支已经通过验签，但 PR 创建被仓库策略阻止，修正权限后重跑即可。合并前检查下游 CI 和实例预检。
 
 ## 手动同步
 
-1. 将上游目标版本合入自己的开发分支，保留品牌、自有源码、部署配置和迁移。解决冲突后运行 `pnpm install --frozen-lockfile`、`pnpm check`、`pnpm test:upgrade` 和 `pnpm test:e2e`。
+1. 将上游目标版本合入自己的开发分支并签名合并提交，保留品牌、自有源码、部署配置和迁移。解决冲突后运行 `pnpm install --frozen-lockfile`、`pnpm check`、`pnpm test:upgrade` 和 `pnpm test:e2e`。
 2. 如需提前检查远程实例，使用下文的只读工具。更新前保留 D1 Time Travel 恢复点，并确认原 PRIVATE 和 AVATARS 桶仍可恢复；工具不会导出账号数据或密钥。
 3. 合入下游 `main` 即接受此次更新，Workers Builds 自动执行 `pnpm build:deploy` 和 `pnpm run deploy`。构建校验所选配置。发布核对实例、历史和资源，取得锁后迁移并发布。运维回归由 GitHub CI 和 `pnpm check` 执行。
 4. 确认构建成功且发布阶段为 `verified`。已有账号服务须由目标构建返回健康的 readiness；首次安装只验证目标构建存活，之后按安装页面完成配置。

@@ -6,6 +6,8 @@ The upstream repository maintains source, CI and releases; it does not deploy an
 
 ## Follow a version
 
+Version **0.1.1** adds GitHub-signed update commits with no database migrations. To adopt signed automation from 0.1.0, [synchronize v0.1.1 manually](#synchronize-manually) in a maintainer-signed review branch. The workflow on the downstream default branch uses the updated script after that PR is merged.
+
 The first official release is **0.1.0**. Supported sources have managed release records and private instance storage: the 23-migration baseline `aa10563825c7d7669e8be6d0ebab6aa35c84acf4` and the 27-migration baseline `3d721f99ee7de2cbf9471df298263fec9c9fb6a9`. Older source used the same version number. Identify an installation by its Git commit and migration ledger. Select a fixed tag after the upstream release is published.
 
 ## Prepare an update from the admin console
@@ -14,11 +16,13 @@ The first official release is **0.1.0**. Supported sources have managed release 
 
 For first use, enable GitHub Actions in the downstream repository and select **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. Approve CI for the bot pull request if GitHub prompts you. The Worker reads public release information and needs no GitHub credential. If the build cannot detect the GitHub repository, set `LOGINFLARE_UPDATE_REPOSITORY` to `owner/repo` in the Wrangler `vars` used by the build.
 
-The workflow verifies the published tag and provenance before merging the version delta. If it reports conflicts, a changed migration order, an unknown baseline or denied workflow-file changes, use a review branch to merge the same tag manually. If the branch exists but PR creation was blocked, correct the repository setting and rerun. Review downstream CI results and instance preflight before merging.
+The workflow verifies the published tag and provenance before merging the version delta. GitHub creates and signs the upgrade commit as `github-actions[bot]` using the workflow token. Before creating a PR, the workflow checks that GitHub verified the signature, the commit contains the reviewed files, and its parent is the checked downstream `main` commit. A rerun can reuse a branch that passes the same checks.
+
+If the workflow reports a conflict, a changed migration history, an unknown baseline, unsupported Git file changes or denied workflow-file changes, merge the same tag manually in a signed review branch. If verification fails for an existing upgrade branch, review that branch before retrying. If the branch passes verification but PR creation was blocked, correct the repository setting and rerun. Review downstream CI results and instance preflight before merging.
 
 ## Synchronize manually
 
-1. Merge the selected upstream version into a development branch. Preserve downstream source, branding, deployment settings and migrations. Resolve conflicts and run `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm test:upgrade` and `pnpm test:e2e`.
+1. Merge the selected upstream version into a development branch and sign the merge commit. Preserve downstream source, branding, deployment settings and migrations. Resolve conflicts and run `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm test:upgrade` and `pnpm test:e2e`.
 2. Optionally run the read-only remote preflight below. Retain a D1 Time Travel recovery point and confirm that the original PRIVATE and AVATARS buckets remain recoverable. These tools do not export accounts or keys.
 3. Merging into downstream `main` accepts the update. Workers Builds runs `pnpm build:deploy` and `pnpm run deploy`. The build validates the selected configuration. Publication checks resource ownership and history, takes the release lock, migrates and publishes. Operations regression tests run in GitHub CI and through `pnpm check`.
 4. Confirm a successful build and the `verified` publication stage. An installed service must return readiness from the intended build; an initial installation checks that build's liveness before the operator completes setup.
