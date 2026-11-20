@@ -105,7 +105,7 @@ for (const locale of ['en-us', 'zh-cn']) {
         await page.goto(`/${locale}/account/security`);
         const turnOff = zh ? '关闭双重验证' : 'Turn off two-factor authentication';
         await page.getByRole('button', { name: turnOff, exact: true }).click();
-        const dialog = page.locator('md-dialog');
+        const dialog = page.locator('dialog.app-dialog');
         await dialog.getByRole('textbox').fill('test-only-password');
         await dialog.getByRole('button', { name: zh ? '验证并继续' : 'Verify and continue', exact: true }).click();
         await expect(dialog.getByRole('button', { name: turnOff, exact: true })).toBeEnabled();
@@ -278,8 +278,8 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         await page.goto(`/${locale}/developer/applications/detail?clientId=${server.clientId}`);
         const rotate = page.getByRole('button', { name: chinese ? '轮换客户端密钥' : 'Rotate client secret', exact: true });
         await rotate.click();
-        await page.locator('md-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
-        const dialog = page.locator('md-dialog.form-dialog');
+        await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
+        const dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(dialog).toHaveCount(1);
         const secret = dialog.getByLabel(chinese ? '客户端密钥' : 'Client secret', { exact: true });
         await expect(secret).toHaveValue('test-only-one-time-application-secret');
@@ -656,7 +656,7 @@ test('requires successful server password confirmation before revealing password
     await expect(page.getByLabel('New password', { exact: true })).toHaveCount(0);
     await expect(page.getByLabel('Confirm password', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Change password', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await dialog.getByLabel('Current password', { exact: true }).fill('wrong-test-password');
     await dialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
     await expect(dialog.getByRole('alert')).toBeVisible();
@@ -695,7 +695,7 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     await openNavigation(page);
     await page.getByRole('link', { name: 'Security', exact: true }).click();
     await page.getByRole('button', { name: 'Change password', exact: true }).click();
-    const passwordDialog = page.locator('md-dialog.form-dialog');
+    const passwordDialog = page.locator('dialog.app-dialog.form-dialog');
     await passwordDialog.getByLabel('Current password', { exact: true }).fill('must-be-cleared');
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
     await expect(passwordDialog).toHaveCount(0);
@@ -714,13 +714,13 @@ test('keeps newer edits after saving and clears sensitive inputs on page departu
     await page.getByRole('link', { name: 'My applications', exact: true }).click();
     await page.getByRole('link', { name: 'Cache application', exact: true }).click();
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByLabel('Client secret', { exact: true })).toHaveValue('test-only-one-time-application-secret');
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
     await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
     server.state.writeGate = new Promise<void>((resolve) => { release = resolve; });
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect.poll(() => server.count(page, `/api/developer/applications/${server.clientId}/rotate-secret`, 'POST')).toBe(2);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
     release(); server.state.writeGate = undefined;

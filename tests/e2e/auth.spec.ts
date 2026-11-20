@@ -176,7 +176,7 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByLabel('新密码', { exact: true })).toHaveCount(0);
     await expect(page.getByLabel('确认密码', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: '修改密码', exact: true }).click();
-    const passwordDialog = page.locator('md-dialog.form-dialog');
+    const passwordDialog = page.locator('dialog.app-dialog.form-dialog');
     await passwordDialog.getByLabel('当前密码', { exact: true }).fill('Wrong-browser-password-917!');
     const rejectedPassword = page.waitForResponse((response) => response.url() === `${testOrigin}/api/auth/verify-password` && response.request().method() === 'POST');
     await passwordDialog.getByRole('button', { name: '验证并继续', exact: true }).click();
@@ -310,15 +310,15 @@ test('completes registration, recovery, account management, and administrator co
     await expect(page.getByRole('heading', { name: 'User details', exact: true })).toBeVisible();
     await page.getByLabel('Reason for suspension', { exact: true }).fill('Local browser-test fixture');
     await page.getByRole('button', { name: 'Suspend account', exact: true }).click();
-    const suspendDialog = page.locator('md-dialog.form-dialog');
+    const suspendDialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(suspendDialog).toBeVisible();
     // Actions are slotted light-DOM children of the Material Web host.
-    await page.locator('md-dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(suspendDialog).toHaveCount(0);
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Suspend account', exact: true }).click();
     await page.route('**/api/auth/admin/ban-user', (route) => route.fulfill({ status: 500, json: { code: 'INTERNAL_SERVER_ERROR' } }));
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(suspendDialog).toBeVisible();
     await expect(suspendDialog.getByRole('alert')).toBeVisible();
     await expect(page.locator('.page-content > [role="alert"]')).toHaveCount(0);
@@ -332,7 +332,7 @@ test('completes registration, recovery, account management, and administrator co
     await page.getByRole('button', { name: 'Restore account', exact: true }).click();
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Sign out all sessions', exact: true }).click();
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Account updated.');
 
     const administratorResponse = await page.request.get('/api/auth/get-session');

@@ -69,7 +69,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) test
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/${language}/admin/machines/roles`);
     await page.getByRole('button', { name: text.createRole, exact: true }).click();
-    let dialog = page.locator('md-dialog.form-dialog');
+    let dialog = page.locator('dialog.app-dialog.form-dialog');
     await dialog.getByLabel(text.roleName, { exact: true }).fill('Report reader');
     await dialog.getByRole('checkbox', { name: 'Orders · Read orders (orders:read)', exact: true }).check();
     await dialog.getByRole('checkbox', { name: text.managementPermission, exact: true }).check();
@@ -79,7 +79,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) test
     expect(fixture.roles[0].managementScopes).toEqual(['management:users:read']);
     await page.goto(`/${language}/admin/machines/applications`);
     await page.getByRole('button', { name: text.createApplication, exact: true }).click();
-    dialog = page.locator('md-dialog.form-dialog');
+    dialog = page.locator('dialog.app-dialog.form-dialog');
     await dialog.getByLabel(text.applicationName, { exact: true }).fill('duplicate');
     await dialog.getByRole('button', { name: text.createApplication, exact: true }).click();
     await expect(dialog.getByText(text.duplicate, { exact: true })).toBeVisible();
@@ -92,7 +92,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) test
     await expect(page).toHaveURL(new RegExp(`/${language}/admin/machines/applications/detail[?]clientId=`));
     await expect(page.getByLabel(text.secret, { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: text.assignRoles, exact: true }).click();
-    dialog = page.locator('md-dialog.form-dialog');
+    dialog = page.locator('dialog.app-dialog.form-dialog');
     await dialog.getByRole('checkbox', { name: 'Report reader', exact: true }).check();
     await dialog.getByRole('button', { name: text.save, exact: true }).click();
     await expect(page.getByText('orders:read', { exact: true })).toBeVisible();
@@ -100,7 +100,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) test
     await page.screenshot({ path: test.info().outputPath(`machine-application-${language}.png`), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('button', { name: text.rotate, exact: true }).click();
-    dialog = page.locator('md-dialog.form-dialog');
+    dialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(dialog.getByLabel(text.secret, { exact: true })).toHaveCount(0);
     await dialog.getByRole('button', { name: text.cancel, exact: true }).click();
     expect(fixture.state.secretNumber).toBe(1);
@@ -145,13 +145,13 @@ for (const language of ['en-us', 'zh-cn'] as const) {
         await page.screenshot({ path: test.info().outputPath(`service-api-guidance-${language}.png`), fullPage: true });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.getByRole('button', { name: chinese ? '分配服务角色' : 'Assign service roles', exact: true }).click();
-        let dialog = page.locator('md-dialog.form-dialog');
+        let dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(dialog.getByText(chinese ? /尚未创建服务角色，请先创建/ : /No service roles have been created/)).toBeVisible();
         await expect(dialog.getByRole('link', { name: chinese ? '打开服务角色' : 'Open service roles', exact: true })).toHaveAttribute('target', '_blank');
         await dialog.getByRole('button', { name: chinese ? '取消' : 'Cancel', exact: true }).click();
         await page.goto(`/${language}/admin/machines/roles`);
         await page.getByRole('button', { name: chinese ? '创建服务角色' : 'Create service role', exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(dialog.getByText(chinese ? /只调用管理 API 的服务/ : /A service that only calls the Management API/)).toBeVisible();
         const resources = dialog.getByRole('link', { name: chinese ? '打开 API 资源' : 'Open API resources', exact: true });
         await expect(resources).toHaveAttribute('href', `/${language}/admin/access/resources`);
@@ -166,7 +166,7 @@ for (const language of ['en-us', 'zh-cn'] as const) {
         await machineFixture(context);
         await page.goto(`/${language}/admin/machines/roles`);
         await page.getByRole('button', { name: chinese ? '创建服务角色' : 'Create service role', exact: true }).click();
-        const dialog = page.locator('md-dialog.form-dialog');
+        const dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel(chinese ? '查找 API 权限' : 'Find an API permission', { exact: true }).fill('No matching permission');
         await expect(dialog.getByText(chinese ? '没有匹配的 API 权限。' : 'No API permissions match.', { exact: true })).toBeVisible();
         await expect(dialog.getByRole('link', { name: chinese ? '打开 API 资源' : 'Open API resources', exact: true })).toHaveCount(0);
@@ -181,7 +181,7 @@ test('does not reveal a delayed machine secret after pagehide', async ({ page, c
         await page.getByRole('button', { name: 'Create service application', exact: true }).click();
         await page.getByLabel('Application name', { exact: true }).fill('Background service');
         const response = page.waitForResponse((response) => response.url().endsWith('/api/admin/machines/applications') && response.request().method() === 'POST');
-        await page.locator('md-dialog').getByRole('button', { name: 'Create service application', exact: true }).click();
+        await page.locator('dialog.app-dialog').getByRole('button', { name: 'Create service application', exact: true }).click();
         await expect.poll(() => fixture.writes.length).toBe(1);
         await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
         release(); await (await response).finished();
@@ -200,14 +200,14 @@ test('synchronizes service role changes across tabs and confirms deletion', asyn
     await peer.goto('/en-us/admin/machines/roles');
     await peer.getByRole('button', { name: 'Edit service role: Old service role', exact: true }).click();
     await peer.getByLabel('Role name', { exact: true }).fill('Updated service role');
-    await peer.locator('md-dialog').getByRole('button', { name: 'Save changes', exact: true }).click();
+    await peer.locator('dialog.app-dialog').getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(peer.getByText('Updated service role', { exact: true })).toBeVisible();
     await page.bringToFront();
     await expect(page.getByText('Updated service role', { exact: true })).toBeVisible();
     await peer.bringToFront();
     await peer.getByRole('button', { name: 'Delete service role: Updated service role', exact: true }).click();
     expect(fixture.roles).toHaveLength(1);
-    await peer.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await peer.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(peer.getByText('No service roles.', { exact: true })).toBeVisible();
     await page.bringToFront();
     await expect(page.getByText('No service roles assigned.', { exact: true })).toBeVisible();
@@ -219,7 +219,7 @@ test('identifies machine actors separately in audit logs', async ({ page, contex
     await page.goto(`/en-us/admin/audit-logs?lookupField=actorClientId&lookupValue=${fixture.actorClientId}`);
     await expect(page.locator('.machine-actor-label')).toBeVisible();
     await page.getByRole('button', { name: 'Details: machine.token_issued', exact: true }).click();
-    const dialog = page.locator('md-dialog');
+    const dialog = page.locator('dialog.app-dialog');
     await expect(dialog.getByText('Service identity', { exact: true })).toBeVisible();
     await expect(dialog.getByText('Actor user ID', { exact: true })).toBeVisible();
     await expect(dialog.getByText(fixture.actorClientId, { exact: true }).first()).toBeVisible();

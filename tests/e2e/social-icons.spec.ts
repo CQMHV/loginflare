@@ -72,8 +72,8 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         const card = page.locator('.social-connection-list .card').filter({ hasText: 'Google preview' });
         const edit = card.getByRole('button', { name: chinese ? '编辑连接器' : 'Edit connection', exact: true });
         await edit.click();
-        const editor = page.locator('md-dialog.form-dialog');
-        const crop = page.locator('md-dialog.image-crop-dialog');
+        const editor = page.locator('dialog.app-dialog.form-dialog');
+        const crop = page.locator('dialog.app-dialog.image-crop-dialog');
         const chooseIcon = async () => {
             const chooser = page.waitForEvent('filechooser');
             await editor.getByRole('button', { name: chinese ? '编辑连接器图标' : 'Edit connection icon', exact: true }).click();
@@ -81,17 +81,34 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
             await expect(crop.getByRole('button', { name: chinese ? '使用图标' : 'Use icon', exact: true })).toBeEnabled();
         };
         await chooseIcon();
+        await page.mouse.click(4, 4);
+        await expect(crop).toBeVisible();
+        await expect(editor).toBeVisible();
+        await page.evaluate(() => {
+            const panel = document.createElement('button');
+            panel.textContent = 'Close translation panel';
+            Object.assign(panel.style, { position: 'fixed', top: '0', right: '0', zIndex: '1' });
+            panel.addEventListener('click', () => panel.remove());
+            document.getElementById('root')!.appendChild(panel);
+        });
+        const externalPanel = page.getByRole('button', { name: 'Close translation panel', exact: true });
+        await externalPanel.click();
+        await expect(externalPanel).toHaveCount(0);
+        await expect(crop).toBeVisible();
+        await crop.getByRole('button', { name: chinese ? '取消' : 'Cancel', exact: true }).focus();
         await page.keyboard.press('Escape');
         await expect(crop).toHaveCount(0);
         await expect(editor).toBeVisible();
         expect(state.uploads).toHaveLength(0);
+        await page.mouse.click(4, 4);
+        await expect(editor).toBeVisible();
         await editor.getByRole('button', { name: chinese ? '取消' : 'Cancel', exact: true }).click();
         await expect(editor).toHaveCount(0);
         await edit.click();
         await chooseIcon(); state.failUpload = true;
         await crop.getByRole('button', { name: chinese ? '使用图标' : 'Use icon', exact: true }).click();
         await expect(crop.getByRole('alert')).toBeInViewport({ ratio: 1 });
-        await expect(editor.locator(':scope > form > [role="alert"]')).toHaveCount(0);
+        await expect(editor.locator('form > [role="alert"]')).toHaveCount(0);
         await expect(editor.locator('.provider-icon-preview img:not(.provider-icon-google)')).toHaveCount(0);
         await expect(editor.locator('.provider-icon-google')).toBeVisible();
         expect(state.writes).toHaveLength(0);
@@ -168,7 +185,7 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         const linked = page.locator('.social-account').filter({ hasText: 'Google' });
         await expect(linked.locator('.provider-icon img:not(.provider-icon-google)')).toHaveAttribute('src', iconUrl);
         await page.getByRole('button', { name: chinese ? '绑定 OIDC' : 'Link OIDC', exact: true }).click();
-        const dialog = page.locator('md-dialog.form-dialog');
+        const dialog = page.locator('dialog.app-dialog.form-dialog');
         const reauthenticate = dialog.getByRole('button', { name: chinese ? '使用 Google 继续' : 'Continue with Google', exact: true });
         await expect(dialog.locator('.provider-icon img:not(.provider-icon-google)')).toHaveAttribute('src', iconUrl);
         await expect(reauthenticate).toHaveAccessibleName(chinese ? '使用 Google 继续' : 'Continue with Google');
@@ -189,7 +206,7 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         await page.setViewportSize({ width: chinese ? 375 : 1280, height: 812 });
         await page.goto(`/${locale}/admin/social-connections`);
         await page.getByRole('button', { name: chinese ? '新建连接器' : 'Create connection', exact: true }).click();
-        const editor = page.locator('md-dialog.form-dialog');
+        const editor = page.locator('dialog.app-dialog.form-dialog');
         const select = async (name: string) => {
             const combobox = page.getByRole('combobox', { name: chinese ? '提供方类型' : 'Provider type', exact: true });
             await selectMaterialOption(editor.locator('md-outlined-select').filter({ has: combobox }),
@@ -209,7 +226,7 @@ for (const locale of ['en-us', 'zh-cn'] as const) {
         const chooser = page.waitForEvent('filechooser');
         await editor.getByRole('button', { name: chinese ? '编辑连接器图标' : 'Edit connection icon', exact: true }).click();
         await (await chooser).setFiles({ name: 'connection.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
-        await page.locator('md-dialog.image-crop-dialog').getByRole('button', { name: chinese ? '使用图标' : 'Use icon', exact: true }).click();
+        await page.locator('dialog.app-dialog.image-crop-dialog').getByRole('button', { name: chinese ? '使用图标' : 'Use icon', exact: true }).click();
         await expect(editor.locator('.provider-icon-preview img:not(.provider-icon-google)')).toHaveAttribute('src', iconUrl);
         await select('GitHub');
         await expect(editor.locator('.provider-icon-preview img:not(.provider-icon-google)')).toHaveAttribute('src', iconUrl);

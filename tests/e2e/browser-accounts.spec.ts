@@ -72,6 +72,7 @@ test('switches only the current tab, clears drafts, and sends writes as the sele
     await openAccount(other, gamma.id);
     await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Gamma');
     await page.getByRole('button', { name: 'Account menu', exact: true }).click();
+    await page.mouse.click(2, 2);
     await page.getByRole('button', { name: 'Account: beta@loginflare.test', exact: true }).click();
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Beta');
     await expect(other.getByLabel('Display name', { exact: true })).toHaveValue('Gamma');
@@ -232,7 +233,7 @@ test('uses real credentials to add, isolate, reauthenticate, and sign out browse
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Beta');
     await page.getByRole('button', { name: 'Account menu', exact: true }).click();
     await page.getByRole('button', { name: 'Sign out of all accounts', exact: true }).click();
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Choose an account', exact: true })).toBeVisible();
     await expect(alphaTab.getByRole('heading', { name: 'Choose an account', exact: true })).toBeVisible();
     await expect(page.getByText('Signed out', { exact: true })).toHaveCount(2);

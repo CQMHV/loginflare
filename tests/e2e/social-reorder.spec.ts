@@ -97,7 +97,7 @@ test('supports keyboard sorting for disabled and archived connections without an
     await expect(handle(page, 'oidc preview')).toBeEnabled();
     const archived = cards(page).filter({ hasText: 'oidc preview' });
     await archived.getByRole('button', { name: 'Edit connection', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(dialog).toBeVisible();
     await expect(dialog.getByLabel('Display order', { exact: true })).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -166,7 +166,7 @@ test('offers branded presets while keeping sorting out of the connection editor'
     const state = await connections(context);
     await page.goto('/en-us/admin/social-connections');
     await page.getByRole('button', { name: 'Create connection', exact: true }).click();
-    const editor = page.locator('md-dialog.form-dialog');
+    const editor = page.locator('dialog.app-dialog.form-dialog');
     await expect(editor.getByLabel('Display order', { exact: true })).toHaveCount(0);
     for (const [name, css, scopes] of [
         ['Microsoft', '.provider-icon-microsoft', 'openid profile email'],

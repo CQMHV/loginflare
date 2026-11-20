@@ -17,7 +17,6 @@
     --md-sys-shape-corner-large: 16px;
     --md-sys-shape-corner-extra-large: 28px;
     --md-outlined-text-field-container-shape: 4px;
-    --md-dialog-container-shape: 28px;
     --muted: var(--md-sys-color-on-surface-variant);
     color: var(--md-sys-color-on-surface);
     background: var(--md-sys-color-surface);
@@ -42,6 +41,7 @@
     }
 }
 body { margin: 0; font-size: 14px; line-height: 1.5; }
+#loginflare { isolation: isolate; }
 h1, h2, p { margin: 0; }
 h1, h2 { font-weight: 400; }
 a { color: var(--md-sys-color-primary); text-decoration: none; touch-action: manipulation; }
@@ -177,7 +177,12 @@ md-icon-button { flex-shrink: 0; }
 .feedback-toast.error { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .feedback-toast.error md-icon-button { --md-icon-button-icon-color: var(--md-sys-color-on-error-container); }
 .dialog-form > p { margin: 0; }
-.form-dialog [slot='actions'] { flex-wrap: wrap; }
+.app-dialog { position: fixed; inset: 0; z-index: 30; margin: auto; height: fit-content; border: 0; padding: 0; min-width: min(320px, calc(100vw - 48px)); max-width: min(560px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow: hidden; border-radius: var(--md-sys-shape-corner-extra-large); background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); box-shadow: 0 8px 32px rgb(0 0 0 / 20%); }
+.app-dialog[open] { display: flex; flex-direction: column; }
+.dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 24px 24px 16px; }
+.dialog-title { font-size: 24px; line-height: 32px; overflow-wrap: anywhere; }
+.dialog-content { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 24px; color: var(--md-sys-color-on-surface-variant); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 24px; flex-wrap: wrap; }
 .notice.error { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .loading-state { display: flex; align-items: center; justify-content: center; padding: 48px 20px; gap: 12px; color: var(--md-sys-color-on-surface-variant); }
 .app-shell { display: flex; min-height: 100dvh; }
@@ -252,7 +257,6 @@ md-icon-button { flex-shrink: 0; }
 .avatar-description p { max-width: 360px; margin-top: 6px; color: var(--md-sys-color-on-surface-variant); font-size: 13px; line-height: 1.6; }
 .avatar-description > md-text-button { margin-top: 4px; }
 .image-crop-dialog { width: min(560px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); }
-.image-crop-headline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .image-crop-tools { display: flex; flex-shrink: 0; }
 .image-crop-content { display: flex; flex-direction: column; gap: 16px; }
 .image-crop-content > p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
@@ -369,8 +373,6 @@ tr:last-child td { border-bottom: 0; }
 .consent-permissions li { margin: 12px 0; line-height: 1.6; }
 .consent-account { padding: 16px; border-radius: 16px; background: var(--md-sys-color-surface-container); overflow-wrap: anywhere; margin-bottom: 24px; font-size: 14px; }
 .oauth-context { font-size: 14px; line-height: 1.6; color: var(--muted); margin-bottom: 24px; }
-md-dialog { min-width: min(320px, calc(100vw - 48px)); max-width: min(560px, calc(100vw - 48px)); }
-md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px; }
 .state-page { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; gap: 24px; }
 .state-code { font-size: 96px; line-height: 1; color: var(--md-sys-color-primary); }
 .state-page h1 { font-size: 32px; }
@@ -443,7 +445,6 @@ md-dialog [slot='actions'] { display: flex; justify-content: flex-end; gap: 8px;
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-    md-dialog { --md-dialog-show-duration: 0ms; --md-dialog-hide-duration: 0ms; }
 }
 
 .branding-form { max-width: 760px; }

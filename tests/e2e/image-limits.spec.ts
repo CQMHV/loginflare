@@ -73,7 +73,7 @@ for (const target of targets) {
         const state = await imageFixture(context);
         await page.goto(`/${target.locale}/${target.path}`);
         if (target.kind === 'social') await page.getByRole('button', { name: 'Edit connection', exact: true }).click();
-        const crop = page.locator('md-dialog.image-crop-dialog');
+        const crop = page.locator('dialog.app-dialog.image-crop-dialog');
         await choose(page, target.edit, { name: 'oversized.png', mimeType: 'image/png', buffer: Buffer.alloc(maximumSourceBytes + 1) });
         await expect(page.getByRole('alert')).toContainText('20 MiB');
         await expect(crop).toHaveCount(0);

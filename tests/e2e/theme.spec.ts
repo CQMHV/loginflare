@@ -127,14 +127,17 @@ test('keeps the theme menu usable with a keyboard on a narrow localized page', a
     await trigger.focus();
     await trigger.press('Enter');
     await expect(page.getByRole('menuitem', { name: '跟随系统', exact: true })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: '浅色', exact: true })).toBeFocused();
+    const light = page.getByRole('menuitem', { name: '浅色', exact: true });
+    await expect(light).toBeFocused();
+    await page.mouse.click(2, 2);
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
     for (const item of await page.getByRole('menuitem').all()) {
         const bounds = await item.boundingBox();
         expect(bounds).not.toBeNull();
         expect(bounds!.x).toBeGreaterThanOrEqual(0);
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
     }
-    await page.keyboard.press('Escape');
+    await light.press('Escape');
     await expect(page.getByRole('menuitem', { name: '跟随系统', exact: true })).not.toBeVisible();
     await expect(trigger).toBeFocused();
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');

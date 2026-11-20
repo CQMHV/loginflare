@@ -63,8 +63,8 @@ export function Passkeys() {
     }
     return <section className="card" aria-labelledby="passkeys-title"><div className="card-heading"><h2 id="passkeys-title">{t('passkeys.title')}</h2><p>{t('passkeys.description')}</p></div><div className="card-body stack-form">
         <ResourceFeedback query={query} />{query.data && (query.data.length ? <ul>{query.data.map((row) => <li key={row.id}><p>{row.name || t('passkeys.unnamed')} · {new Date(row.createdAt).toLocaleDateString()}</p>
-            <Button className="text-button" onClick={() => open('rename', row)}>{t('passkeys.rename')}</Button><Button className="text-button danger" onClick={() => open('delete', row)}>{t('passkeys.remove')}</Button></li>)}</ul> : <p>{t('passkeys.none')}</p>)}
-        <p>{t('passkeys.limit')}</p>{browserSupportsWebAuthn() ? <Button disabled={(query.data?.length ?? 0) >= 20} onClick={() => open('add')}>{t('passkeys.add')}</Button> : <p>{t('passkeys.unsupported')}</p>}
+            <Button className="text-button" disabled={busy} onClick={() => open('rename', row)}>{t('passkeys.rename')}</Button><Button className="text-button danger" disabled={busy} onClick={() => open('delete', row)}>{t('passkeys.remove')}</Button></li>)}</ul> : <p>{t('passkeys.none')}</p>)}
+        <p>{t('passkeys.limit')}</p>{browserSupportsWebAuthn() ? <Button disabled={busy || (query.data?.length ?? 0) >= 20} onClick={() => open('add')}>{t('passkeys.add')}</Button> : <p>{t('passkeys.unsupported')}</p>}
         {action && <SecurityDialog title={t(`passkeys.${action === 'delete' ? 'remove' : action}`)} purpose={`passkeys/${action}` as SecurityPurpose} confirmLabel={t(`passkeys.${action === 'delete' ? 'remove' : action}`)}
             onCancel={clear} onConfirm={(password) => { void submit(password); }} busy={busy} error={error} danger={action === 'delete'} confirmDisabled={action !== 'delete' && !name.trim()}>
             {action === 'delete' ? <p>{t('passkeys.deleteWarning')}</p> : <TextField label={t('passkeys.name')} value={name} onValueChange={setName} maxLength={100} required disabled={busy} />}

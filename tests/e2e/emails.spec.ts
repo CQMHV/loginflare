@@ -46,7 +46,7 @@ test('manages email addresses and recovers the same account through a secondary 
         await page.getByRole('button', { name: 'Sign in', exact: true }).click();
         expect((await signedIn).status()).toBe(expectedStatus);
     }
-    const emailDialog = page.locator('md-dialog.form-dialog');
+    const emailDialog = page.locator('dialog.app-dialog.form-dialog');
     async function confirmIdentity(candidate: string) {
         await emailDialog.getByLabel('Current password', { exact: true }).fill(candidate);
         const verified = page.waitForResponse((response) => response.url() === `${testOrigin}/api/auth/verify-password`

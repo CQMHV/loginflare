@@ -83,7 +83,7 @@ test('manages applications, consent, and signed registration/recovery continuati
 
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
     const rotatedResponse = page.waitForResponse((result) => result.url().endsWith('/rotate-secret') && result.request().method() === 'POST');
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     const rotation = await rotatedResponse;
     expect(rotation.status()).toBe(200);
     const rotated = await rotation.json();
@@ -92,7 +92,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     await page.reload();
     await expect(page.getByLabel('Client secret', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Disable application', exact: true }).click();
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByText('Disabled', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Enable application', exact: true }).click();
     await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
@@ -109,7 +109,7 @@ test('manages applications, consent, and signed registration/recovery continuati
     await expect(page.getByRole('button', { name: 'Rotate client secret', exact: true })).toHaveCount(0);
     await expect(page.getByLabel('Discovery URL', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Restrict application', exact: true }).click();
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByText('Disabled by administrator', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Remove restriction', exact: true }).click();
     await expect(page.getByText('Enabled', { exact: true })).toBeVisible();

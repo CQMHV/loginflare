@@ -38,7 +38,7 @@ for (const chinese of [false, true]) test(`reports verification outages and remo
     await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
     await page.goto(`/${locale}/account/security`);
     await page.getByRole('button', { name: chinese ? '添加通行密钥' : 'Add passkey', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await dialog.getByLabel(chinese ? '当前密码' : 'Current password', { exact: true }).fill(password);
     await dialog.getByRole('button', { name: chinese ? '验证并继续' : 'Verify and continue', exact: true }).click();
     await dialog.getByLabel(chinese ? '通行密钥名称' : 'Passkey name', { exact: true }).fill('Error boundary key');

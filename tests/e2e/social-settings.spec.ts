@@ -61,7 +61,7 @@ for (const [locale, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         await expect(section.getByText(chinese ? '已绑定' : 'Linked', { exact: true })).toHaveCount(0);
         await expect(section.getByRole('combobox')).toHaveCount(0);
         await section.getByRole('button', { name: chinese ? '绑定 GitHub' : 'Link GitHub', exact: true }).click();
-        const form = page.locator('md-dialog.form-dialog');
+        const form = page.locator('dialog.app-dialog.form-dialog');
         await expect(form).toBeVisible();
         await expect(section.locator('form')).toHaveCount(0);
         await expect(section.locator('.social-account')).toHaveCount(2);
@@ -91,7 +91,7 @@ test('keeps disabled bindings visible and unlinks the selected identity without 
     await expect(section.getByText('Linked · Unavailable', { exact: true })).toBeVisible();
     await expect(section.getByRole('button', { name: 'Link Google', exact: true })).toHaveCount(0);
     await section.getByRole('button', { name: 'Unlink Google', exact: true }).click();
-    const form = page.locator('md-dialog.form-dialog');
+    const form = page.locator('dialog.app-dialog.form-dialog');
     await expect(form.getByText('Unlink Google? You will no longer be able to sign in with this account.')).toHaveCount(0);
     await expect(form.getByRole('combobox')).toHaveCount(0);
     await form.getByLabel('Current password', { exact: true }).fill('test-only-password');
@@ -118,7 +118,7 @@ test('continues binding the chosen provider after passwordless identity confirma
     const section = page.getByRole('region', { name: 'Third-party accounts', exact: true });
     await section.getByRole('button', { name: 'Link GitHub', exact: true }).click();
     expect(server.starts).toHaveLength(0);
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await dialog.getByRole('button', { name: 'Continue linking GitHub', exact: true }).click();
     await expect.poll(() => server.starts.length).toBe(1);
     expect(server.starts[0]).toMatchObject({ connectionId: github.id, purpose: 'link' });
@@ -133,7 +133,7 @@ test('keeps passwordless identity confirmation in a dialog without adding a list
     await page.goto('/zh-cn/account/security');
     const section = page.getByRole('region', { name: '第三方账号', exact: true });
     await section.getByRole('button', { name: '绑定 GitHub', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(dialog).toBeVisible();
     await expect(section.locator('.social-account')).toHaveCount(2);
     await expect(section.locator('form')).toHaveCount(0);
@@ -156,7 +156,7 @@ test('keeps email operation errors inside their dialog without inserting another
     await context.route(`${testOrigin}/api/auth/emails/add`, (route) => route.fulfill({ status: 400, json: { code: 'INVALID_PASSWORD' } }));
     await page.goto('/en-us/account/emails');
     await page.getByRole('button', { name: 'Add email address', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(dialog).toBeVisible();
     await expect(page.locator('.email-row')).toHaveCount(1);
     await expect(page.locator('.email-action')).toHaveCount(0);
@@ -182,7 +182,7 @@ test('keeps MFA confirmation errors in the selected operation dialog', async ({ 
     await page.goto('/en-us/account/security');
     const section = page.getByRole('region', { name: 'Two-factor authentication', exact: true });
     await section.getByRole('button', { name: 'Set up authenticator', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(dialog).toBeVisible();
     await expect(section.locator('form')).toHaveCount(0);
     await dialog.getByLabel('Account password', { exact: true }).fill('wrong-test-password');
@@ -209,7 +209,7 @@ test('reveals MFA enrollment errors after submission from the bottom of the dial
     await context.route(`${testOrigin}/api/auth/two-factor/verify-totp`, (route) => route.fulfill({ status: 400, json: { code: 'INVALID_CODE' } }));
     await page.goto('/en-us/account/security');
     await page.getByRole('button', { name: 'Set up authenticator', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await dialog.getByLabel('Account password', { exact: true }).fill('test-only-password');
     await dialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
     await dialog.getByRole('button', { name: 'Set up authenticator', exact: true }).click();
@@ -230,7 +230,7 @@ test('shows new password fields only after server verification and clears them w
     await page.goto('/en-us/account/security');
     await expect(page.getByLabel('New password', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Change password', exact: true }).click();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(dialog.getByLabel('New password', { exact: true })).toHaveCount(0);
     await dialog.getByLabel('Current password', { exact: true }).fill('wrong-test-password');
     await dialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
@@ -264,10 +264,10 @@ test('does not navigate from a delayed reauthentication response after page depa
     const section = page.getByRole('region', { name: 'Third-party accounts', exact: true });
     await section.getByRole('button', { name: 'Link GitHub', exact: true }).click();
     const requested = page.waitForRequest((request) => request.url().endsWith('/api/auth/social/start'));
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: 'Continue with Google', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: 'Continue with Google', exact: true }).click();
     await requested;
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
-    await expect(page.locator('md-dialog.form-dialog')).toHaveCount(0);
+    await expect(page.locator('dialog.app-dialog.form-dialog')).toHaveCount(0);
     const completed = page.waitForResponse((response) => response.url().endsWith('/api/auth/social/start'));
     release(); await completed; await page.waitForLoadState('networkidle');
     await expect(page).toHaveURL('/en-us/account/security');

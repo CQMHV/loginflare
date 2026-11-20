@@ -83,7 +83,7 @@ test('a verified ordinary developer manages a Web client and completes real OIDC
     await expect(page.getByRole('link', { name: 'Application sign-in guide', exact: true })).toHaveAttribute('href', 'https://github.com/CQMHV/loginflare/blob/main/docs/oauth.md');
     await page.screenshot({ path: test.info().outputPath('developer-workspace-empty.png'), fullPage: true });
     const created = await createApplication(page, 'web');
-    const secretDialog = page.locator('md-dialog.form-dialog');
+    const secretDialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(secretDialog).toBeVisible();
     await expect(secretDialog.getByLabel('Client secret', { exact: true })).toHaveValue(created.clientSecret!);
     await secretDialog.getByRole('button', { name: 'I have saved the secret', exact: true }).click();
@@ -116,7 +116,7 @@ test('a verified ordinary developer manages a Web client and completes real OIDC
     await expect(page.getByRole('status').filter({ hasText: 'Application updated.' })).toBeVisible();
     await page.getByRole('button', { name: 'Rotate client secret', exact: true }).click();
     const rotatedResponse = page.waitForResponse((response) => response.url().endsWith('/rotate-secret') && response.request().method() === 'POST');
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     const rotated = await rotatedResponse;
     expect(rotated.status()).toBe(200);
     const { clientSecret } = await rotated.json() as { clientSecret: string };
@@ -148,7 +148,7 @@ test('a verified ordinary developer manages a Web client and completes real OIDC
 
     await page.goto(`/en-us/developer/applications/detail?clientId=${created.application.clientId}`);
     await page.getByRole('button', { name: 'Disable application', exact: true }).click();
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByText('Disabled', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Enable application', exact: true }).click();
     await expect(page.getByText('Enabled', { exact: true })).toBeVisible();
@@ -217,7 +217,7 @@ test('isolates developer applications and prevents an owner from lifting adminis
         await expect(manager.getByLabel('Discovery URL', { exact: true })).toHaveCount(0);
         await expect(manager.getByRole('link', { name: owner.email, exact: true })).toHaveAttribute('href', `/en-us/admin/users/detail?id=${owner.id}`);
         await manager.getByRole('button', { name: 'Restrict application', exact: true }).click();
-        await manager.locator('md-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+        await manager.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
         await expect(manager.getByText('Disabled by administrator', { exact: true })).toBeVisible();
         await switchArea(manager, 'Developer center');
         await expect(manager.getByRole('link', { name: created.name, exact: true })).toHaveCount(0);

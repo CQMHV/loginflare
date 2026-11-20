@@ -46,7 +46,7 @@ for (const chinese of [false, true]) test(`confirms account deletion and owned a
     await page.getByRole('button', { name: chinese ? '注销账号' : 'Delete account', exact: true }).click();
     // Form fields are slotted light-DOM children of the Material host, not
     // descendants of its internal native <dialog> element.
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await expect(dialog.getByRole('heading', { name: chinese ? '注销账号' : 'Delete account', exact: true })).toBeVisible();
     await dialog.getByLabel(chinese ? '当前密码' : 'Current password', { exact: true }).fill(password);
     await dialog.getByRole('button', { name: chinese ? '验证并继续' : 'Verify and continue', exact: true }).click();

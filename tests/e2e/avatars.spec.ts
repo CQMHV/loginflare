@@ -165,7 +165,7 @@ test('uploads, crops, synchronizes, replaces and removes avatars through the rea
         await expect(page.locator('.profile-avatar img')).toHaveAttribute('src', before!);
     }
     await page.getByRole('button', { name: '移除头像', exact: true }).click();
-    await page.locator('md-dialog').getByRole('button', { name: '确认', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: '确认', exact: true }).click();
     await expect(page.locator('.profile-avatar img')).toHaveCount(0);
     await expect(headerPhoto).toHaveCount(0);
     await page.reload();
