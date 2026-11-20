@@ -25,7 +25,7 @@ for (const chinese of [false, true]) test(`manages webhook configuration and del
     await expect(page).toHaveURL(`/${locale}/account`);
     await page.goto(`/${locale}/admin/webhooks`);
     await expect(page.getByRole('heading', { name: chinese ? '业务事件通知' : 'Webhooks', exact: true })).toBeVisible();
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     await page.getByRole('button', { name: chinese ? '创建 Webhook' : 'Create webhook', exact: true }).click();
     await dialog.getByLabel(chinese ? 'Webhook 名称' : 'Webhook name', { exact: true }).fill('Browser webhook');
     await dialog.getByLabel(chinese ? '投递地址' : 'Destination URL', { exact: true }).fill('https://93.184.216.34/inbox');
@@ -42,7 +42,7 @@ for (const chinese of [false, true]) test(`manages webhook configuration and del
     await expect(page.getByText('Renamed webhook', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: chinese ? '轮换签名密钥' : 'Rotate signing key', exact: true }).click();
     const rotated = page.waitForResponse((response) => response.url().endsWith('/rotate-secret'));
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
     const rotation = await rotated; expect(rotation.status()).toBe(200); const next = await rotation.json(); expect(next.secret).not.toBe(receipt.secret);
     await expect(dialog.getByLabel(chinese ? '签名密钥' : 'Signing key', { exact: true })).toHaveValue(next.secret);
     await dialog.getByRole('button', { name: chinese ? '我已保存签名密钥' : 'I have saved the signing key', exact: true }).click();
@@ -55,10 +55,10 @@ for (const chinese of [false, true]) test(`manages webhook configuration and del
     await dialog.getByRole('button', { name: chinese ? '关闭' : 'Close', exact: true }).click();
     await page.getByRole('button', { name: chinese ? '重投事件' : 'Redeliver event', exact: true }).click();
     const retried = page.waitForResponse((response) => response.url().endsWith('/retry'));
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
     expect((await retried).status()).toBe(409);
     await expect(page.getByText(chinese ? '请先启用订阅并刷新，仅可重投保留期内已完成的记录。' : 'Enable the subscription and refresh. Only retained, completed deliveries can be redelivered.', { exact: true }).first()).toBeVisible();
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: chinese ? '取消' : 'Cancel', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: chinese ? '取消' : 'Cancel', exact: true }).click();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole('region', { name: chinese ? '投递记录' : 'Delivery records', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -68,7 +68,7 @@ for (const chinese of [false, true]) test(`manages webhook configuration and del
     await page.goto(`/${locale}/admin/webhooks`);
     await page.getByRole('button', { name: chinese ? '删除配置' : 'Delete configuration', exact: true }).click();
     const removed = page.waitForResponse((response) => response.url().endsWith('/api/admin/webhooks/' + receipt.id) && response.request().method() === 'DELETE');
-    await page.locator('md-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: chinese ? '确认' : 'Confirm', exact: true }).click();
     expect((await removed).status()).toBe(200);
     await expect(page.getByText(chinese ? '尚未配置 Webhook。' : 'No webhooks configured.', { exact: true })).toBeVisible();
 });

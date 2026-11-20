@@ -96,11 +96,7 @@ export function BrowserAccountMenu({ identity, locale, refresh, signingOut, onSi
     const query = useBrowserAccounts(open);
     useEffect(() => {
         if (!open) return;
-        const outside = (event: PointerEvent) => { if (!container.current?.contains(event.target as Node)) setOpen(false); };
-        const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { setOpen(false); trigger.current?.focus(); } };
-        document.addEventListener('pointerdown', outside); document.addEventListener('keydown', key);
         if (!container.current?.querySelector('.browser-account-popover')?.contains(document.activeElement)) container.current?.querySelector<HTMLButtonElement>('.browser-account-choice')?.focus();
-        return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', key); };
     }, [open, query.data]);
     async function choose(account: BrowserAccountSummary) {
         setBusy(true); setError(undefined);
@@ -132,7 +128,12 @@ export function BrowserAccountMenu({ identity, locale, refresh, signingOut, onSi
         catch (cause) { setError(errorCode(cause)); }
         finally { setBusy(false); }
     }
-    return <div className="browser-account-menu" ref={container}>
+    return <div className="browser-account-menu" ref={container} onKeyDown={(event) => {
+        if (!open || event.key !== 'Escape' || event.defaultPrevented) return;
+        event.preventDefault();
+        setOpen(false);
+        trigger.current?.focus();
+    }}>
         <button ref={trigger} type="button" className="avatar-menu-trigger account-menu" aria-label={t('accountMenu')} aria-description={identity.user.name || identity.user.email} aria-expanded={open} aria-haspopup="dialog" disabled={signingOut} onClick={() => { setError(undefined); setOpen(!open); }}><Avatar name={identity.user.name || identity.user.email} image={identity.user.image} className="user-avatar" />{createElement('md-ripple')}{createElement('md-focus-ring')}</button>
         {open && <div className="browser-account-popover" role="dialog" aria-label={t('browserAccounts.choose')}><ErrorNotice code={error} />
             <ResourceFeedback query={query} retryDisabled={query.retryDisabled} />

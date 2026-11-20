@@ -250,7 +250,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         };
         await page.goto(`/${language}/admin/access/resources`);
         await page.getByRole('button', { name: labels.createResource, exact: true }).click();
-        let dialog = page.locator('md-dialog.form-dialog');
+        let dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel(labels.resourceName, { exact: true }).fill('Orders');
         await dialog.getByLabel(labels.identifier, { exact: true }).fill('http://api.example.test');
         await dialog.getByRole('button', { name: labels.createResource, exact: true }).click();
@@ -262,13 +262,13 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         await expect(dialog).toHaveCount(0);
         await page.getByRole('link', { name: 'Orders', exact: true }).click();
         await page.getByRole('button', { name: labels.createPermission, exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel(labels.permissionName, { exact: true }).fill('Read orders');
         await dialog.getByLabel(labels.scope, { exact: true }).fill('orders:read');
         await dialog.getByRole('button', { name: labels.createPermission, exact: true }).click();
         await expect(page.getByText('orders:read', { exact: true })).toBeVisible();
         await page.getByRole('button', { name: labels.link, exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(dialog.getByLabel(labels.clientId, { exact: true })).toHaveAccessibleDescription(language === 'zh-cn' ? /从“应用”中的登录应用详情复制客户端 ID/ : /Copy the client ID from the sign-in application/);
         await expect(dialog.getByRole('link', { name: language === 'zh-cn' ? '查看登录应用' : 'View sign-in applications', exact: true })).toHaveAttribute('href', `/${language}/admin/applications`);
         await dialog.getByLabel(labels.clientId, { exact: true }).fill('unavailable');
@@ -281,7 +281,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         await page.screenshot({ path: test.info().outputPath(`api-resource-${language}.png`), fullPage: true });
         await page.goto(`/${language}/admin/access/roles`);
         await page.getByRole('button', { name: labels.createRole, exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel(labels.roleName, { exact: true }).fill('Order reader');
         await dialog.getByLabel('Read orders (orders:read)', { exact: true }).check();
         await dialog.getByRole('button', { name: labels.createRole, exact: true }).click();
@@ -289,7 +289,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         expect(state.roles[0].permissionIds).toEqual([state.resources[0].permissions[0].id]);
         await page.goto(`/${language}/admin/users/detail?id=${state.user.id}`);
         await page.getByRole('button', { name: labels.manageRoles, exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel('Order reader', { exact: true }).check();
         await dialog.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByText('Order reader', { exact: true })).toBeVisible();
@@ -297,7 +297,7 @@ for (const [language, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         expect(state.user.role).toBe('user');
         await page.goto(`/${language}/admin/audit-logs`);
         await page.getByRole('button', { name: `${labels.details}: ${state.event.event}`, exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(page.getByRole('dialog', { name: labels.eventDetail, exact: true })).toBeVisible();
         await expect(dialog.getByText('test-request-id', { exact: true })).toBeVisible();
         await expect(dialog.getByText('test-only-private-token', { exact: true })).toHaveCount(0);
@@ -321,12 +321,12 @@ test('keeps business permission and role deletion behind confirmation dialogs', 
     await page.getByRole('button', { name: 'Delete permission: Read orders', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Delete permission', exact: true })).toBeVisible();
     expect(state.writes).toHaveLength(0);
-    await page.locator('md-dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(state.resources[0].permissions).toHaveLength(1);
     await page.goto('/en-us/admin/access/roles');
     await page.getByRole('button', { name: 'Delete role: Reader', exact: true }).click();
     expect(state.writes).toHaveLength(0);
-    await page.locator('md-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
+    await page.locator('dialog.app-dialog').getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByText('No user roles.', { exact: true })).toBeVisible();
     expect(state.roles).toHaveLength(0);
 });
@@ -349,7 +349,7 @@ for (const language of ['en-us', 'zh-cn'] as const) {
         await expect(page.getByRole('link', { name: chinese ? '打开开发者中心' : 'Open Developer center', exact: true })).toHaveAttribute('href', `/${language}/developer/applications`);
         await page.goto(`/${language}/admin/users/detail?id=${state.user.id}`);
         await page.getByRole('button', { name: chinese ? '管理用户角色' : 'Manage user roles', exact: true }).click();
-        let dialog = page.locator('md-dialog.form-dialog');
+        let dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(dialog.getByText(chinese ? /尚未创建用户角色/ : /No user roles have been created/)).toBeVisible();
         const rolesLink = dialog.getByRole('link', { name: chinese ? '打开用户角色' : 'Open user roles', exact: true });
         await expect(rolesLink).toHaveAttribute('href', `/${language}/admin/access/roles`);
@@ -357,7 +357,7 @@ for (const language of ['en-us', 'zh-cn'] as const) {
         await dialog.getByRole('button', { name: chinese ? '取消' : 'Cancel', exact: true }).click();
         await page.goto(`/${language}/admin/access/roles`);
         await page.getByRole('button', { name: chinese ? '创建角色' : 'Create role', exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(dialog.getByText(chinese ? /也可以先保存空角色/ : /You can save an empty role/)).toBeVisible();
         const resourceLink = dialog.getByRole('link', { name: chinese ? '打开 API 资源' : 'Open API resources', exact: true });
         await expect(resourceLink).toHaveAttribute('href', `/${language}/admin/access/resources`);
@@ -378,7 +378,7 @@ for (const language of ['en-us', 'zh-cn'] as const) {
         });
         await page.goto(`/${language}/admin/access/roles`);
         await page.getByRole('button', { name: chinese ? '创建角色' : 'Create role', exact: true }).click();
-        const dialog = page.locator('md-dialog.form-dialog');
+        const dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByRole('button', { name: chinese ? '下一页' : 'Next', exact: true }).click();
         await expect(dialog.getByText(chinese ? '本页暂无选项。' : 'No items on this page.', { exact: true })).toBeVisible();
         await expect(dialog.getByRole('link', { name: chinese ? '打开 API 资源' : 'Open API resources', exact: true })).toHaveCount(0);
@@ -456,7 +456,7 @@ for (const language of ['en-us', 'zh-cn'] as const) {
         await page.setViewportSize({ width: chinese ? 375 : 1280, height: 812 });
         await page.goto(`/${language}/admin/access/resources`);
         await page.getByRole('button', { name: chinese ? '创建 API 资源' : 'Create API resource', exact: true }).click();
-        const dialog = page.locator('md-dialog.form-dialog'), identifier = dialog.getByLabel(chinese ? 'API 标识' : 'API identifier', { exact: true });
+        const dialog = page.locator('dialog.app-dialog.form-dialog'), identifier = dialog.getByLabel(chinese ? 'API 标识' : 'API identifier', { exact: true });
         const ttl = dialog.getByLabel(chinese ? '访问令牌有效期（秒）' : 'Access token lifetime (seconds)', { exact: true });
         const create = dialog.getByRole('button', { name: chinese ? '创建 API 资源' : 'Create API resource', exact: true });
         await dialog.getByLabel(chinese ? '资源名称' : 'Resource name', { exact: true }).fill('Orders');
@@ -530,7 +530,7 @@ test('retains role permission selections across cursor pages', async ({ page, co
     state.resources.push({ id: resourceId, name: 'Items', identifier: 'https://api.example.test/items', description: '', accessTokenTtl: 300, disabled: false, createdAt: now, permissions });
     await page.goto('/en-us/admin/access/roles');
     await page.getByRole('button', { name: 'Create role', exact: true }).click();
-    const dialog = page.locator('md-dialog');
+    const dialog = page.locator('dialog.app-dialog');
     await dialog.getByLabel('Role name', { exact: true }).fill('Paged permissions');
     await dialog.getByRole('checkbox', { name: 'Permission 1 (items:read-1)', exact: true }).check();
     await dialog.getByRole('button', { name: 'Next', exact: true }).click();

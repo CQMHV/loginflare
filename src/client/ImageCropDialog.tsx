@@ -2,7 +2,7 @@ import { createElement, useCallback, useEffect, useId, useRef, useState } from '
 import Cropper, { type MediaSize } from 'react-easy-crop';
 import 'react-easy-crop/react-easy-crop.css';
 import '@material/web/slider/slider.js';
-import type { MdDialog } from '@material/web/dialog/dialog.js';
+import { Dialog } from './Dialog';
 import { ErrorNotice } from './feedback';
 import type { MdSlider } from '@material/web/slider/slider.js';
 import { useTranslation } from 'react-i18next';
@@ -75,8 +75,6 @@ export async function prepareSvgPhoto(bytes: Uint8Array): Promise<ImagePhoto> {
 
 export default function ImageCropDialog({ photo, busy, requestError, labels, outputSize, shape, onCancel, onSave }: ImageCropDialogProps) {
     const { t } = useTranslation();
-    const dialog = useRef<MdDialog>(null);
-    const shown = useRef(false);
     const stage = useRef<HTMLDivElement>(null);
     const hintId = useId();
     const [opened, setOpened] = useState(false);
@@ -90,25 +88,12 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
     const [error, setError] = useState<string>();
     const capture = useClearSecrets(() => {});
     const disabled = busy || encoding;
-    const cancelAction = useRef(() => {});
-    cancelAction.current = () => { if (!disabled) onCancel(); };
     // At 100%, fill the crop frame exactly, rather than the larger editor stage.
     const rotatedWidth = mediaSize ? (rotation % 180 === 0 ? mediaSize.width : mediaSize.height) : 0;
     const rotatedHeight = mediaSize ? (rotation % 180 === 0 ? mediaSize.height : mediaSize.width) : 0;
     const fitZoom = cropSize && rotatedWidth && rotatedHeight ? Math.max(cropSize.width / rotatedWidth, cropSize.height / rotatedHeight) : 1;
     const renderedZoom = fitZoom * zoom;
 
-    useEffect(() => {
-        const element = dialog.current;
-        if (!element) return;
-        const afterOpen = () => setOpened(true);
-        const cancelEvent = (event: Event) => { event.preventDefault(); cancelAction.current(); };
-        element.addEventListener('opened', afterOpen);
-        element.addEventListener('cancel', cancelEvent);
-        // Strict Mode replays effects; show the native dialog once per mount.
-        if (!shown.current) { shown.current = true; void element.show(); }
-        return () => { element.removeEventListener('opened', afterOpen); element.removeEventListener('cancel', cancelEvent); };
-    }, []);
     useEffect(() => {
         const element = stage.current;
         if (!opened || !element) return;
@@ -178,12 +163,13 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
 
     const pristine = crop.x === 0 && crop.y === 0 && zoom === 1 && rotation === 0;
     const percentage = `${Math.round(zoom * 100)}%`;
-    return createElement('md-dialog', { ref: dialog, className: 'image-crop-dialog', 'aria-label': labels.title },
-        <div slot="headline" className="image-crop-headline"><span>{labels.title}</span><div className="image-crop-tools">
+    return <Dialog title={labels.title} className="image-crop-dialog" onOpen={() => setOpened(true)} onCancel={onCancel} busy={disabled}
+        tools={<div className="image-crop-tools">
             <Button className="icon-button" disabled={disabled || !ready} aria-label={t('imageEditor.rotate')} title={t('imageEditor.rotate')} onClick={() => { setReady(false); setRotation((value) => (value + 90) % 360); }}><ToolbarIcon name="rotate_right" /></Button>
             <Button className="icon-button" disabled={disabled || pristine} aria-label={t('imageEditor.reset')} title={t('imageEditor.reset')} onClick={reset}><ToolbarIcon name="restart_alt" /></Button>
-        </div></div>,
-        <div slot="content" className="image-crop-content">
+        </div>}
+        actions={<><Button className="text-button" disabled={disabled} onClick={onCancel}>{t('cancel')}</Button><Button busy={disabled} disabled={!ready || !mediaSize} onClick={() => { void save(); }}>{labels.save}</Button></>}>
+        <div className="image-crop-content">
             <p>{t('imageEditor.cropHint')}</p>
             <span className="sr-only" id={hintId}>{t('imageEditor.keyboardHint')}</span>
             <div className="image-crop-stage" ref={stage}>
@@ -203,7 +189,6 @@ export default function ImageCropDialog({ photo, busy, requestError, labels, out
                 <output aria-hidden="true">{percentage}</output>
             </div>
             <ErrorNotice code={error ?? requestError} />
-        </div>,
-        <div slot="actions"><Button className="text-button" disabled={disabled} onClick={onCancel}>{t('cancel')}</Button><Button busy={disabled} disabled={!ready || !mediaSize} onClick={() => { void save(); }}>{labels.save}</Button></div>,
-    );
+        </div>
+    </Dialog>;
 }

@@ -36,7 +36,7 @@ test('manages a connector and completes social registration, step-up, MFA and do
         const iconChooser = page.waitForEvent('filechooser');
         await page.getByRole('button', { name: 'Edit connection icon', exact: true }).click();
         await (await iconChooser).setFiles({ name: 'provider.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#6750a4"/></svg>') });
-        const iconEditor = page.locator('md-dialog.image-crop-dialog');
+        const iconEditor = page.locator('dialog.app-dialog.image-crop-dialog');
         await expect(iconEditor.getByRole('button', { name: 'Use icon', exact: true })).toBeEnabled();
         const iconUpload = page.waitForResponse((response) => response.url() === `${testOrigin}/api/admin/social-connections/icon` && response.request().method() === 'POST');
         await iconEditor.getByRole('button', { name: 'Use icon', exact: true }).click();
@@ -92,7 +92,7 @@ test('manages a connector and completes social registration, step-up, MFA and do
         const initialIdentities = page.getByRole('region', { name: 'Third-party accounts', exact: true });
         await expect(initialIdentities.locator('.social-account').filter({ hasText: connectionName }).locator('.provider-icon img')).toHaveAttribute('src', iconUrl);
         await initialIdentities.getByRole('button', { name: `Link ${secondConnectionName}`, exact: true }).click();
-        const bindingDialog = page.locator('md-dialog.form-dialog');
+        const bindingDialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(bindingDialog.getByRole('button', { name: `Continue linking ${secondConnectionName}`, exact: true })).toHaveCount(0);
         await bindingDialog.getByRole('button', { name: `Continue with ${connectionName}`, exact: true }).click();
         await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -106,7 +106,7 @@ test('manages a connector and completes social registration, step-up, MFA and do
         const passwordCard = page.locator('section.card').filter({ has: page.getByRole('heading', { name: 'Set a password', exact: true }) });
         await expect(page.getByLabel('New password', { exact: true })).toHaveCount(0);
         await passwordCard.getByRole('button', { name: 'Set a password', exact: true }).click();
-        const passwordDialog = page.locator('md-dialog.form-dialog');
+        const passwordDialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(passwordDialog.getByLabel('New password', { exact: true })).toHaveCount(0);
         await passwordDialog.getByRole('button', { name: `Continue with ${connectionName}`, exact: true }).click();
         await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -119,12 +119,12 @@ test('manages a connector and completes social registration, step-up, MFA and do
         // A linked provider has an unlink action; it cannot appear as unlinked.
         await expect(identities.getByRole('button', { name: `Link ${connectionName}`, exact: true })).toHaveCount(0);
         await identities.getByRole('button', { name: `Unlink ${connectionName}`, exact: true }).click();
-        const unlinkDialog = page.locator('md-dialog.form-dialog');
+        const unlinkDialog = page.locator('dialog.app-dialog.form-dialog');
         await unlinkDialog.getByLabel('Current password', { exact: true }).fill(password);
         await unlinkDialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
         await unlinkDialog.getByRole('button', { name: `Confirm unlinking ${connectionName}`, exact: true }).click();
         await identities.getByRole('button', { name: `Link ${connectionName}`, exact: true }).click();
-        const linkDialog = page.locator('md-dialog.form-dialog');
+        const linkDialog = page.locator('dialog.app-dialog.form-dialog');
         await linkDialog.getByLabel('Current password', { exact: true }).fill(password);
         await linkDialog.getByRole('button', { name: 'Verify and continue', exact: true }).click();
         await linkDialog.getByRole('button', { name: `Continue linking ${connectionName}`, exact: true }).click();
@@ -133,7 +133,7 @@ test('manages a connector and completes social registration, step-up, MFA and do
         await expect(identities.getByRole('combobox')).toHaveCount(0);
         const mfa = page.locator('section.card').filter({ has: page.getByRole('heading', { name: 'Two-factor authentication', exact: true }) });
         await mfa.getByRole('button', { name: 'Set up authenticator', exact: true }).click();
-        const enrollment = page.locator('md-dialog.form-dialog');
+        const enrollment = page.locator('dialog.app-dialog.form-dialog');
         await enrollment.getByLabel('Account password', { exact: true }).fill(password);
         await enrollment.getByRole('button', { name: 'Verify and continue', exact: true }).click();
         await enrollment.getByRole('button', { name: 'Set up authenticator', exact: true }).click();

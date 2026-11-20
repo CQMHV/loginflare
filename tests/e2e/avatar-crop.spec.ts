@@ -16,7 +16,7 @@ test('reports an editor load failure without losing the profile or uploading the
     await badge.click({ position: { x: bounds.width - 4, y: bounds.height / 2 } });
     await (await chooser).setFiles({ name: 'crop.png', mimeType: 'image/png', buffer: Buffer.from(sourcePng, 'base64') });
     await expect(page.getByRole('alert')).toHaveText('Unable to load the image editor. Reload this page and try again.');
-    await expect(page.locator('md-dialog.image-crop-dialog')).toHaveCount(0);
+    await expect(page.locator('dialog.app-dialog.image-crop-dialog')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Change photo', exact: true })).toBeEnabled();
     await page.getByLabel('Display name', { exact: true }).fill('Retained profile');
     await expect(page.getByLabel('Display name', { exact: true })).toHaveValue('Retained profile');
@@ -49,7 +49,7 @@ async function choosePhoto(page: Page, data = sourcePng, locale = 'en-us') {
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: locale === 'zh-cn' ? '编辑头像' : 'Edit photo', exact: true }).click();
     await (await chooser).setFiles({ name: 'crop.png', mimeType: 'image/png', buffer: Buffer.from(data, 'base64') });
-    const dialog = page.locator('md-dialog.image-crop-dialog');
+    const dialog = page.locator('dialog.app-dialog.image-crop-dialog');
     await expect(dialog.getByRole('button', { name: locale === 'zh-cn' ? '保存头像' : 'Save photo', exact: true })).toBeEnabled();
     return dialog;
 }
@@ -137,7 +137,7 @@ test('drags and zooms directly, resets the crop and cancels without uploading', 
     await expect.poll(() => image.evaluate((element) => (element as HTMLElement).style.transform)).toBe(initial);
     await page.screenshot({ path: test.info().outputPath('crop-desktop.png'), fullPage: false });
     await page.keyboard.press('Escape');
-    await expect(page.locator('md-dialog.image-crop-dialog')).toHaveCount(0);
+    await expect(page.locator('dialog.app-dialog.image-crop-dialog')).toHaveCount(0);
     expect(uploads).toHaveLength(0);
 });
 
@@ -155,7 +155,7 @@ test('rotates the original and exports the visible composition as a square WebP'
     await expect.poll(() => image.evaluate((element) => (element as HTMLElement).style.transform)).toContain('rotate(90deg)');
     await dialog.getByRole('button', { name: 'Save photo', exact: true }).click();
     await expect.poll(() => uploads.length).toBe(1);
-    await expect(page.locator('md-dialog.image-crop-dialog')).toHaveCount(0);
+    await expect(page.locator('dialog.app-dialog.image-crop-dialog')).toHaveCount(0);
     const exported = await pixels(page, uploads[0]!.toString('base64'));
     expect([exported.width, exported.height]).toEqual([256, 256]);
     const order = [2, 0, 3, 1]; // Clockwise quarter turn of the four-color source.
@@ -199,7 +199,7 @@ test('minimum zoom fills only the crop frame and never exposes background when d
         }
         await page.screenshot({ path: test.info().outputPath(`crop-fit-${width}-${height}.png`), fullPage: false });
         await dialog.getByRole('button', { name: 'Save photo', exact: true }).click();
-        await expect(page.locator('md-dialog.image-crop-dialog')).toHaveCount(0);
+        await expect(page.locator('dialog.app-dialog.image-crop-dialog')).toHaveCount(0);
         const exported = await pixels(page, uploads.at(-1)!.toString('base64'));
         expect([exported.width, exported.height]).toEqual([256, 256]);
         expect(exported.minimumAlpha).toBe(255);

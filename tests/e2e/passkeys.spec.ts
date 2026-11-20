@@ -27,7 +27,7 @@ for (const chinese of [false, true]) test(`manages and signs in with passkeys in
     await expect(signIn).toBeEnabled(); await signIn.click(); await expect(page).toHaveURL(`/${locale}/account`);
     await page.goto(`/${locale}/account/security`);
     const card = page.locator('section.card').filter({ has: page.getByRole('heading', { name: chinese ? '通行密钥' : 'Passkeys', exact: true }) });
-    const dialog = page.locator('md-dialog.form-dialog');
+    const dialog = page.locator('dialog.app-dialog.form-dialog');
     async function verify() {
         await dialog.getByLabel(chinese ? '当前密码' : 'Current password', { exact: true }).fill(password);
         await dialog.getByRole('button', { name: chinese ? '验证并继续' : 'Verify and continue', exact: true }).click();
@@ -44,7 +44,35 @@ for (const chinese of [false, true]) test(`manages and signs in with passkeys in
     await dialog.getByLabel(chinese ? '通行密钥名称' : 'Passkey name', { exact: true }).fill('Renamed device');
     await dialog.getByRole('button', { name: rename, exact: true }).click(); await expect(card.getByText('Renamed device', { exact: false })).toBeVisible();
     await card.getByRole('button', { name: add, exact: true }).click(); await verify();
-    await dialog.getByLabel(chinese ? '通行密钥名称' : 'Passkey name', { exact: true }).fill('Cancelled device');
+    const name = dialog.getByLabel(chinese ? '通行密钥名称' : 'Passkey name', { exact: true });
+    await name.fill('Cancelled device');
+    await page.evaluate(() => {
+        const create = navigator.credentials.create;
+        navigator.credentials.create = () => {
+            navigator.credentials.create = create;
+            return new Promise((_, reject) => {
+                // A password manager can inject its prompt outside the application's modal.
+                const frame = document.createElement('iframe');
+                frame.title = 'Password manager prompt';
+                Object.assign(frame.style, { position: 'fixed', top: '16px', right: '16px', zIndex: '2147483647' });
+                document.body.appendChild(frame);
+                const button = frame.contentDocument!.createElement('button');
+                button.textContent = 'Cancel passkey creation';
+                button.addEventListener('click', () => {
+                    frame.remove();
+                    reject(new DOMException('Cancelled', 'NotAllowedError'));
+                });
+                frame.contentDocument!.body.appendChild(button);
+            });
+        };
+    });
+    await dialog.getByRole('button', { name: add, exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: add, exact: true })).toBeDisabled();
+    await expect(card.getByRole('button', { name: rename, exact: true })).toBeDisabled();
+    await page.frameLocator('iframe[title="Password manager prompt"]').getByRole('button', { name: 'Cancel passkey creation' }).click();
+    await expect(dialog.getByText(chinese ? '通行密钥操作已取消或超时。' : 'The passkey operation was cancelled or timed out.', { exact: true })).toBeVisible();
+    await expect(name).toHaveValue('Cancelled device');
     await cdp.send('WebAuthn.setAutomaticPresenceSimulation', { authenticatorId, enabled: false });
     const pending = page.waitForResponse((r) => r.url().endsWith('/api/auth/passkey/generate-register-options'));
     await dialog.getByRole('button', { name: add, exact: true }).click(); expect((await pending).status()).toBe(200);

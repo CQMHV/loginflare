@@ -111,10 +111,10 @@ for (const chinese of [false, true]) {
             await mirror.goto(`/${locale}/account/applications`);
             await expect(mirror.locator('.authorized-application-card')).toHaveCount(1);
             await mirror.getByRole('button', { name: revokeLabel, exact: true }).click();
-            await expect(mirror.locator('md-dialog.form-dialog')).toBeVisible();
+            await expect(mirror.locator('dialog.app-dialog.form-dialog')).toBeVisible();
             await page.bringToFront();
             await row.getByRole('button', { name: revokeLabel, exact: true }).click();
-            const dialog = page.locator('md-dialog.form-dialog');
+            const dialog = page.locator('dialog.app-dialog.form-dialog');
             await expect(dialog).toBeVisible();
             await expect(page.getByRole('dialog', { name: revokeLabel, exact: true })).toBeVisible();
             await expect(dialog).toContainText(app.name);
@@ -133,7 +133,7 @@ for (const chinese of [false, true]) {
             await expect(page.getByText(empty, { exact: true })).toBeVisible();
             await mirror.bringToFront();
             await expect(mirror.getByText(empty, { exact: true })).toBeVisible();
-            await expect(mirror.locator('md-dialog.form-dialog')).toHaveCount(0);
+            await expect(mirror.locator('dialog.app-dialog.form-dialog')).toHaveCount(0);
             expect((await userInfo()).status()).toBe(401);
             const refresh = await context.request.post(`${testOrigin}/api/auth/oauth2/token`, { headers: { Origin: testOrigin }, form: { client_id: app.clientId, grant_type: 'refresh_token', refresh_token: tokens.refresh_token } });
             expect(refresh.status()).toBe(400);
@@ -155,7 +155,7 @@ for (const chinese of [false, true]) {
         await expect(page.getByText(chinese ? '已停用' : 'Disabled', { exact: true })).toBeVisible();
         await expect(row.getByRole('button', { name: revokeLabel, exact: true })).toBeEnabled();
         await row.getByRole('button', { name: revokeLabel, exact: true }).click();
-        await page.locator('md-dialog.form-dialog').getByRole('button', { name: revokeLabel, exact: true }).click();
+        await page.locator('dialog.app-dialog.form-dialog').getByRole('button', { name: revokeLabel, exact: true }).click();
         await expect(page.getByText(empty, { exact: true })).toBeVisible();
     });
 }

@@ -49,7 +49,7 @@ for (const [locale, width] of [['en-us', 1280], ['zh-cn', 375]] as const) {
         for (const [index, connection] of state.connections.entries()) {
             const trigger = page.getByRole('button', { name: chinese ? '编辑连接器' : 'Edit connection', exact: true }).nth(index);
             await trigger.click();
-            const dialog = page.locator('md-dialog.form-dialog');
+            const dialog = page.locator('dialog.app-dialog.form-dialog');
             await expect(dialog).toBeVisible();
             await expect(dialog.getByLabel(chinese ? '显示名称' : 'Display name', { exact: true })).toHaveValue(connection.name);
             await expect(dialog.getByLabel(chinese ? '客户端 ID' : 'Client ID', { exact: true })).toBeDisabled();
@@ -86,7 +86,7 @@ test('keeps connector errors in the editor and supports creation, saving and arc
     const state = await administrator(context);
     await page.goto('/en-us/admin/social-connections');
     await page.getByRole('button', { name: 'Create connection', exact: true }).click();
-    const editor = page.locator('md-dialog.form-dialog').filter({ has: page.locator('[slot="headline"]').filter({ hasText: /^(Create|Edit) connection$/ }) });
+    const editor = page.getByRole('dialog', { name: /^(Create|Edit) connection$/ });
     await expect(editor).toBeVisible();
     await editor.getByLabel('Display name', { exact: true }).fill('Created preview');
     await editor.getByLabel('Client ID', { exact: true }).fill('preview-client');
@@ -99,16 +99,20 @@ test('keeps connector errors in the editor and supports creation, saving and arc
     await expect(page.getByRole('alert')).toHaveCount(1);
     state.fail = false;
     await editor.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(editor.locator(':scope > [slot="headline"]')).toHaveText('Edit connection');
+    await expect(editor.getByRole('heading', { name: 'Edit connection', exact: true })).toBeVisible();
     await expect(editor.getByLabel('Callback URL', { exact: true })).toHaveValue(`${testOrigin}/api/auth/callback/new-connection`);
     await expect(editor.getByRole('checkbox', { name: 'Enabled', exact: true })).not.toBeChecked();
     await expect(editor.getByLabel('Client secret', { exact: true })).toHaveValue('');
     await expect(editor.getByRole('alert')).toHaveCount(0);
+    const notification = page.locator('.feedback-toast');
+    await notification.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+    await expect(notification).toHaveCount(0);
+    await expect(editor).toBeVisible();
     await editor.getByLabel('Display name', { exact: true }).fill('Renamed preview');
     await editor.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(page.locator('.social-connection-list').getByText('Renamed preview', { exact: true })).toBeAttached();
     await editor.getByRole('button', { name: 'Archive', exact: true }).click();
-    const confirmation = page.locator('md-dialog.form-dialog').filter({ has: page.locator('[slot="headline"]').filter({ hasText: /^Archive$/ }) });
+    const confirmation = page.getByRole('dialog', { name: 'Archive', exact: true });
     await expect(confirmation).toBeVisible();
     await expect(editor).toHaveCount(0);
     await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();

@@ -10,7 +10,6 @@ import '@material/web/checkbox/checkbox.js';
 import '@material/web/select/outlined-select.js';
 import '@material/web/select/select-option.js';
 import '@material/web/progress/circular-progress.js';
-import '@material/web/dialog/dialog.js';
 import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
 import '@material/web/list/list.js';
@@ -18,9 +17,9 @@ import '@material/web/list/list-item.js';
 import '@material/web/divider/divider.js';
 import '@material/web/ripple/ripple.js';
 import '@material/web/focus/md-focus-ring.js';
-import type { MdDialog } from '@material/web/dialog/dialog.js';
 import type { MdMenu } from '@material/web/menu/menu.js';
 import type { CloseMenuEvent } from '@material/web/menu/internal/controllers/shared.js';
+import { Dialog } from './Dialog';
 
 // React 19 assigns Web Component properties and subscribes to their native events.
 // Keep the adapter small; rendering, form association and validation belong to Material Web.
@@ -107,7 +106,7 @@ export function Checkbox({ label, checked, onCheckedChange, disabled = false }: 
 
 export function Select({ label, value, options, onChange, disabled = false, name, error, errorText }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; name?: string; error?: boolean; errorText?: string }) {
     return createElement('md-outlined-select', {
-        value, label, disabled, name, error, errorText, 'aria-label': label,
+        value, label, disabled, name, error, errorText, menuPositioning: 'fixed', 'aria-label': label,
         onChange: (event: Event) => onChange((event.currentTarget as HTMLElement & { value: string }).value),
     }, ...options.map((option) => createElement('md-select-option', { key: option.value, value: option.value }, <div slot="headline">{option.label}</div>)));
 }
@@ -169,7 +168,7 @@ export function MenuButton({ label, description, icon, options, onSelect, classN
         {createElement(nativeTrigger ? 'button' : 'md-filled-tonal-icon-button', { id, type: 'button', className: variant === 'avatar' ? 'avatar-menu-trigger' : variant === 'navigation' ? 'area-menu-trigger' : undefined, 'aria-label': triggerLabel, 'aria-description': currentLabel, title: currentLabel ? `${label}: ${currentLabel}` : label, 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'aria-controls': menuId, disabled: busy, 'aria-busy': busy || undefined,
             onClick: () => { if (menu.current?.open) menu.current.close(); else show(); }, onKeyDown: keyDown,
         }, variant === 'navigation' ? <span className="menu-trigger-label">{icon}<span>{currentLabel ?? label}</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d={placement === 'above' ? 'm7 14 5-5 5 5' : 'm7 10 5 5 5-5'} /></svg></span> : icon, nativeTrigger && createElement('md-ripple'), nativeTrigger && createElement('md-focus-ring', { inward: variant === 'navigation' }))}
-        {createElement('md-menu', { ref: menu, id: menuId, anchor: id, positioning: 'popover', 'aria-label': label, anchorCorner: `${placement === 'above' ? 'start' : 'end'}-${alignment}`, menuCorner: `${placement === 'above' ? 'end' : 'start'}-${alignment}` },
+        {createElement('md-menu', { ref: menu, id: menuId, anchor: id, positioning: 'fixed', stayOpenOnOutsideClick: true, stayOpenOnFocusout: true, 'aria-label': label, anchorCorner: `${placement === 'above' ? 'start' : 'end'}-${alignment}`, menuCorner: `${placement === 'above' ? 'end' : 'start'}-${alignment}` },
             ...options.map((option) => createElement('md-menu-item', {
                 key: option.value, type: 'button', 'data-menu-value': option.value, selected: Boolean(option.selected), 'aria-selected': option.selected ? 'true' : undefined,
             }, <div slot="headline">{option.label}</div>, option.icon && <span slot="start">{option.icon}</span>, option.selected && <svg slot="end" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z" /></svg>)),
@@ -181,31 +180,11 @@ export function FormDialog({ title, children, cancelLabel, confirmLabel, onCance
     title: string; cancelLabel: string; confirmLabel?: string; onCancel: () => void; onSubmit?: (event: React.FormEvent<HTMLFormElement>) => void;
     busy?: boolean; confirmDisabled?: boolean; danger?: boolean; className?: string;
 }>) {
-    const dialog = useRef<MdDialog>(null);
     const form = useRef<HTMLFormElement>(null);
-    const shown = useRef(false);
-    const closing = useRef(false);
-    const cancelAction = useRef<() => Promise<void>>(() => Promise.resolve());
-    useEffect(() => {
-        const element = dialog.current;
-        if (!element) return;
-        const cancelEvent = (event: Event) => { event.preventDefault(); void cancelAction.current(); };
-        element.addEventListener('cancel', cancelEvent);
-        if (!shown.current) { shown.current = true; void element.show(); }
-        return () => element.removeEventListener('cancel', cancelEvent);
-    }, []);
-    async function cancel() {
-        if (busy || closing.current) return;
-        closing.current = true;
-        await dialog.current?.close();
-        onCancel();
-    }
-    cancelAction.current = cancel;
-    return createElement('md-dialog', { ref: dialog, className: className ? `form-dialog ${className}` : 'form-dialog', 'aria-label': title },
-        <div slot="headline">{title}</div>,
-        <form ref={form} slot="content" className="stack-form dialog-form" onSubmit={(event) => { event.preventDefault(); if (!busy && !closing.current && !confirmDisabled && confirmLabel) onSubmit?.(event); }}>{children}</form>,
-        <div slot="actions"><Button className="text-button" disabled={busy} onClick={() => { void cancel(); }}>{cancelLabel}</Button>{confirmLabel && <Button className={danger ? 'danger-button' : 'primary'} busy={busy} disabled={confirmDisabled} onClick={() => form.current?.requestSubmit()}>{confirmLabel}</Button>}</div>,
-    );
+    return <Dialog title={title} className={className ? `form-dialog ${className}` : 'form-dialog'} busy={busy} onCancel={onCancel}
+        actions={<><Button className="text-button" disabled={busy} onClick={onCancel}>{cancelLabel}</Button>{confirmLabel && <Button className={danger ? 'danger-button' : 'primary'} busy={busy} disabled={confirmDisabled} onClick={() => form.current?.requestSubmit()}>{confirmLabel}</Button>}</>}>
+        <form ref={form} className="stack-form dialog-form" onSubmit={(event) => { event.preventDefault(); if (!busy && !confirmDisabled && confirmLabel) onSubmit?.(event); }}>{children}</form>
+    </Dialog>;
 }
 
 export function ConfirmationDialog({ title, description, cancelLabel, confirmLabel, onCancel, onConfirm, busy = false, error }: {

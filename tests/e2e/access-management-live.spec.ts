@@ -29,7 +29,7 @@ test('persists API resources, application access and user roles through the real
 
         await page.goto('/en-us/admin/access/resources');
         await page.getByRole('button', { name: 'Create API resource', exact: true }).click();
-        let dialog = page.locator('md-dialog.form-dialog');
+        let dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel('Resource name', { exact: true }).fill(resourceName);
         await dialog.getByLabel('API identifier', { exact: true }).fill(identifier);
         await dialog.getByRole('button', { name: 'Create API resource', exact: true }).click();
@@ -38,13 +38,13 @@ test('persists API resources, application access and user roles through the real
         await expect(page).toHaveURL((url) => url.pathname === '/en-us/admin/access/resources/detail' && !!url.searchParams.get('id'));
         resourceId = new URL(page.url()).searchParams.get('id')!;
         await page.getByRole('button', { name: 'Create permission', exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel('Permission name', { exact: true }).fill(permissionName);
         await dialog.getByLabel('Permission scope', { exact: true }).fill(scope);
         await dialog.getByRole('button', { name: 'Create permission', exact: true }).click();
         await expect(dialog).toHaveCount(0);
         await page.getByRole('button', { name: 'Allow application', exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel('Client ID', { exact: true }).fill(clientId);
         await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
         await expect(dialog).toHaveCount(0);
@@ -54,7 +54,7 @@ test('persists API resources, application access and user roles through the real
 
         await page.goto('/en-us/admin/access/roles');
         await page.getByRole('button', { name: 'Create role', exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByLabel('Role name', { exact: true }).fill(roleName);
         await dialog.getByRole('checkbox', { name: `${permissionName} (${scope})`, exact: true }).check();
         await dialog.getByRole('button', { name: 'Create role', exact: true }).click();
@@ -63,7 +63,7 @@ test('persists API resources, application access and user roles through the real
         expect(roles.status()).toBe(200); roleId = (await roles.json()).items[0].id;
         await page.goto(`/en-us/admin/users/detail?id=${member.id}`);
         await page.getByRole('button', { name: 'Manage user roles', exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await dialog.getByRole('checkbox', { name: roleName, exact: true }).check();
         await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
         await expect(dialog).toHaveCount(0);
@@ -83,7 +83,7 @@ test('persists API resources, application access and user roles through the real
 
         await page.goto(`/en-us/admin/audit-logs?${new URLSearchParams({ lookupField: 'targetUserId', lookupValue: member.id })}`);
         await page.getByRole('button', { name: 'Details: access.user.roles.updated', exact: true }).click();
-        dialog = page.locator('md-dialog.form-dialog');
+        dialog = page.locator('dialog.app-dialog.form-dialog');
         await expect(dialog.getByText(administrator.id, { exact: true })).toBeVisible();
         await expect(dialog.getByText(member.id, { exact: true }).first()).toBeVisible();
         await expect(dialog.getByText('User roles changed', { exact: false })).toBeVisible();

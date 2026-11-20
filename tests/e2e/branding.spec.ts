@@ -35,7 +35,7 @@ test('publishes independent logo, name and Material color schemes across pages, 
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Edit logo', exact: true }).click();
     await (await chooser).setFiles({ name: 'brand.svg', mimeType: 'image/svg+xml', buffer: logo });
-    const editor = page.locator('md-dialog.image-crop-dialog');
+    const editor = page.locator('dialog.app-dialog.image-crop-dialog');
     await expect(editor.getByRole('button', { name: 'Use logo', exact: true })).toBeEnabled();
     await editor.getByRole('button', { name: 'Use logo', exact: true }).click();
     await expect(editor).toHaveCount(0);
@@ -102,7 +102,7 @@ test('adjusts SVG logos before upload and retains vectors with the displayed rot
     page.on('request', (request) => { if (request.url() === `${testOrigin}/api/admin/branding/logo` && request.method() === 'POST') uploads.push(request.postDataBuffer()!); });
     const chooser = page.waitForEvent('filechooser'); await page.getByRole('button', { name: 'Edit logo', exact: true }).click();
     await (await chooser).setFiles({ name: 'bands.svg', mimeType: 'image/svg+xml', buffer: vectors });
-    const editor = page.locator('md-dialog.image-crop-dialog');
+    const editor = page.locator('dialog.app-dialog.image-crop-dialog');
     const save = editor.getByRole('button', { name: 'Use logo', exact: true });
     await expect(save).toBeEnabled(); expect(uploads).toHaveLength(0);
     const initialFrame = (await editor.locator('.reactEasyCrop_CropArea').boundingBox())!;
@@ -144,7 +144,7 @@ test('cancels without uploading, then confirms a raster logo as WebP through the
     async function choose() {
         const chooser = page.waitForEvent('filechooser'); await page.getByRole('button', { name: 'Choose logo', exact: true }).click();
         await (await chooser).setFiles(file);
-        const editor = page.locator('md-dialog.image-crop-dialog');
+        const editor = page.locator('dialog.app-dialog.image-crop-dialog');
         await expect(editor.getByRole('button', { name: 'Use logo', exact: true })).toBeEnabled();
         const frame = (await editor.locator('.reactEasyCrop_CropArea').boundingBox())!;
         expect(frame.width).toBeCloseTo(frame.height, 1); return editor;

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from './material';
@@ -41,11 +42,11 @@ export function FeedbackProvider({ children }: PropsWithChildren) {
         return () => clearTimeout(timer);
     }, [feedback, hovered, focused]);
     return <FeedbackContext.Provider value={actions}>{children}
-        {feedback && <div className={`feedback-toast ${feedback.kind}`} key={feedback.id} role={feedback.kind === 'error' ? 'alert' : 'status'} aria-atomic="true"
+        {feedback && createPortal(<div className={`feedback-toast ${feedback.kind}`} role={feedback.kind === 'error' ? 'alert' : 'status'} aria-atomic="true"
             onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setFocused(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
             <ToolbarIcon name={feedback.kind === 'success' ? 'check' : 'error'} /><span>{feedback.message}</span>
             <Button className="icon-button" aria-label={t('dismissNotification')} onClick={() => setFeedback(undefined)}><ToolbarIcon name="close" /></Button>
-        </div>}
+        </div>, document.getElementById('app-overlays')!, feedback.id)}
     </FeedbackContext.Provider>;
 }
 
