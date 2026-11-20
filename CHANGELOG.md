@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.2
+
+- Keep browser extension prompts and the rest of the page interactive while Loginflare dialogs are open. This includes passkey registration, confirmation dialogs and image cropping.
+- Keep dialogs, application menus and the account switcher open when users click outside them.
+- This release adds no database migrations.
+
 ## 0.1.1
 
 - Create downstream upgrade commits as `github-actions[bot]` with GitHub's Verified signature. Verify the commit's signature, source tree, and downstream parent before opening or reusing the upgrade PR.

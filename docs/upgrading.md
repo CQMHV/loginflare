@@ -6,6 +6,8 @@ The upstream repository maintains source, CI and releases; it does not deploy an
 
 ## Follow a version
 
+Version **0.1.2** fixes dialogs that blocked browser extension prompts and keeps dialogs and application menus open on outside clicks. Installations on 0.1.1 can use the signed update workflow below. This release adds no database migrations.
+
 Version **0.1.1** adds GitHub-signed update commits with no database migrations. To adopt signed automation from 0.1.0, [synchronize v0.1.1 manually](#synchronize-manually) in a maintainer-signed review branch. The workflow on the downstream default branch uses the updated script after that PR is merged.
 
 The first official release is **0.1.0**. Supported sources have managed release records and private instance storage: the 23-migration baseline `aa10563825c7d7669e8be6d0ebab6aa35c84acf4` and the 27-migration baseline `3d721f99ee7de2cbf9471df298263fec9c9fb6a9`. Older source used the same version number. Identify an installation by its Git commit and migration ledger. Select a fixed tag after the upstream release is published.
