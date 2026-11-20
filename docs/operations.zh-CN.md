@@ -4,9 +4,16 @@
 
 `GET /api/health` 只检查 Worker 在线，不访问 D1 或 R2。`GET /api/readiness` 在正式域名上的实例能读取 D1 和当前私有密钥材料时返回 200，否则返回不含配置细节的 503；它绕过正常的 30 秒材料缓存。探测应设置合理间隔，例如每分钟一次。它不发送邮件、不调用 Turnstile，也不检查媒体投递。未完成安装的实例不就绪。
 
-生产 `http_request` 结构化日志对正常请求采样 1%，记录所有 5xx。使用请求 ID 排查故障；采样日志不能计算精确登录转化率。认证审计区分未完成 MFA 和已完成登录，正常的认证拒绝不属于服务故障。
+生产环境为所有返回 5xx 的 `/api/` 请求写入 `http_request` 结构化日志，对其他 `/api/` 响应采样 1%。使用请求 ID 排查故障；采样日志不能计算精确登录转化率。认证审计区分未完成 MFA 和已完成登录，正常的认证拒绝不属于服务故障。
 
 `durationMs` 从 Worker 入口计至响应创建，包含安装状态解析与浏览器账号选择；不包含后台 `waitUntil` 投递和响应体传输。它不是浏览器 TTFB，也不是单独的数据库耗时。
+
+2026 年 12 月 1 日，Workers Logs 从按事件条数计费切换到 Cloudflare Observability 计费。现有 Free、Pro 和 Business 账户自动切换，Enterprise 账户在合同续签时切换。摄入量按未压缩字节计算，包含 Cloudflare 自动附加的字段。适用的 Observability 数据集共享账户额度，默认保留 7 天。LoginFlare 保留 90 天的审计记录存储在 D1，独立于这些额度。 [切换前的 Workers Logs 定价](https://developers.cloudflare.com/workers/observability/logs/workers-logs/#pricing) · [Cloudflare Observability 定价](https://developers.cloudflare.com/observability/pricing/)
+
+- **Free** 每天包含 0.5 GB 摄入额度。用尽后 Cloudflare 停止接收新事件，直到 UTC 00:00 重置。已接收的数据在到期前仍可查询。
+- **Paid** 每个账期包含 50 GB 摄入额度和 10 GB-month 存储额度。超出后，摄入按 $0.25/GB 收费，存储按 $0.10/GB-month 收费。按均匀摄入和保留 7 天估算，每账期摄入约 43 GB 时就可能开始产生存储费。
+
+切换后，在 Cloudflare 控制台选择生产 Worker 所在账户，打开 **Billing → Billable Usage**，查看 Observability 的摄入量、存储量、剩余额度和预估费用。Free 账户重点对照高峰日摄入量与日额度，Paid 账户同时检查账期内的摄入和存储。排查用量突增时，打开 **Workers & Pages → 生产 Worker → Observability**，查看对应时段的事件。账户总用量也可能包含其他 Worker 和数据集。 [Cloudflare 用量与计量](https://developers.cloudflare.com/observability/pricing/#plans) · [查看 Worker 日志](https://developers.cloudflare.com/workers/observability/logs/workers-logs/#view-logs-from-the-dashboard)
 
 `/assets/*` 和 `/favicon.svg` 下的公开文件由 Workers Static Assets 直接提供，不执行应用 Worker。维护环境专用配置时，应保留选择性的 `assets.run_worker_first` 路由和 `public/_headers`。HTML 页面、安装、API 和 OIDC 元数据仍经过 Worker；R2 图片读取也可通过明确配置的[公开图片域名](public-media.zh-CN.md)绕过 Worker，写入继续经过认证接口。页面路由显式读取根 HTML 以注入品牌，不存在的静态文件返回 404，不再回退为 SPA 页面。静态响应通过 `_headers` 保留安全头，并使用默认 ETag 缓存校验，无哈希脚本也不会被长期缓存。前置 WAF 仍可能独立统计或拦截这些请求，与 Worker 计费及应用限流无关。
 
