@@ -1,5 +1,5 @@
 import { testOrigin } from './runtime';
-import { expect, test, switchArea, type Page, openNavigation } from './fixtures';
+import { expect, test, switchArea, selectMaterialOption, type Page, openNavigation } from './fixtures';
 import { hashPassword } from 'better-auth/crypto';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { executeLocal, removeLocalApplications, removeLocalFixtures } from './database';
@@ -24,8 +24,9 @@ test.afterEach(() => {
 });
 
 async function selectLookup(page: Page, option: string) {
-    await page.getByRole('combobox', { name: 'Search by', exact: true }).click();
-    await page.getByRole('option', { name: option, exact: true }).click();
+    const field = page.getByRole('combobox', { name: 'Search by', exact: true });
+    const select = page.locator('md-outlined-select').filter({ has: field });
+    await selectMaterialOption(select, select.getByRole('option', { name: option, exact: true }));
 }
 
 async function changePage(page: Page, endpoint: string, name: 'Next' | 'Previous') {

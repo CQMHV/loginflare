@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
-import { expect, test, type Page } from './fixtures';
+import { expect, selectMaterialOption, test, type Page } from './fixtures';
 import { executeLocal, removeLocalFixtures } from './database';
 import { testOrigin } from './runtime';
 import type { Branding } from '../../src/shared/branding';
@@ -163,17 +163,18 @@ test('cancels without uploading, then confirms a raster logo as WebP through the
 
 test('saves scheme-only changes and restores the default without creating empty edits', async ({ page }) => {
     await signin(page); await page.goto('/en-us/admin/branding');
-    const select = page.getByRole('combobox', { name: 'Color scheme', exact: true });
+    const field = page.getByRole('combobox', { name: 'Color scheme', exact: true });
+    const select = page.locator('md-outlined-select').filter({ has: field });
+    const monochrome = select.getByRole('option', { name: 'Monochrome', exact: true });
     const save = page.getByRole('button', { name: 'Save changes', exact: true });
     const reset = page.getByRole('button', { name: 'Restore defaults', exact: true });
     await expect(reset).toBeDisabled(); await expect(save).toBeDisabled();
-    await select.click();
-    await expect(page.getByRole('option')).toHaveCount(9);
-    await page.getByRole('option', { name: 'Monochrome', exact: true }).click();
+    await expect(select.getByRole('option', { includeHidden: true })).toHaveCount(9);
+    await selectMaterialOption(select, monochrome);
     await expect(save).toBeEnabled(); await expect(reset).toBeEnabled();
     await reset.click(); await expect(save).toBeDisabled(); await expect(reset).toBeDisabled();
     await expect(page.locator('md-outlined-select')).toHaveJSProperty('value', 'tonal-spot');
-    await select.click(); await page.getByRole('option', { name: 'Monochrome', exact: true }).click();
+    await selectMaterialOption(select, monochrome);
     await save.click(); await expect(page.getByText('Your changes have been saved.', { exact: true })).toBeVisible();
     await expect.poll(() => page.evaluate(() => window.loginflareBranding.getSnapshot().colorScheme)).toBe('monochrome');
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--md-sys-color-primary').trim())).toBe('#000000');
